@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent Chat - WhatsApp Style</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: #f0f2f5;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .agent-select {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 13px;
+        }
+
+        .mood-select {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 13px;
+        }
+
+        .settings-btn, .audio-btn, .analytics-btn, .export-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .settings-btn:hover, .audio-btn:hover, .analytics-btn:hover, .export-btn:hover {
+            background: #e9e9e9;
+        }
+
+        /* Conversation Area */
+        .conversation-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            padding-bottom: 140px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* Message Thread */
+        .message-thread {
+            background: white;
+            border-radius: 6px;
+            padding: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .thread-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 8px;
+        }
+
+        .thread-avatar {
+            width: 32px;
+            height: 32px;
+            background: #3b99fc;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .thread-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .thread-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: #111b21;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thread-timestamp {
+            font-size: 10px;
+            color: #667781;
+        }
+
+        .start-thread-btn {
+            padding: 3px 8px;
+            background: #3b99fc;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+
+        /* Message Bubble */
+        .message-bubble {
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            max-width: 75%;
+            position: relative;
+        }
+
+        .agent-bubble {
+            background: #dcf8c6;
+            border-radius: 16px 0 16px 16px;
+            margin-left: 0;
+        }
+
+        .user-message {
+            background: #95ec69;
+            border-radius: 0 16px 16px 16px;
+            margin-left: auto;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .agent-name {
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .message-time {
+            font-size: 9px;
+            color: #667781;
+        }
+
+        .message-content {
+            font-size: 13px;
+            line-height: 1.3;
+            color: #111b21;
+        }
+
+        /* Feedback Controls */
+        .feedback-controls {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+            padding: 4px;
+            background: #f0f0f0;
+            border-radius: 6px;
+        }
+
+        .feedback-btn {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 3px 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .feedback-btn:hover {
+            background: #e9e9e9;
+        }
+
+        .feedback-btn.active {
+            background: #3b99fc;
+            color: white;
+            border-color: #3b99fc;
+        }
+
+        .feedback-btn.active.like { background: #34b7f1; }
+        .feedback-btn.active.dislike { background: #ff5c5c; }
+        .feedback-btn.active.clarify { background: #f0c040; }
+
+        /* Input Area */
+        .input-area {
+            padding: 8px 12px;
+            background: white;
+            border-top: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .message-input:focus {
+            border-color: #3b99fc;
+        }
+
+        .send-btn {
+            padding: 8px 16px;
+            background: #3b99fc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .send-btn:hover {
+            background: #2a80e8;
+        }
+
+        /* Agent Bubble Style */
+        .agent-bubble-wrapper {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .agent-bubble-avatar {
+            width: 28px;
+            height: 28px;
+            background: #3b99fc;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+            font-size: 11px;
+        }
+
+        .agent-bubble-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .agent-bubble-name {
+            font-weight: 600;
+            font-size: 11px;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .agent-bubble-text {
+            font-size: 13px;
+            line-height: 1.3;
+            color: #111b21;
+        }
+
+        /* Start Discussion Button */
+        .start-discussion {
+            padding: 12px;
+            background: white;
+            border-radius: 6px;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .start-discussion button {
+            padding: 10px 24px;
+            background: #25d366;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .start-discussion button:hover {
+            background: #1db854;
+        }
+
+        /* Controls Panel */
+        .controls-panel {
+            padding: 8px;
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .control-label {
+            font-size: 11px;
+            color: #667781;
+            white-space: nowrap;
+        }
+
+        .control-input {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 12px;
+            width: 60px;
+        }
+
+        .control-select {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 12px;
+        }
+
+        .control-checkbox {
+            width: 16px;
+            height: 16px;
+        }
+
+        .control-btn {
+            padding: 4px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .control-btn:hover {
+            background: #e9e9e9;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .modal-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .modal-body {
+            padding: 16px;
+        }
+
+        .modal-section {
+            margin-bottom: 16px;
+        }
+
+        .modal-section-title {
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #667781;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: #667781;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group select {
+            background: white;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 10px;
+            background: #3b99fc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .btn-primary:hover {
+            background: #2a80e8;
+        }
+
+        .agent-list-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .agent-avatar-small {
+            width: 32px;
+            height: 32px;
+            background: #3b99fc;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .agent-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .agent-name {
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .agent-instructions {
+            font-size: 11px;
+            color: #667781;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            font-size: 16px;
+        }
+
+        .btn-icon:hover {
+            background: #e9e9e9;
+            border-radius: 4px;
+        }
+
+        .btn-icon.delete {
+            color: #ff5c5c;
+        }
+
+        .btn-icon.delete:hover {
+            background: #ffe5e5;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 24px;
+            color: #667781;
+            font-size: 13px;
+        }
+
+        .btn-secondary {
+            width: 100%;
+            padding: 8px;
+            background: #e9e9e9;
+            color: #333;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-secondary:hover {
+            background: #d9d9d9;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        /* Stats Badge */
+        .stats-badge {
+            padding: 4px 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header-left {
+                flex-wrap: wrap;
+            }
+
+            .message-bubble {
+                max-width: 85%;
+            }
+
+            .feedback-controls {
+                flex-wrap: wrap;
+            }
+
+            .feedback-btn {
+                flex: 1;
+                min-width: 70px;
+                font-size: 11px;
+                padding: 3px 6px;
+            }
+
+            .modal {
+                width: 95%;
+                max-height: 90vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <select class="agent-select" onchange="updateCurrentAgent()">
+                <option value="agent1">Agent A (Researcher)</option>
+                <option value="agent2">Agent B (Analyst)</option>
+                <option value="agent3">Agent C (Moderator)</option>
+            </select>
+            <select class="mood-select" onchange="updateMood()">
+                <option value="debate">🗣️ Debate</option>
+                <option value="complementary">💡 Complementary</option>
+                <option value="research">🔍 Research</option>
+            </select>
+        </div>
+        <div class="header-right">
+            <button class="audio-btn" onclick="openModal('audioModal')">🎧 Audio</button>
+            <button class="analytics-btn" onclick="openModal('analyticsModal')">📊 Analytics</button>
+            <button class="export-btn" onclick="openModal('exportModal')">📥 Export</button>
+            <button class="settings-btn" onclick="openModal('settingsModal')">⚙️ Settings</button>
+        </div>
+    </div>
+
+    <!-- Controls Panel -->
+    <div class="controls-panel">
+        <div class="control-group">
+            <span class="control-label">Max Sentences:</span>
+            <input type="number" class="control-input" id="maxSentences" value="5" min="1" max="10" onchange="updateSettings()">
+        </div>
+        <div class="control-group">
+            <span class="control-label">Exchanges:</span>
+            <input type="number" class="control-input" id="maxExchanges" value="∞" min="1" onchange="updateSettings()">
+        </div>
+        <div class="control-group">
+            <span class="control-label">Tokens:</span>
+            <input type="number" class="control-input" id="maxTokens" value="∞" min="100" onchange="updateSettings()">
+        </div>
+        <div class="control-group">
+            <input type="checkbox" class="control-checkbox" id="orchestrator" checked onchange="updateSettings()">
+            <label for="orchestrator" class="control-label">Orchestrator</label>
+        </div>
+        <div class="control-group">
+            <button class="control-btn" onclick="pauseConversation()">⏸️ Pause</button>
+            <button class="control-btn" onclick="stopConversation()">⏹️ Stop</button>
+            <button class="control-btn" onclick="resetConversation()">🔄 Reset</button>
+        </div>
+        <div class="control-group">
+            <span class="stats-badge" id="messageCount">0 messages</span>
+        </div>
+    </div>
+
+    <!-- Conversation Area -->
+    <div class="conversation-area">
+        <!-- Start Discussion Button -->
+        <div class="start-discussion">
+            <button onclick="startDiscussion()">▶️ Start New Discussion</button>
+        </div>
+
+        <!-- Thread 1 -->
+        <div class="message-thread" id="thread1">
+            <div class="thread-header">
+                <div class="thread-avatar">A</div>
+                <div class="thread-info">
+                    <div class="thread-title">Agent A (Researcher)</div>
+                    <div class="thread-timestamp">Started just now</div>
+                </div>
+                <button class="start-thread-btn">[+ New Thread]</button>
+            </div>
+
+            <!-- Agent A Message -->
+            <div class="agent-bubble-wrapper">
+                <div class="agent-bubble-avatar" style="background: #3b99fc;">A</div>
+                <div class="agent-bubble-content">
+                    <div class="agent-bubble-name">Agent A (Researcher)</div>
+                    <div class="agent-bubble-text">Let's discuss AI safety. What are your main concerns?</div>
+                    <div class="feedback-controls">
+                        <button class="feedback-btn" onclick="handleFeedback('like', 'msg1')">👍</button>
+                        <button class="feedback-btn" onclick="handleFeedback('dislike', 'msg1')">👎</button>
+                        <button class="feedback-btn" onclick="handleFeedback('clarify', 'msg1')">🤔</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent B Message -->
+            <div class="agent-bubble-wrapper">
+                <div class="agent-bubble-avatar" style="background: #2ecc71;">B</div>
+                <div class="agent-bubble-content">
+                    <div class="agent-bubble-name">Agent B (Analyst)</div>
+                    <div class="agent-bubble-text">We need balanced regulation. Innovation vs safety.</div>
+                    <div class="feedback-controls">
+                        <button class="feedback-btn" onclick="handleFeedback('like', 'msg2')">👍</button>
+                        <button class="feedback-btn" onclick="handleFeedback('dislike', 'msg2')">👎</button>
+                        <button class="feedback-btn" onclick="handleFeedback('clarify', 'msg2')">🤔</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent C Message -->
+            <div class="agent-bubble-wrapper">
+                <div class="agent-bubble-avatar" style="background: #f39c12;">C</div>
+                <div class="agent-bubble-content">
+                    <div class="agent-bubble-name">Agent C (Moderator)</div>
+                    <div class="agent-bubble-text">Good points. Let's explore both sides.</div>
+                    <div class="feedback-controls">
+                        <button class="feedback-btn" onclick="handleFeedback('like', 'msg3')">👍</button>
+                        <button class="feedback-btn" onclick="handleFeedback('dislike', 'msg3')">👎</button>
+                        <button class="feedback-btn" onclick="handleFeedback('clarify', 'msg3')">🤔</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thread 2 -->
+        <div class="message-thread" id="thread2">
+            <div class="thread-header">
+                <div class="thread-avatar">A</div>
+                <div class="thread-info">
+                    <div class="thread-title">Agent A (Researcher)</div>
+                    <div class="thread-timestamp">Started just now</div>
+                </div>
+                <button class="start-thread-btn">[+ New Thread]</button>
+            </div>
+
+            <div class="agent-bubble-wrapper">
+                <div class="agent-bubble-avatar" style="background: #3b99fc;">A</div>
+                <div class="agent-bubble-content">
+                    <div class="agent-bubble-name">Agent A (Researcher)</div>
+                    <div class="agent-bubble-text">Let's explore sandbox environments.</div>
+                    <div class="feedback-controls">
+                        <button class="feedback-btn" onclick="handleFeedback('like', 'msg4')">👍</button>
+                        <button class="feedback-btn" onclick="handleFeedback('dislike', 'msg4')">👎</button>
+                        <button class="feedback-btn" onclick="handleFeedback('clarify', 'msg4')">🤔</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="agent-bubble-wrapper">
+                <div class="agent-bubble-avatar" style="background: #2ecc71;">B</div>
+                <div class="agent-bubble-content">
+                    <div class="agent-bubble-name">Agent B (Analyst)</div>
+                    <div class="agent-bubble-text">GDPR approach works well for this.</div>
+                    <div class="feedback-controls">
+                        <button class="feedback-btn" onclick="handleFeedback('like', 'msg5')">👍</button>
+                        <button class="feedback-btn" onclick="handleFeedback('dislike', 'msg5')">👎</button>
+                        <button class="feedback-btn" onclick="handleFeedback('clarify', 'msg5')">🤔</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="input-area">
+        <input
+            type="text"
+            class="message-input"
+            id="messageInput"
+            placeholder="Type message..."
+        >
+        <button class="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">⚙️ Agent Settings</span>
+                <button class="modal-close" onclick="closeModal('settingsModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <div class="modal-section-title">Current Agent</div>
+                    <div class="agent-list-item">
+                        <div class="agent-avatar-small" id="currentAgentAvatar">A</div>
+                        <div class="agent-info">
+                            <div class="agent-name" id="currentAgentName">Agent A (Researcher)</div>
+                            <div class="agent-instructions" id="currentAgentInstructions">Research recent AI developments and gather data on AI safety.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-section">
+                    <div class="modal-section-title">Configure Agent</div>
+                    <div class="form-group">
+                        <label>Agent Name</label>
+                        <input type="text" id="agentName" value="Agent A">
+                    </div>
+                    <div class="form-group">
+                        <label>Role/Personality</label>
+                        <input type="text" id="agentRole" value="Researcher">
+                    </div>
+                    <div class="form-group">
+                        <label>Instructions</label>
+                        <textarea id="agentInstructions">Research recent AI developments and gather data on AI safety.</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>LLM Provider</label>
+                        <select id="llmProvider">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="google">Google</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Avatar Color</label>
+                        <input type="color" id="agentColor" value="#3b99fc" style="width: 50px; height: 30px; border: 1px solid #ddd;">
+                    </div>
+                    <button class="btn-primary" onclick="saveAgentSettings()">Save Changes</button>
+                </div>
+
+                <div class="modal-section">
+                    <div class="modal-section-title">Available Agents</div>
+                    <div id="agentList">
+                        <div class="agent-list-item">
+                            <div class="agent-avatar-small" style="background: #3b99fc;">A</div>
+                            <div class="agent-info">
+                                <div class="agent-name">Agent A (Researcher)</div>
+                            </div>
+                            <button class="btn-icon delete" onclick="deleteAgent('agent1')">🗑️</button>
+                        </div>
+                        <div class="agent-list-item">
+                            <div class="agent-avatar-small" style="background: #2ecc71;">B</div>
+                            <div class="agent-info">
+                                <div class="agent-name">Agent B (Analyst)</div>
+                            </div>
+                            <button class="btn-icon delete" onclick="deleteAgent('agent2')">🗑️</button>
+                        </div>
+                        <div class="agent-list-item">
+                            <div class="agent-avatar-small" style="background: #f39c12;">C</div>
+                            <div class="agent-info">
+                                <div class="agent-name">Agent C (Moderator)</div>
+                            </div>
+                            <button class="btn-icon delete" onclick="deleteAgent('agent3')">🗑️</button>
+                        </div>
+                    </div>
+                    <button class="btn-secondary" onclick="addAgent()">+ Add Agent</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audio Modal -->
+    <div class="modal-overlay" id="audioModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">🎧 Podcast Generation</span>
+                <button class="modal-close" onclick="closeModal('audioModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <div class="modal-section-title">Convert to Podcast</div>
+                    <div class="form-group">
+                        <label>Conversation</label>
+                        <select>
+                            <option>Full Conversation</option>
+                            <option>Current Thread</option>
+                            <option>Last 5 Messages</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Voice Selection</label>
+                        <select id="voiceSelection">
+                            <option value="agent1">Agent A Voice</option>
+                            <option value="agent2">Agent B Voice</option>
+                            <option value="agent3">Agent C Voice</option>
+                            <option value="mix">Mix All Voices</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Speech Rate</label>
+                        <select>
+                            <option>Normal</option>
+                            <option>Fast</option>
+                            <option>Slow</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" onclick="generatePodcast()">🎵 Generate Podcast</button>
+                </div>
+                <div class="modal-section">
+                    <div class="modal-section-title">Download Options</div>
+                    <button class="btn-secondary" onclick="downloadAudio()">📥 Download MP3</button>
+                    <button class="btn-secondary" onclick="playAudio()">▶️ Play Audio</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Modal -->
+    <div class="modal-overlay" id="analyticsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">📊 Conversation Analytics</span>
+                <button class="modal-close" onclick="closeModal('analyticsModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <div class="modal-section-title">Statistics</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div style="background: #f0f0f0; padding: 8px; border-radius: 4px;">
+                            <div style="font-size: 11px; color: #667781;">Messages</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #3b99fc;" id="statMessages">12</div>
+                        </div>
+                        <div style="background: #f0f0f0; padding: 8px; border-radius: 4px;">
+                            <div style="font-size: 11px; color: #667781;">Threads</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #2ecc71;" id="statThreads">2</div>
+                        </div>
+                        <div style="background: #f0f0f0; padding: 8px; border-radius: 4px;">
+                            <div style="font-size: 11px; color: #667781;">Likes</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #34b7f1;" id="statLikes">8</div>
+                        </div>
+                        <div style="background: #f0f0f0; padding: 8px; border-radius: 4px;">
+                            <div style="font-size: 11px; color: #667781;">Dislikes</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #ff5c5c;" id="statDislikes">2</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-section">
+                    <div class="modal-section-title">Top Agent</div>
+                    <div style="background: #f0f0f0; padding: 8px; border-radius: 4px; font-size: 13px;">
+                        <span style="font-weight: 600;">Agent A</span> contributed most messages
+                    </div>
+                </div>
+                <div class="modal-section">
+                    <div class="modal-section-title">Mood</div>
+                    <select style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        <option>🗣️ Debate</option>
+                        <option>💡 Complementary</option>
+                        <option>🔍 Research</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="exportModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">📥 Export Options</span>
+                <button class="modal-close" onclick="closeModal('exportModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <div class="modal-section-title">Download Formats</div>
+                    <button class="btn-secondary" onclick="downloadPDF()">📄 Download PDF</button>
+                    <button class="btn-secondary" onclick="downloadImage()">🖼️ Download Image</button>
+                    <button class="btn-secondary" onclick="downloadMarkdown()">📝 Download Markdown</button>
+                </div>
+                <div class="modal-section">
+                    <div class="modal-section-title">Reports</div>
+                    <button class="btn-secondary" onclick="generateReport()">📊 Generate Report</button>
+                    <button class="btn-secondary" onclick="generateMindmap()">🗺️ Generate Mind Map</button>
+                </div>
+                <div class="modal-section">
+                    <div class="modal-section-title">Data</div>
+                    <button class="btn-secondary" onclick="downloadJSON()">📋 Download JSON</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let messageCount = 12;
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+
+        function handleFeedback(type, messageId) {
+            const btn = event.target;
+            const allBtns = document.querySelectorAll('.feedback-btn');
+            allBtns.forEach(b => b.classList.remove('active'));
+
+            btn.classList.add('active');
+            btn.classList.add(type);
+
+            const feedbackMessages = {
+                'like': '👍 Thanks for the feedback!',
+                'dislike': '👎 Sorry you didn\'t like this.',
+                'clarify': '🤔 Let me clarify that.'
+            };
+
+            showToast(feedbackMessages[type]);
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            const conversationArea = document.querySelector('.conversation-area');
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const userMessage = document.createElement('div');
+            userMessage.className = 'message-bubble user-message';
+            userMessage.innerHTML = `
+                <div class="message-header">
+                    <span class="agent-name">You</span>
+                    <span class="message-time">${time}</span>
+                </div>
+                <div class="message-content">${message}</div>
+                <div class="feedback-controls">
+                    <button class="feedback-btn" onclick="handleFeedback('like', '${Date.now()}')">👍</button>
+                    <button class="feedback-btn" onclick="handleFeedback('dislike', '${Date.now()}')">👎</button>
+                    <button class="feedback-btn" onclick="handleFeedback('clarify', '${Date.now()}')">🤔</button>
+                </div>
+            `;
+
+            conversationArea.appendChild(userMessage);
+            conversationArea.scrollTop = conversationArea.scrollHeight;
+            input.value = '';
+            messageCount++;
+            updateMessageCount();
+        }
+
+        function startDiscussion() {
+            const conversationArea = document.querySelector('.conversation-area');
+            const thread1 = document.getElementById('thread1');
+
+            const threads = document.querySelectorAll('.message-thread');
+            threads.forEach(thread => {
+                if (thread.id !== 'thread1') {
+                    thread.remove();
+                }
+            });
+
+            thread1.innerHTML = `
+                <div class="thread-header">
+                    <div class="thread-avatar">A</div>
+                    <div class="thread-info">
+                        <div class="thread-title">Agent A (Researcher)</div>
+                        <div class="thread-timestamp">Started just now</div>
+                    </div>
+                    <button class="start-thread-btn">[+ New Thread]</button>
+                </div>
+
+                <div class="agent-bubble-wrapper">
+                    <div class="agent-bubble-avatar" style="background: #3b99fc;">A</div>
+                    <div class="agent-bubble-content">
+                        <div class="agent-bubble-name">Agent A (Researcher)</div>
+                        <div class="agent-bubble-text">Let's discuss AI safety. What are your main concerns?</div>
+                        <div class="feedback-controls">
+                            <button class="feedback-btn" onclick="handleFeedback('like', '${Date.now()}')">👍</button>
+                            <button class="feedback-btn" onclick="handleFeedback('dislike', '${Date.now()}')">👎</button>
+                            <button class="feedback-btn" onclick="handleFeedback('clarify', '${Date.now()}')">🤔</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="agent-bubble-wrapper">
+                    <div class="agent-bubble-avatar" style="background: #2ecc71;">B</div>
+                    <div class="agent-bubble-content">
+                        <div class="agent-bubble-name">Agent B (Analyst)</div>
+                        <div class="agent-bubble-text">We need balanced regulation. Innovation vs safety.</div>
+                        <div class="feedback-controls">
+                            <button class="feedback-btn" onclick="handleFeedback('like', '${Date.now()}')">👍</button>
+                            <button class="feedback-btn" onclick="handleFeedback('dislike', '${Date.now()}')">👎</button>
+                            <button class="feedback-btn" onclick="handleFeedback('clarify', '${Date.now()}')">🤔</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="agent-bubble-wrapper">
+                    <div class="agent-bubble-avatar" style="background: #f39c12;">C</div>
+                    <div class="agent-bubble-content">
+                        <div class="agent-bubble-name">Agent C (Moderator)</div>
+                        <div class="agent-bubble-text">Good points. Let's explore both sides.</div>
+                        <div class="feedback-controls">
+                            <button class="feedback-btn" onclick="handleFeedback('like', '${Date.now()}')">👍</button>
+                            <button class="feedback-btn" onclick="handleFeedback('dislike', '${Date.now()}')">👎</button>
+                            <button class="feedback-btn" onclick="handleFeedback('clarify', '${Date.now()}')">🤔</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            conversationArea.scrollTop = conversationArea.scrollHeight;
+            messageCount = 3;
+            updateMessageCount();
+            showToast('Discussion started!');
+        }
+
+        function updateMessageCount() {
+            document.getElementById('messageCount').textContent = `${messageCount} messages`;
+            document.getElementById('statMessages').textContent = messageCount;
+        }
+
+        function pauseConversation() {
+            showToast('⏸️ Conversation paused');
+        }
+
+        function stopConversation() {
+            showToast('⏹️ Conversation stopped');
+        }
+
+        function resetConversation() {
+            showToast('🔄 Conversation reset');
+        }
+
+        function updateSettings() {
+            const maxSentences = document.getElementById('maxSentences').value;
+            const maxExchanges = document.getElementById('maxExchanges').value;
+            const maxTokens = document.getElementById('maxTokens').value;
+            const orchestrator = document.getElementById('orchestrator').checked;
+            showToast(`⚙️ Settings updated`);
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function updateCurrentAgent() {
+            showToast('🔄 Agent updated');
+        }
+
+        function updateMood() {
+            showToast('🔄 Mood updated');
+        }
+
+        function saveAgentSettings() {
+            const name = document.getElementById('agentName').value;
+            const role = document.getElementById('agentRole').value;
+            const instructions = document.getElementById('agentInstructions').value;
+            const color = document.getElementById('agentColor').value;
+
+            document.getElementById('currentAgentName').textContent = `${name} (${role})`;
+            document.getElementById('currentAgentInstructions').textContent = instructions;
+            document.getElementById('currentAgentAvatar').style.background = color;
+
+            showToast('✅ Agent settings saved!');
+        }
+
+        function addAgent() {
+            showToast('➕ New agent added');
+        }
+
+        function deleteAgent(agentId) {
+            showToast('🗑️ Agent deleted');
+        }
+
+        function generatePodcast() {
+            showToast('🎵 Generating podcast...');
+        }
+
+        function playAudio() {
+            showToast('▶️ Playing audio');
+        }
+
+        function downloadAudio() {
+            showToast('📥 Downloading MP3...');
+        }
+
+        function downloadPDF() {
+            showToast('📄 Downloading PDF...');
+        }
+
+        function downloadImage() {
+            showToast('🖼️ Downloading image...');
+        }
+
+        function downloadMarkdown() {
+            showToast('📝 Downloading markdown...');
+        }
+
+        function downloadJSON() {
+            showToast('📋 Downloading JSON...');
+        }
+
+        function generateReport() {
+            showToast('📊 Generating report...');
+        }
+
+        function generateMindmap() {
+            showToast('🗺️ Generating mind map...');
+        }
+
+        // Allow Enter key to send
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
