@@ -10,6 +10,8 @@ import { AdminPanel } from './AdminPanel';
 export function LoginGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileChecked, setProfileChecked] = useState(false);
   const [checked, setChecked] = useState(false);
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
@@ -31,14 +33,18 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!session) {
       setProfile(null);
+      setProfileError(null);
+      setProfileChecked(false);
       return;
     }
     let attempts = 0;
     const poll = setInterval(async () => {
       attempts += 1;
-      const p = await fetchMyProfile(session.user.id);
-      if (p || attempts > 5) {
+      const { profile: p, error: err } = await fetchMyProfile(session.user.id);
+      if (p || err || attempts > 5) {
         setProfile(p);
+        setProfileError(err);
+        setProfileChecked(true);
         clearInterval(poll);
       }
     }, 800);
@@ -119,6 +125,29 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (profileError) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1 className="auth-title">Setup Required</h1>
+          <p style={{ fontSize: 13, color: '#667781' }}>
+            The <code>user_profiles</code> table isn&apos;t set up yet in Supabase, so nobody can
+            sign in — including admins. Run the SQL in <code>SUPABASE-AUTH-SETUP.md</code>{' '}
+            (sections 1b and 1c), then reload this page.
+          </p>
+          <p className="auth-error">{profileError}</p>
+          <button className="btn-secondary" onClick={() => signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profileChecked) {
+    return <div className="auth-loading">Checking account status…</div>;
+  }
+
   if (!profile || !profile.isApproved) {
     return (
       <div className="auth-screen">
@@ -128,6 +157,13 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             Signed in as {session.user.email}. An admin needs to activate your account before you
             can access the app.
           </p>
+          {!profile && (
+            <p style={{ fontSize: 12, color: '#667781' }}>
+              No profile record was found for this account yet. If you&apos;re
+              trimakassi@gmail.com, run the backfill SQL (section 1c) in{' '}
+              <code>SUPABASE-AUTH-SETUP.md</code>.
+            </p>
+          )}
           <button className="btn-secondary" onClick={() => signOut()}>
             Sign out
           </button>

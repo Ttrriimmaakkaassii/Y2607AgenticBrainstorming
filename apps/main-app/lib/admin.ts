@@ -18,16 +18,23 @@ function mapRow(row: any): UserProfile {
   };
 }
 
+export interface ProfileResult {
+  profile: UserProfile | null;
+  /** Set when the query itself failed (e.g. user_profiles table/trigger not set up yet) —
+   * distinct from a successful query that simply found no row. */
+  error: string | null;
+}
+
 /** The signed-in user's own profile — always readable under RLS. */
-export async function fetchMyProfile(userId: string): Promise<UserProfile | null> {
-  if (!supabase) return null;
+export async function fetchMyProfile(userId: string): Promise<ProfileResult> {
+  if (!supabase) return { profile: null, error: null };
   const { data, error } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('user_id', userId)
     .maybeSingle();
-  if (error || !data) return null;
-  return mapRow(data);
+  if (error) return { profile: null, error: error.message };
+  return { profile: data ? mapRow(data) : null, error: null };
 }
 
 /** All profiles — RLS only actually returns rows if the caller is an admin. */
