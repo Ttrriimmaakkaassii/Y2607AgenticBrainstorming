@@ -179,6 +179,8 @@ export function ChatApp() {
   const [inputMessage, setInputMessage] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterStarredOnly, setFilterStarredOnly] = useState(false);
+  const [filterCategory, setFilterCategory] = useState('');
   const [toast, setToast] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<
@@ -324,18 +326,29 @@ export function ChatApp() {
 
   const allMessages = useMemo(() => state.threads.flatMap((t) => t.messages), [state.threads]);
 
+  const messageCategories = useMemo(
+    () => Array.from(new Set(allMessages.map((m) => m.category).filter(Boolean))) as string[],
+    [allMessages]
+  );
+
   const visibleThreads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return state.threads;
+    const hasFilter = q || filterStarredOnly || filterCategory;
+    if (!hasFilter) return state.threads;
     return state.threads
       .map((t) => ({
         ...t,
-        messages: t.messages.filter(
-          (m) => m.content.toLowerCase().includes(q) || m.category?.toLowerCase().includes(q)
-        ),
+        messages: t.messages.filter((m) => {
+          if (filterStarredOnly && !m.starred) return false;
+          if (filterCategory && m.category !== filterCategory) return false;
+          if (q && !(m.content.toLowerCase().includes(q) || m.category?.toLowerCase().includes(q))) {
+            return false;
+          }
+          return true;
+        }),
       }))
       .filter((t) => t.messages.length > 0);
-  }, [state.threads, searchQuery]);
+  }, [state.threads, searchQuery, filterStarredOnly, filterCategory]);
 
   function agentIsConnected(agent: Agent): boolean {
     return !!agent.connectionId && connections.some((c) => c.id === agent.connectionId);
@@ -1100,8 +1113,36 @@ export function ChatApp() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
-        {searchQuery && (
-          <button className="btn-icon" onClick={() => setSearchQuery('')} title="Clear search">
+        <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input
+            type="checkbox"
+            checked={filterStarredOnly}
+            onChange={(e) => setFilterStarredOnly(e.target.checked)}
+          />
+          ⭐ Starred only
+        </label>
+        <select
+          className="select-input"
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value)}
+        >
+          <option value="">All categories</option>
+          {messageCategories.map((c) => (
+            <option key={c} value={c}>
+              🏷️ {c}
+            </option>
+          ))}
+        </select>
+        {(searchQuery || filterStarredOnly || filterCategory) && (
+          <button
+            className="btn-icon"
+            onClick={() => {
+              setSearchQuery('');
+              setFilterStarredOnly(false);
+              setFilterCategory('');
+            }}
+            title="Clear filters"
+          >
             ×
           </button>
         )}
@@ -1294,8 +1335,8 @@ export function ChatApp() {
             );
           })}
 
-        {searchQuery && visibleThreads.length === 0 && (
-          <div className="empty-state">No messages match &quot;{searchQuery}&quot;.</div>
+        {(searchQuery || filterStarredOnly || filterCategory) && visibleThreads.length === 0 && (
+          <div className="empty-state">No messages match the current filters.</div>
         )}
 
         {visibleThreads.map((thread) => {
