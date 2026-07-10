@@ -41,6 +41,7 @@ import { MindmapModal } from './MindmapModal';
 import { ArchivesModal } from './ArchivesModal';
 
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
+const DEFAULT_WHATSAPP_NUMBER = '212661320000';
 
 interface ReactionDef {
   type: ReactionType;
@@ -117,6 +118,7 @@ function defaultState(): ConversationState {
       responseStyle: 'sentences',
       ttsRate: 1,
       ttsLang: 'en-US',
+      whatsappNumber: '',
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -139,7 +141,12 @@ function migrateState(state: ConversationState): ConversationState {
   });
   const threads = state.threads.map((t) => ({
     ...t,
-    messages: t.messages.map((m) => ({ ...m, replyToId: m.replyToId ?? null })),
+    messages: t.messages.map((m) => ({
+      ...m,
+      replyToId: m.replyToId ?? null,
+      starred: m.starred ?? false,
+      category: m.category ?? null,
+    })),
   }));
   return {
     ...state,
@@ -150,6 +157,7 @@ function migrateState(state: ConversationState): ConversationState {
       responseStyle: state.settings.responseStyle ?? 'sentences',
       ttsRate: state.settings.ttsRate ?? 1,
       ttsLang: state.settings.ttsLang ?? 'en-US',
+      whatsappNumber: state.settings.whatsappNumber ?? '',
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
@@ -169,6 +177,7 @@ export function ChatApp() {
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
   const [inputMessage, setInputMessage] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<
@@ -314,6 +323,19 @@ export function ChatApp() {
 
   const allMessages = useMemo(() => state.threads.flatMap((t) => t.messages), [state.threads]);
 
+  const visibleThreads = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return state.threads;
+    return state.threads
+      .map((t) => ({
+        ...t,
+        messages: t.messages.filter(
+          (m) => m.content.toLowerCase().includes(q) || m.category?.toLowerCase().includes(q)
+        ),
+      }))
+      .filter((t) => t.messages.length > 0);
+  }, [state.threads, searchQuery]);
+
   function agentIsConnected(agent: Agent): boolean {
     return !!agent.connectionId && connections.some((c) => c.id === agent.connectionId);
   }
@@ -357,6 +379,8 @@ export function ChatApp() {
         timestamp: Date.now(),
         feedback: null,
         replyToId: null,
+        starred: false,
+        category: null,
       });
     }
     return thread;
@@ -436,6 +460,8 @@ export function ChatApp() {
         timestamp: Date.now(),
         feedback: null,
         replyToId: null,
+        starred: false,
+        category: null,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       setState((prev) => ({
@@ -515,6 +541,8 @@ export function ChatApp() {
       timestamp: Date.now(),
       feedback: null,
       replyToId: replyingTo?.id ?? null,
+      starred: false,
+      category: null,
     };
     appendMessage(targetThread.id, userMessage);
     setInputMessage('');
@@ -583,6 +611,8 @@ export function ChatApp() {
       timestamp: Date.now(),
       feedback: null,
       replyToId: message.id,
+      starred: false,
+      category: null,
     });
   }
 
@@ -693,6 +723,66 @@ export function ChatApp() {
       clarify: '🤔 Noted — flagged for clarification.',
     };
     showToast(labels[type]);
+  }
+
+  function toggleStarred(threadId: string, messageId: string) {
+    setState((prev) => ({
+      ...prev,
+      threads: prev.threads.map((t) =>
+        t.id !== threadId
+          ? t
+          : {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === messageId ? { ...m, starred: !m.starred } : m
+              ),
+            }
+      ),
+    }));
+  }
+
+  function setMessageCategory(threadId: string, messageId: string) {
+    const current = state.threads
+      .find((t) => t.id === threadId)
+      ?.messages.find((m) => m.id === messageId)?.category;
+    const category = window.prompt('Tag this message with a category:', current ?? '');
+    if (category === null) return;
+    setState((prev) => ({
+      ...prev,
+      threads: prev.threads.map((t) =>
+        t.id !== threadId
+          ? t
+          : {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === messageId ? { ...m, category: category.trim() || null } : m
+              ),
+            }
+      ),
+    }));
+  }
+
+  function getSelectedOrFullText(fallback: string): string {
+    const selection = window.getSelection()?.toString().trim();
+    return selection && selection.length > 0 ? selection : fallback;
+  }
+
+  async function copyMessageText(content: string) {
+    const text = getSelectedOrFullText(content);
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('📋 Copied to clipboard');
+    } catch {
+      showToast('Could not copy — try selecting the text manually.');
+    }
+  }
+
+  function shareToWhatsApp(content: string) {
+    const text = getSelectedOrFullText(content);
+    const digitsOnly = state.settings.whatsappNumber.replace(/\D/g, '');
+    const number = (digitsOnly || DEFAULT_WHATSAPP_NUMBER).replace(/^00/, '');
+    const url = `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   function pauseConversation() {
@@ -970,6 +1060,22 @@ export function ChatApp() {
         ⚙️
       </button>
 
+      <div className="search-bar">
+        <input
+          type="text"
+          className="select-input"
+          style={{ flex: 1 }}
+          placeholder="🔎 Search discussion... (filters live as you type)"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button className="btn-icon" onClick={() => setSearchQuery('')} title="Clear search">
+            ×
+          </button>
+        )}
+      </div>
+
       <div className="participants-bar" {...devRef('p1')}>
         <span className="control-label">Participants:</span>
         {state.agents.map((agent, agentIndex) => {
@@ -1157,7 +1263,11 @@ export function ChatApp() {
             );
           })}
 
-        {state.threads.map((thread) => {
+        {searchQuery && visibleThreads.length === 0 && (
+          <div className="empty-state">No messages match &quot;{searchQuery}&quot;.</div>
+        )}
+
+        {visibleThreads.map((thread) => {
           const owner = agentById(thread.agentId);
           return (
             <div className="message-thread" key={thread.id}>
@@ -1213,11 +1323,18 @@ export function ChatApp() {
                         </div>
                       )}
                       <div
-                        className="bubble-text bubble-text-clickable"
+                        className="bubble-text"
                         style={{ borderLeft: `4px solid ${bubbleColor}` }}
-                        title="Click to read aloud from here"
-                        onClick={() => playFromMessage(globalIndex)}
                       >
+                        <button
+                          className="bubble-copy-btn"
+                          title="Copy (selected text, or the whole message)"
+                          onClick={() => copyMessageText(msg.content)}
+                        >
+                          📋
+                        </button>
+                        {msg.starred && <span className="bubble-star">⭐</span>}
+                        {msg.category && <span className="bubble-category">🏷️ {msg.category}</span>}
                         <MessageContent
                           content={msg.content}
                           spokenRange={
@@ -1291,6 +1408,30 @@ export function ChatApp() {
                                   <span className="reaction-badge">r{n}</span>
                                 </button>
                               ))}
+                              <button
+                                className={`feedback-btn ${msg.starred ? 'active' : ''}`}
+                                title={`r${badge()}: Star for filtering`}
+                                onClick={() => toggleStarred(thread.id, msg.id)}
+                              >
+                                {msg.starred ? '⭐' : '☆'}
+                                <span className="reaction-badge">r{n}</span>
+                              </button>
+                              <button
+                                className="feedback-btn"
+                                title={`r${badge()}: Tag with a category`}
+                                onClick={() => setMessageCategory(thread.id, msg.id)}
+                              >
+                                🏷️
+                                <span className="reaction-badge">r{n}</span>
+                              </button>
+                              <button
+                                className="feedback-btn"
+                                title={`r${badge()}: Share (selected text, or the whole message) to WhatsApp`}
+                                onClick={() => shareToWhatsApp(msg.content)}
+                              >
+                                💬📱
+                                <span className="reaction-badge">r{n}</span>
+                              </button>
                             </>
                           );
                         })()}
@@ -1379,6 +1520,8 @@ export function ChatApp() {
           archives={archives}
           onRestoreArchive={restoreArchive}
           onDeleteArchive={deleteArchive}
+          whatsappNumber={state.settings.whatsappNumber}
+          onUpdateWhatsappNumber={(number) => updateSettings({ whatsappNumber: number })}
         />
       )}
       {activeModal === 'library' && (

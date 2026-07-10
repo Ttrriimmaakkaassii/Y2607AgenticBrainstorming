@@ -61,6 +61,8 @@ export interface Message {
   feedback: Feedback | null;
   /** Id of another message this one is replying to (WhatsApp-style quote reply). */
   replyToId: string | null;
+  starred: boolean;
+  category: string | null;
 }
 
 export interface Thread {
@@ -80,6 +82,8 @@ export interface ConversationSettings {
   responseStyle: ResponseStyle;
   ttsRate: number;
   ttsLang: string;
+  /** Digits only, international format without leading 00/+ (e.g. "212661320000"). */
+  whatsappNumber: string;
 }
 
 export interface ConversationState {

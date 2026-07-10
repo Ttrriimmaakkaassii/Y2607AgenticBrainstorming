@@ -29,6 +29,8 @@ interface SettingsModalProps {
   archives: ArchivedConversation[];
   onRestoreArchive: (archive: ArchivedConversation) => void;
   onDeleteArchive: (id: string) => void;
+  whatsappNumber: string;
+  onUpdateWhatsappNumber: (number: string) => void;
 }
 
 export function SettingsModal({
@@ -51,6 +53,8 @@ export function SettingsModal({
   archives,
   onRestoreArchive,
   onDeleteArchive,
+  whatsappNumber,
+  onUpdateWhatsappNumber,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
@@ -117,6 +121,19 @@ export function SettingsModal({
         <div className="modal-body">
           {tab === 'agent' && (
             <>
+              <div className="modal-section">
+                <div className="modal-section-title">Sharing</div>
+                <div className="form-group">
+                  <label>My WhatsApp Number (digits only, international format)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 212661320000 — leave blank to use the default"
+                    value={whatsappNumber}
+                    onChange={(e) => onUpdateWhatsappNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
               <div className="modal-section">
                 <div className="modal-section-title">Configure Agent</div>
                 <div className="form-group">
