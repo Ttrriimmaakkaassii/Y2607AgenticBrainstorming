@@ -13,12 +13,16 @@ export type Effort = 'low' | 'medium' | 'high';
 
 export interface Agent {
   id: string;
+  /** Auto-assigned, immutable reference like "Agt1" — never reused, unlike name/role. */
+  refNumber: string;
   name: string;
   role: string;
   instructions: string;
   color: string;
   llmProvider: LLMProvider;
   connectionId: string | null;
+  /** Whether this agent participates in new discussion rounds. */
+  active: boolean;
 }
 
 /**
@@ -68,4 +72,6 @@ export interface ConversationState {
   settings: ConversationSettings;
   status: 'idle' | 'running' | 'paused' | 'stopped';
   updatedAt: number;
+  /** Counter for the next Agt<N> reference number — never decreases, so numbers aren't reused. */
+  nextAgentNumber: number;
 }

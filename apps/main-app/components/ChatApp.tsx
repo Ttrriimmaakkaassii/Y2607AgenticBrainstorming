@@ -20,30 +20,36 @@ const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
 const DEFAULT_AGENTS: Agent[] = [
   {
     id: generateId(),
+    refNumber: 'Agt1',
     name: 'Agent A',
     role: 'Researcher',
     instructions: 'Research recent developments and gather supporting evidence.',
     color: '#3b99fc',
     llmProvider: 'openai',
     connectionId: null,
+    active: true,
   },
   {
     id: generateId(),
+    refNumber: 'Agt2',
     name: 'Agent B',
     role: 'Analyst',
     instructions: 'Weigh tradeoffs and challenge assumptions with data.',
     color: '#2ecc71',
     llmProvider: 'anthropic',
     connectionId: null,
+    active: true,
   },
   {
     id: generateId(),
+    refNumber: 'Agt3',
     name: 'Agent C',
     role: 'Moderator',
     instructions: 'Keep the discussion balanced and summarize consensus.',
     color: '#f39c12',
     llmProvider: 'google',
     connectionId: null,
+    active: true,
   },
 ];
 
@@ -62,7 +68,24 @@ function defaultState(): ConversationState {
     },
     status: 'idle',
     updatedAt: Date.now(),
+    nextAgentNumber: 4,
   };
+}
+
+/** Backfills refNumber/nextAgentNumber for conversations saved before this feature existed. */
+function migrateState(state: ConversationState): ConversationState {
+  let maxSeen = 0;
+  const agents = state.agents.map((agent) => {
+    const active = agent.active ?? true;
+    let refNumber = agent.refNumber;
+    if (!refNumber) {
+      refNumber = `Agt${maxSeen + 1}`;
+    }
+    const match = /Agt(\d+)/.exec(refNumber);
+    if (match) maxSeen = Math.max(maxSeen, Number(match[1]));
+    return { ...agent, refNumber, active };
+  });
+  return { ...state, agents, nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0) };
 }
 
 function getOrCreateConversationId(): string {
@@ -102,7 +125,7 @@ export function ChatApp() {
     const conversationId = getOrCreateConversationId();
     loadConversation(conversationId).then((loaded) => {
       if (loaded) {
-        setState(loaded);
+        setState(migrateState(loaded));
         setCurrentAgentId(loaded.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
       } else {
         setState((prev) => ({ ...prev, id: conversationId }));
@@ -218,11 +241,12 @@ export function ChatApp() {
   }
 
   async function startDiscussion() {
-    if (state.agents.length === 0) {
-      showToast('Add at least one agent first.');
+    const activeAgents = state.agents.filter((a) => a.active);
+    if (activeAgents.length === 0) {
+      showToast('Select at least one participating agent first.');
       return;
     }
-    const [opener, ...responders] = state.agents;
+    const [opener, ...responders] = activeAgents;
     const openingLine = await getReply(opener, []);
     const thread = createThread(opener.id, openingLine);
     setState((prev) => ({
@@ -269,8 +293,15 @@ export function ChatApp() {
 
     if (state.settings.orchestratorEnabled && state.status !== 'paused') {
       const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
-      runAgentRound(threadWithUserMsg, state.agents);
+      runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.active));
     }
+  }
+
+  function toggleAgentActive(id: string) {
+    setState((prev) => ({
+      ...prev,
+      agents: prev.agents.map((a) => (a.id === id ? { ...a, active: !a.active } : a)),
+    }));
   }
 
   function handleFeedback(threadId: string, messageId: string, type: Feedback) {
@@ -323,33 +354,47 @@ export function ChatApp() {
   }
 
   function addAgent() {
+    const refNumber = `Agt${state.nextAgentNumber}`;
     const newAgent: Agent = {
       id: generateId(),
+      refNumber,
       name: `Agent ${state.agents.length + 1}`,
       role: 'Contributor',
       instructions: 'Share a distinct perspective on the topic.',
       color: '#8e44ad',
       llmProvider: 'openai',
       connectionId: null,
+      active: true,
     };
-    setState((prev) => ({ ...prev, agents: [...prev.agents, newAgent] }));
+    setState((prev) => ({
+      ...prev,
+      agents: [...prev.agents, newAgent],
+      nextAgentNumber: prev.nextAgentNumber + 1,
+    }));
     setCurrentAgentId(newAgent.id);
-    showToast('➕ New agent added');
+    showToast(`➕ New agent added (${refNumber})`);
   }
 
   function addAgentFromPreset(preset: AgentPreset) {
+    const refNumber = `Agt${state.nextAgentNumber}`;
     const newAgent: Agent = {
       id: generateId(),
+      refNumber,
       name: preset.name,
       role: preset.role,
       instructions: preset.instructions,
       color: preset.color,
       llmProvider: 'openai',
       connectionId: null,
+      active: true,
     };
-    setState((prev) => ({ ...prev, agents: [...prev.agents, newAgent] }));
+    setState((prev) => ({
+      ...prev,
+      agents: [...prev.agents, newAgent],
+      nextAgentNumber: prev.nextAgentNumber + 1,
+    }));
     setCurrentAgentId(newAgent.id);
-    showToast(`➕ Added ${preset.name}`);
+    showToast(`➕ Added ${preset.name} (${refNumber})`);
   }
 
   function deleteAgent(id: string) {
@@ -384,7 +429,7 @@ export function ChatApp() {
           >
             {state.agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
-                {agent.name} ({agent.role})
+                {agent.refNumber} · {agent.name} ({agent.role})
               </option>
             ))}
           </select>
@@ -418,6 +463,22 @@ export function ChatApp() {
             ⚙️ Settings
           </button>
         </div>
+      </div>
+
+      <div className="participants-bar">
+        <span className="control-label">Participants:</span>
+        {state.agents.map((agent) => (
+          <button
+            key={agent.id}
+            className={`participant-chip ${agent.active ? 'active' : ''}`}
+            style={{ borderColor: agent.color }}
+            onClick={() => toggleAgentActive(agent.id)}
+            title={agent.active ? 'Click to remove from discussion' : 'Click to include in discussion'}
+          >
+            <span className="participant-dot" style={{ background: agent.color }} />
+            {agent.refNumber} {agent.name}
+          </button>
+        ))}
       </div>
 
       <div className="controls-panel">
@@ -518,7 +579,9 @@ export function ChatApp() {
                   {(owner?.name ?? '?').charAt(0).toUpperCase()}
                 </div>
                 <div className="thread-info">
-                  <div className="thread-title">{owner?.name ?? 'Unknown agent'}</div>
+                  <div className="thread-title">
+                  {owner ? `${owner.refNumber} · ${owner.name}` : 'Unknown agent'}
+                </div>
                   <div className="thread-timestamp">
                     Started {new Date(thread.createdAt).toLocaleString()}
                   </div>
@@ -543,7 +606,9 @@ export function ChatApp() {
                       {isUser ? 'Y' : (author?.name ?? '?').charAt(0).toUpperCase()}
                     </div>
                     <div className="bubble-content">
-                      <div className="bubble-name">{isUser ? 'You' : author?.name ?? 'Unknown'}</div>
+                      <div className="bubble-name">
+                        {isUser ? 'You' : author ? `${author.refNumber} · ${author.name}` : 'Unknown'}
+                      </div>
                       <div className="bubble-text">{msg.content}</div>
                       <div className="feedback-controls">
                         {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (

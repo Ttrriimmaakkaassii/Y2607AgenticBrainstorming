@@ -56,6 +56,9 @@ export async function loadConversation(id: string): Promise<ConversationState | 
         settings: data.settings,
         status: data.status,
         updatedAt: new Date(data.updated_at).getTime(),
+        // Not stored in Supabase (no matching column) — recomputed by migrateState
+        // from the agents' existing refNumbers after load.
+        nextAgentNumber: 0,
       };
     }
     if (error) {
