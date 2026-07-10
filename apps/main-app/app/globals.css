@@ -137,6 +137,25 @@ body {
   gap: 8px;
 }
 
+.settings-gear-btn {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 40;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel);
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.settings-gear-btn:hover {
+  background: var(--bg-input);
+}
+
 .header-left,
 .header-right {
   display: flex;
@@ -432,6 +451,20 @@ body {
   display: flex;
   gap: 8px;
   margin-bottom: 8px;
+  margin-left: 0;
+  transition: margin-left 0.2s ease;
+}
+
+.bubble-wrapper.speaker-shift {
+  margin-left: 22px;
+}
+
+.msg-number {
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 6px;
+  opacity: 0.7;
 }
 
 .bubble-content {
@@ -649,6 +682,30 @@ body.dev-mode [data-devref]::after {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.settings-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.settings-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 
 .modal-title {

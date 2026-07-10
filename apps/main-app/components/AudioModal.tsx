@@ -6,12 +6,24 @@ import { Agent, Message, Thread } from '@/lib/types';
 interface AudioModalProps {
   agents: Agent[];
   threads: Thread[];
+  ttsRate: number;
+  ttsLang: string;
+  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string }) => void;
   onClose: () => void;
   onToast: (message: string) => void;
+  embedded?: boolean;
 }
 
-export function AudioModal({ agents, threads, onClose, onToast }: AudioModalProps) {
-  const [speed, setSpeed] = useState<'normal' | 'fast' | 'slow'>('normal');
+export function AudioModal({
+  agents,
+  threads,
+  ttsRate,
+  ttsLang,
+  onUpdateTts,
+  onClose,
+  onToast,
+  embedded,
+}: AudioModalProps) {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const messages = threads.flatMap((t) => t.messages);
   const cancelledRef = useRef(false);
@@ -33,7 +45,6 @@ export function AudioModal({ agents, threads, onClose, onToast }: AudioModalProp
     }
     window.speechSynthesis.cancel();
     cancelledRef.current = false;
-    const rate = speed === 'fast' ? 1.4 : speed === 'slow' ? 0.7 : 1;
 
     function speakAt(index: number) {
       if (cancelledRef.current || index >= messages.length) {
@@ -42,7 +53,8 @@ export function AudioModal({ agents, threads, onClose, onToast }: AudioModalProp
       }
       const msg = messages[index];
       const utterance = new SpeechSynthesisUtterance(`${authorName(msg)} says: ${msg.content}`);
-      utterance.rate = rate;
+      utterance.rate = ttsRate;
+      utterance.lang = ttsLang;
       utterance.onstart = () => setPlayingIndex(index);
       utterance.onend = () => speakAt(index + 1);
       utterance.onerror = () => speakAt(index + 1);
@@ -62,6 +74,74 @@ export function AudioModal({ agents, threads, onClose, onToast }: AudioModalProp
     onToast('⏹️ Playback stopped');
   }
 
+  const content = (
+    <>
+      <div className="modal-section">
+        <div className="modal-section-title">Now Playing</div>
+        {messages.length === 0 && <div className="empty-state">No messages yet.</div>}
+        <div className="audio-track-viewer">
+          {messages.map((msg, i) => (
+            <button
+              key={msg.id}
+              className={`audio-track-chip ${playingIndex === i ? 'playing' : ''}`}
+              onClick={() => playFrom(i)}
+              title={`Play from: ${authorName(msg)} — ${msg.content.slice(0, 60)}`}
+            >
+              <span className="audio-track-author">{authorName(msg)}</span>
+              <span className="audio-track-snippet">{msg.content.slice(0, 40)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="modal-section">
+        <div className="form-group">
+          <label>Voice Speed</label>
+          <input
+            type="number"
+            min={0.5}
+            max={2}
+            step={0.1}
+            value={ttsRate}
+            onChange={(e) => onUpdateTts({ ttsRate: Number(e.target.value) || 1 })}
+          />
+        </div>
+        <div className="form-group">
+          <label>Voice Language</label>
+          <select value={ttsLang} onChange={(e) => onUpdateTts({ ttsLang: e.target.value })}>
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="es-ES">Spanish</option>
+            <option value="fr-FR">French</option>
+            <option value="de-DE">German</option>
+            <option value="pt-BR">Portuguese (BR)</option>
+            <option value="it-IT">Italian</option>
+            <option value="zh-CN">Chinese (Mandarin)</option>
+            <option value="ja-JP">Japanese</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="ar-SA">Arabic</option>
+          </select>
+        </div>
+        <button className="btn-primary" onClick={() => playFrom(0)}>
+          ▶️ Play From Start
+        </button>
+        <button className="btn-secondary" onClick={stopSpeaking} style={{ marginTop: 8 }}>
+          ⏹️ Stop
+        </button>
+      </div>
+      <div className="modal-section">
+        <div className="modal-section-title">Note</div>
+        <div style={{ fontSize: 12, color: '#667781' }}>
+          Playback uses your browser&apos;s built-in text-to-speech engine, so no audio file can be
+          downloaded from here — MP3 export would require a server-side TTS provider (e.g.
+          ElevenLabs) that isn&apos;t configured for this deployment yet.
+        </div>
+      </div>
+    </>
+  );
+
+  if (embedded) return content;
+
   return (
     <div className="modal-overlay active" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700 }}>
@@ -71,50 +151,7 @@ export function AudioModal({ agents, threads, onClose, onToast }: AudioModalProp
             ×
           </button>
         </div>
-        <div className="modal-body">
-          <div className="modal-section">
-            <div className="modal-section-title">Now Playing</div>
-            {messages.length === 0 && <div className="empty-state">No messages yet.</div>}
-            <div className="audio-track-viewer">
-              {messages.map((msg, i) => (
-                <button
-                  key={msg.id}
-                  className={`audio-track-chip ${playingIndex === i ? 'playing' : ''}`}
-                  onClick={() => playFrom(i)}
-                  title={`Play from: ${authorName(msg)} — ${msg.content.slice(0, 60)}`}
-                >
-                  <span className="audio-track-author">{authorName(msg)}</span>
-                  <span className="audio-track-snippet">{msg.content.slice(0, 40)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="modal-section">
-            <div className="form-group">
-              <label>Speech Rate</label>
-              <select value={speed} onChange={(e) => setSpeed(e.target.value as any)}>
-                <option value="normal">Normal</option>
-                <option value="fast">Fast</option>
-                <option value="slow">Slow</option>
-              </select>
-            </div>
-            <button className="btn-primary" onClick={() => playFrom(0)}>
-              ▶️ Play From Start
-            </button>
-            <button className="btn-secondary" onClick={stopSpeaking} style={{ marginTop: 8 }}>
-              ⏹️ Stop
-            </button>
-          </div>
-          <div className="modal-section">
-            <div className="modal-section-title">Note</div>
-            <div style={{ fontSize: 12, color: '#667781' }}>
-              Playback uses your browser&apos;s built-in text-to-speech engine, so no audio file
-              can be downloaded from here — MP3 export would require a server-side TTS provider
-              (e.g. ElevenLabs) that isn&apos;t configured for this deployment yet.
-            </div>
-          </div>
-        </div>
+        <div className="modal-body">{content}</div>
       </div>
     </div>
   );

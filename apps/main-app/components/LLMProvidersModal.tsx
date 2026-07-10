@@ -12,6 +12,8 @@ interface LLMProvidersModalProps {
   onUpdateAgents: (agents: Agent[]) => void;
   onClose: () => void;
   onToast: (message: string) => void;
+  /** When true, renders just the panel content (no overlay/modal chrome) for embedding in a tab. */
+  embedded?: boolean;
 }
 
 function maskKey(key: string): string {
@@ -26,6 +28,7 @@ export function LLMProvidersModal({
   onUpdateAgents,
   onClose,
   onToast,
+  embedded,
 }: LLMProvidersModalProps) {
   const [provider, setProvider] = useState<LLMProvider>('openai');
   const [model, setModel] = useState(LLM_CATALOG[0].models[0].id);
@@ -150,16 +153,8 @@ export function LLMProvidersModal({
     onToast('✅ Agent LLM assignments saved');
   }
 
-  return (
-    <div className="modal-overlay active" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
-        <div className="modal-header">
-          <span className="modal-title">🔌 LLM Providers</span>
-          <button className="modal-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <div className="modal-body">
+  const content = (
+    <>
           <div className="modal-section">
             <div className="modal-section-title">Add an LLM</div>
             <div className="form-group">
@@ -339,7 +334,21 @@ export function LLMProvidersModal({
               respond and will appear greyed out in the conversation.
             </div>
           </div>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div className="modal-overlay active" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+        <div className="modal-header">
+          <span className="modal-title">🔌 LLM Providers</span>
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
         </div>
+        <div className="modal-body">{content}</div>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AGENT_LIBRARY, AgentPreset, SkillCategory } from '@/lib/agent-library';
-import { loadCustomAgents, removeCustomAgent } from '@/lib/custom-agents';
+import { loadCustomAgents, removeCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 
 interface AgentLibraryModalProps {
   onAdd: (preset: AgentPreset) => void;
@@ -10,6 +10,7 @@ interface AgentLibraryModalProps {
 }
 
 const CUSTOM_CATEGORY_ID = 'custom';
+const UNCATEGORIZED = 'Uncategorized';
 
 export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
@@ -18,9 +19,14 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
     setCustomAgents(loadCustomAgents());
   }, []);
 
+  // A custom agent tagged with a built-in category's name also shows up
+  // browsing that category, alongside the built-in presets.
   const categories: SkillCategory[] = [
     { id: CUSTOM_CATEGORY_ID, name: 'My Saved Agents', icon: '⭐', presets: customAgents },
-    ...AGENT_LIBRARY,
+    ...AGENT_LIBRARY.map((c) => ({
+      ...c,
+      presets: [...c.presets, ...customAgents.filter((a) => a.category === c.name)],
+    })),
   ];
 
   const [categoryId, setCategoryId] = useState(CUSTOM_CATEGORY_ID);
@@ -29,6 +35,12 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
   function deletePreset(name: string) {
     removeCustomAgent(name);
     setCustomAgents((prev) => prev.filter((p) => p.name !== name));
+  }
+
+  function setPresetCategory(preset: AgentPreset, newCategory: string) {
+    const updated = { ...preset, category: newCategory === UNCATEGORIZED ? undefined : newCategory };
+    upsertCustomAgent(updated);
+    setCustomAgents((prev) => prev.map((p) => (p.name === preset.name ? updated : p)));
   }
 
   return (
@@ -48,6 +60,9 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.icon} {c.name}
+                    {c.id !== CUSTOM_CATEGORY_ID &&
+                      customAgents.some((a) => a.category === c.name) &&
+                      ' ⭐'}
                   </option>
                 ))}
               </select>
@@ -65,31 +80,49 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                   : 'No agents in this category.'}
               </div>
             )}
-            {category.presets.map((preset) => (
-              <div className="agent-list-item" key={preset.name}>
-                <div className="avatar" style={{ background: preset.color }}>
-                  {preset.role.charAt(0).toUpperCase()}
-                </div>
-                <div className="agent-info">
-                  <div className="agent-name">
-                    {preset.name} — {preset.role}
+            {category.presets.map((preset) => {
+              const isCustom = customAgents.some((a) => a.name === preset.name);
+              return (
+                <div className="agent-list-item" key={preset.name}>
+                  <div className="avatar" style={{ background: preset.color }}>
+                    {preset.role.charAt(0).toUpperCase()}
                   </div>
-                  <div className="agent-instructions">{preset.instructions}</div>
-                </div>
-                <button className="btn-icon" onClick={() => onAdd(preset)} title="Add to conversation">
-                  ➕
-                </button>
-                {categoryId === CUSTOM_CATEGORY_ID && (
-                  <button
-                    className="btn-icon delete"
-                    onClick={() => deletePreset(preset.name)}
-                    title="Erase from library permanently"
-                  >
-                    🗑️
+                  <div className="agent-info">
+                    <div className="agent-name">
+                      {preset.name} — {preset.role}
+                    </div>
+                    <div className="agent-instructions">{preset.instructions}</div>
+                    {categoryId === CUSTOM_CATEGORY_ID && isCustom && (
+                      <select
+                        value={preset.category ?? UNCATEGORIZED}
+                        onChange={(e) => setPresetCategory(preset, e.target.value)}
+                        style={{ marginTop: 4, fontSize: 11, padding: '2px 4px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <option value={UNCATEGORIZED}>{UNCATEGORIZED}</option>
+                        {AGENT_LIBRARY.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.icon} {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <button className="btn-icon" onClick={() => onAdd(preset)} title="Add to conversation">
+                    ➕
                   </button>
-                )}
-              </div>
-            ))}
+                  {categoryId === CUSTOM_CATEGORY_ID && isCustom && (
+                    <button
+                      className="btn-icon delete"
+                      onClick={() => deletePreset(preset.name)}
+                      title="Erase from library permanently"
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

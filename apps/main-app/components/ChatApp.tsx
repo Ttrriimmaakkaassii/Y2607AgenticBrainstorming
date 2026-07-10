@@ -28,6 +28,7 @@ import { loadConversation, saveConversation } from '@/lib/storage';
 import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { Theme, applyTheme, loadTheme } from '@/lib/theme';
+import { addCustomMood, loadCustomMoods } from '@/lib/moods';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
 import { AudioRail } from './AudioRail';
@@ -171,15 +172,15 @@ export function ChatApp() {
   const [toast, setToast] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | 'library' | 'mindmap' | 'archives' | null
+    'settings' | 'analytics' | 'export' | 'library' | 'mindmap' | null
   >(null);
-  // When opening LLMs/Library from inside Settings, remember to return there
+  // When opening the Library from inside Settings, remember to return there
   // on close instead of dropping the user out with no modal open at all.
   const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
 
-  function openSubModalFromSettings(target: 'llmProviders' | 'library') {
+  function openLibraryFromSettings() {
     setModalReturnTo('settings');
-    setActiveModal(target);
+    setActiveModal('library');
   }
 
   function closeSubModal() {
@@ -207,6 +208,11 @@ export function ChatApp() {
   }, [state.settings]);
   const [showAudioRail, setShowAudioRail] = useState(true);
   const [theme, setTheme] = useState<Theme>('light');
+  const [customMoods, setCustomMoods] = useState<string[]>([]);
+
+  useEffect(() => {
+    setCustomMoods(loadCustomMoods());
+  }, []);
   const [devMode, setDevMode] = useState(false);
   /** agentId -> threadId, for every agent currently awaiting an LLM reply. */
   const [thinking, setThinking] = useState<Map<string, string>>(new Map());
@@ -363,15 +369,19 @@ export function ChatApp() {
     extraInstruction?: string
   ): Promise<string | null> {
     if (!agentIsConnected(agent)) return null;
+    // Reads live settings via the ref (not the closured `state`) so changes
+    // like mood/topic made mid-conversation apply immediately, even while
+    // a long auto-loop round is already in flight.
+    const live = settingsRef.current;
     const reply = await fetchAgentReply(
       agent,
       connections,
-      state.settings.mood,
-      state.settings.topic,
+      live.mood,
+      live.topic,
       precedingMessages,
       state.agents,
-      state.settings.responseStyle,
-      state.settings.maxSentences,
+      live.responseStyle,
+      live.maxSentences,
       extraInstruction
     );
     if (reply) {
@@ -884,12 +894,29 @@ export function ChatApp() {
           <select
             className="select-input"
             value={state.settings.mood}
-            onChange={(e) => updateSettings({ mood: e.target.value as Mood })}
+            onChange={(e) => updateSettings({ mood: e.target.value })}
           >
             <option value="debate">🗣️ Debate</option>
             <option value="complementary">💡 Complementary</option>
             <option value="research">🔍 Research</option>
+            {customMoods.map((m) => (
+              <option key={m} value={m}>
+                🎭 {m}
+              </option>
+            ))}
           </select>
+          <button
+            className="icon-btn"
+            title="Add a custom discussion mood"
+            onClick={() => {
+              const mood = window.prompt('Name a new discussion mood (e.g. "brainstorm", "socratic"):', '');
+              if (!mood?.trim()) return;
+              setCustomMoods(addCustomMood(mood));
+              updateSettings({ mood: mood.trim() });
+            }}
+          >
+            +
+          </button>
         </div>
         <div className="header-right">
           <button className="icon-btn" {...devRef('a1')} onClick={() => setShowAudioRail((v) => !v)}>
@@ -905,30 +932,11 @@ export function ChatApp() {
           >
             📚 Library
           </button>
-          <button
-            className="icon-btn"
-            {...devRef('a3')}
-            onClick={() => {
-              setModalReturnTo(null);
-              setActiveModal('llmProviders');
-            }}
-          >
-            🔌 LLMs
-          </button>
-          <button className="icon-btn" {...devRef('a4')} onClick={() => setActiveModal('audio')}>
-            🎧 Audio
-          </button>
           <button className="icon-btn" {...devRef('a5')} onClick={() => setActiveModal('analytics')}>
             📊 Analytics
           </button>
           <button className="icon-btn" {...devRef('a6')} onClick={() => setActiveModal('export')}>
             📥 Export
-          </button>
-          <button className="icon-btn" {...devRef('a7')} onClick={() => setActiveModal('archives')}>
-            🗄️ Archives
-          </button>
-          <button className="icon-btn" {...devRef('a8')} onClick={() => setActiveModal('settings')}>
-            ⚙️ Settings
           </button>
           <select
             className="icon-btn"
@@ -950,6 +958,18 @@ export function ChatApp() {
         </div>
       </div>
 
+      <button
+        className="settings-gear-btn"
+        {...devRef('a8')}
+        onClick={() => {
+          setModalReturnTo(null);
+          setActiveModal('settings');
+        }}
+        title="Settings (Agents, LLMs, Audio, Archives)"
+      >
+        ⚙️
+      </button>
+
       <div className="participants-bar" {...devRef('p1')}>
         <span className="control-label">Participants:</span>
         {state.agents.map((agent, agentIndex) => {
@@ -961,12 +981,17 @@ export function ChatApp() {
               className={`participant-chip ${agent.active && connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
               style={{ borderColor: agent.color }}
               onClick={() => toggleAgentActive(agent.id)}
+              onDoubleClick={() => {
+                setCurrentAgentId(agent.id);
+                setModalReturnTo(null);
+                setActiveModal('settings');
+              }}
               title={
                 !connected
-                  ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs`
+                  ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs (double-click to open Settings)`
                   : agent.active
-                  ? 'Click to remove from discussion'
-                  : 'Click to include in discussion'
+                  ? 'Click to remove from discussion, double-click to open Settings'
+                  : 'Click to include in discussion, double-click to open Settings'
               }
             >
               <span className="participant-dot" style={{ background: agent.color }} />
@@ -1044,41 +1069,6 @@ export function ChatApp() {
           />
         </div>
         <div className="control-group">
-          <span className="control-label">Voice Speed:</span>
-          <input
-            type="number"
-            className="control-input"
-            {...devRef('c6')}
-            min={0.5}
-            max={2}
-            step={0.1}
-            value={state.settings.ttsRate}
-            onChange={(e) => updateSettings({ ttsRate: Number(e.target.value) || 1 })}
-          />
-        </div>
-        <div className="control-group">
-          <span className="control-label">Voice Language:</span>
-          <select
-            className="control-input"
-            {...devRef('c7')}
-            style={{ width: 'auto' }}
-            value={state.settings.ttsLang}
-            onChange={(e) => updateSettings({ ttsLang: e.target.value })}
-          >
-            <option value="en-US">English (US)</option>
-            <option value="en-GB">English (UK)</option>
-            <option value="es-ES">Spanish</option>
-            <option value="fr-FR">French</option>
-            <option value="de-DE">German</option>
-            <option value="pt-BR">Portuguese (BR)</option>
-            <option value="it-IT">Italian</option>
-            <option value="zh-CN">Chinese (Mandarin)</option>
-            <option value="ja-JP">Japanese</option>
-            <option value="hi-IN">Hindi</option>
-            <option value="ar-SA">Arabic</option>
-          </select>
-        </div>
-        <div className="control-group">
           <input
             type="checkbox"
             id="orchestrator"
@@ -1091,12 +1081,15 @@ export function ChatApp() {
           </label>
         </div>
         <div className="control-group">
-          <button className="control-btn" {...devRef('c9')} onClick={playConversation}>
-            ▶️ Play
-          </button>
-          <button className="control-btn" {...devRef('c10')} onClick={pauseConversation}>
-            ⏸️ Pause
-          </button>
+          {state.status === 'running' ? (
+            <button className="control-btn" {...devRef('c9')} onClick={pauseConversation}>
+              ⏸️ Pause
+            </button>
+          ) : (
+            <button className="control-btn" {...devRef('c9')} onClick={playConversation}>
+              ▶️ Play
+            </button>
+          )}
           <button className="control-btn" {...devRef('c11')} onClick={stopConversation}>
             ⏹️ Stop
           </button>
@@ -1185,21 +1178,33 @@ export function ChatApp() {
                 </button>
               </div>
 
-              {thread.messages.map((msg) => {
-                const isUser = msg.agentId === 'user';
-                const author = isUser ? null : agentById(msg.agentId);
-                const quoted = msg.replyToId ? messageById(msg.replyToId) : undefined;
-                return (
-                  <div className={`bubble-wrapper ${isUser ? 'user' : ''}`} key={msg.id}>
+              {(() => {
+                let shiftToggle = false;
+                return thread.messages.map((msg, msgIndex) => {
+                  if (msgIndex > 0 && thread.messages[msgIndex - 1].agentId !== msg.agentId) {
+                    shiftToggle = !shiftToggle;
+                  }
+                  const isUser = msg.agentId === 'user';
+                  const author = isUser ? null : agentById(msg.agentId);
+                  const quoted = msg.replyToId ? messageById(msg.replyToId) : undefined;
+                  const globalIndex = allMessages.findIndex((m) => m.id === msg.id);
+                  const msgNumber = `Msg${String(globalIndex + 1).padStart(3, '0')}`;
+                  const bubbleColor = isUser ? '#95ec69' : author?.color ?? '#999';
+                  return (
+                <div
+                  className={`bubble-wrapper ${isUser ? 'user' : ''} ${shiftToggle ? 'speaker-shift' : ''}`}
+                  key={msg.id}
+                >
                     <div
                       className="avatar"
-                      style={{ background: isUser ? '#95ec69' : author?.color ?? '#999' }}
+                      style={{ background: bubbleColor }}
                     >
                       {isUser ? 'Y' : (author?.name ?? '?').charAt(0).toUpperCase()}
                     </div>
                     <div className="bubble-content">
                       <div className="bubble-name">
                         {isUser ? 'You' : author ? `${author.refNumber} · ${author.name}` : 'Unknown'}
+                        <span className="msg-number">{msgNumber}</span>
                       </div>
                       {quoted && (
                         <div className="quoted-reply">
@@ -1209,10 +1214,9 @@ export function ChatApp() {
                       )}
                       <div
                         className="bubble-text bubble-text-clickable"
+                        style={{ borderLeft: `4px solid ${bubbleColor}` }}
                         title="Click to read aloud from here"
-                        onClick={() =>
-                          playFromMessage(allMessages.findIndex((m) => m.id === msg.id))
-                        }
+                        onClick={() => playFromMessage(globalIndex)}
                       >
                         <MessageContent
                           content={msg.content}
@@ -1293,8 +1297,9 @@ export function ChatApp() {
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                  );
+                });
+              })()}
               {Array.from(thinking.entries())
                 .filter(([, threadId]) => threadId === thread.id)
                 .map(([agentId]) => {
@@ -1362,31 +1367,22 @@ export function ChatApp() {
           onSave={saveAgent}
           onAdd={addAgent}
           onDelete={deleteAgent}
-          onOpenLLMProviders={() => openSubModalFromSettings('llmProviders')}
-          onOpenLibrary={() => openSubModalFromSettings('library')}
+          onOpenLibrary={openLibraryFromSettings}
           onClose={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === 'llmProviders' && (
-        <LLMProvidersModal
-          connections={connections}
-          onChange={updateConnections}
-          agents={state.agents}
-          onUpdateAgents={updateAgentsBulk}
-          onClose={closeSubModal}
           onToast={showToast}
+          onChangeConnections={updateConnections}
+          onUpdateAgentsBulk={updateAgentsBulk}
+          threads={state.threads}
+          ttsRate={state.settings.ttsRate}
+          ttsLang={state.settings.ttsLang}
+          onUpdateTts={(updates) => updateSettings(updates)}
+          archives={archives}
+          onRestoreArchive={restoreArchive}
+          onDeleteArchive={deleteArchive}
         />
       )}
       {activeModal === 'library' && (
         <AgentLibraryModal onAdd={addAgentFromPreset} onClose={closeSubModal} />
-      )}
-      {activeModal === 'audio' && (
-        <AudioModal
-          agents={state.agents}
-          threads={state.threads}
-          onClose={() => setActiveModal(null)}
-          onToast={showToast}
-        />
       )}
       {activeModal === 'analytics' && (
         <AnalyticsModal
@@ -1410,14 +1406,6 @@ export function ChatApp() {
         <MindmapModal
           markdown={mindmapData.markdown}
           title={mindmapData.title}
-          onClose={() => setActiveModal(null)}
-        />
-      )}
-      {activeModal === 'archives' && (
-        <ArchivesModal
-          archives={archives}
-          onRestore={restoreArchive}
-          onDelete={deleteArchive}
           onClose={() => setActiveModal(null)}
         />
       )}

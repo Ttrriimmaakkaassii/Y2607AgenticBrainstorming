@@ -1,5 +1,6 @@
 export type Feedback = 'like' | 'dislike' | 'clarify';
-export type Mood = 'debate' | 'complementary' | 'research';
+/** Built-in suggestions are 'debate' | 'complementary' | 'research', but users can add their own. */
+export type Mood = string;
 export type LLMProvider =
   | 'openai'
   | 'anthropic'
