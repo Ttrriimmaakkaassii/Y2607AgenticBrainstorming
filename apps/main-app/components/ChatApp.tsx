@@ -173,6 +173,19 @@ export function ChatApp() {
   const [activeModal, setActiveModal] = useState<
     'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | 'library' | 'mindmap' | 'archives' | null
   >(null);
+  // When opening LLMs/Library from inside Settings, remember to return there
+  // on close instead of dropping the user out with no modal open at all.
+  const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
+
+  function openSubModalFromSettings(target: 'llmProviders' | 'library') {
+    setModalReturnTo('settings');
+    setActiveModal(target);
+  }
+
+  function closeSubModal() {
+    setActiveModal(modalReturnTo);
+    setModalReturnTo(null);
+  }
   const [mindmapData, setMindmapData] = useState<{ markdown: string; title: string } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
@@ -882,10 +895,24 @@ export function ChatApp() {
           <button className="icon-btn" {...devRef('a1')} onClick={() => setShowAudioRail((v) => !v)}>
             🎙️ Rail
           </button>
-          <button className="icon-btn" {...devRef('a2')} onClick={() => setActiveModal('library')}>
+          <button
+            className="icon-btn"
+            {...devRef('a2')}
+            onClick={() => {
+              setModalReturnTo(null);
+              setActiveModal('library');
+            }}
+          >
             📚 Library
           </button>
-          <button className="icon-btn" {...devRef('a3')} onClick={() => setActiveModal('llmProviders')}>
+          <button
+            className="icon-btn"
+            {...devRef('a3')}
+            onClick={() => {
+              setModalReturnTo(null);
+              setActiveModal('llmProviders');
+            }}
+          >
             🔌 LLMs
           </button>
           <button className="icon-btn" {...devRef('a4')} onClick={() => setActiveModal('audio')}>
@@ -1335,8 +1362,8 @@ export function ChatApp() {
           onSave={saveAgent}
           onAdd={addAgent}
           onDelete={deleteAgent}
-          onOpenLLMProviders={() => setActiveModal('llmProviders')}
-          onOpenLibrary={() => setActiveModal('library')}
+          onOpenLLMProviders={() => openSubModalFromSettings('llmProviders')}
+          onOpenLibrary={() => openSubModalFromSettings('library')}
           onClose={() => setActiveModal(null)}
         />
       )}
@@ -1346,12 +1373,12 @@ export function ChatApp() {
           onChange={updateConnections}
           agents={state.agents}
           onUpdateAgents={updateAgentsBulk}
-          onClose={() => setActiveModal(null)}
+          onClose={closeSubModal}
           onToast={showToast}
         />
       )}
       {activeModal === 'library' && (
-        <AgentLibraryModal onAdd={addAgentFromPreset} onClose={() => setActiveModal(null)} />
+        <AgentLibraryModal onAdd={addAgentFromPreset} onClose={closeSubModal} />
       )}
       {activeModal === 'audio' && (
         <AudioModal
