@@ -34,3 +34,9 @@ export function upsertCustomAgent(preset: AgentPreset): void {
   }
   saveCustomAgents(list);
 }
+
+/** Permanently erases a saved agent from the library (not just from a conversation). */
+export function removeCustomAgent(name: string): void {
+  const key = name.trim().toLowerCase();
+  saveCustomAgents(loadCustomAgents().filter((p) => p.name.trim().toLowerCase() !== key));
+}

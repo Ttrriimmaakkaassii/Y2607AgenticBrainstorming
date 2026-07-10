@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { AGENT_LIBRARY, AgentPreset, SkillCategory } from '@/lib/agent-library';
-import { loadCustomAgents } from '@/lib/custom-agents';
+import { loadCustomAgents, removeCustomAgent } from '@/lib/custom-agents';
 
 interface AgentLibraryModalProps {
   onAdd: (preset: AgentPreset) => void;
   onClose: () => void;
 }
+
+const CUSTOM_CATEGORY_ID = 'custom';
 
 export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
@@ -16,13 +18,18 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
     setCustomAgents(loadCustomAgents());
   }, []);
 
-  const categories: SkillCategory[] =
-    customAgents.length > 0
-      ? [{ id: 'custom', name: 'My Saved Agents', icon: '⭐', presets: customAgents }, ...AGENT_LIBRARY]
-      : AGENT_LIBRARY;
+  const categories: SkillCategory[] = [
+    { id: CUSTOM_CATEGORY_ID, name: 'My Saved Agents', icon: '⭐', presets: customAgents },
+    ...AGENT_LIBRARY,
+  ];
 
-  const [categoryId, setCategoryId] = useState(categories[0].id);
+  const [categoryId, setCategoryId] = useState(CUSTOM_CATEGORY_ID);
   const category = categories.find((c) => c.id === categoryId) ?? categories[0];
+
+  function deletePreset(name: string) {
+    removeCustomAgent(name);
+    setCustomAgents((prev) => prev.filter((p) => p.name !== name));
+  }
 
   return (
     <div className="modal-overlay active" onClick={onClose}>
@@ -49,12 +56,13 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
 
           <div className="modal-section">
             <div className="modal-section-title">
-              {categoryId === 'custom' ? 'Saved Agents' : 'Suggested Agents'}
+              {categoryId === CUSTOM_CATEGORY_ID ? 'Saved Agents' : 'Suggested Agents'}
             </div>
             {category.presets.length === 0 && (
               <div className="empty-state">
-                No saved agents yet — agents you add or edit in a conversation are automatically
-                saved here, even after you delete them from that conversation.
+                {categoryId === CUSTOM_CATEGORY_ID
+                  ? 'No saved agents yet — any agent you add or edit in a conversation is automatically saved here, and stays even after you delete it from that conversation, until you erase it below.'
+                  : 'No agents in this category.'}
               </div>
             )}
             {category.presets.map((preset) => (
@@ -71,6 +79,15 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                 <button className="btn-icon" onClick={() => onAdd(preset)} title="Add to conversation">
                   ➕
                 </button>
+                {categoryId === CUSTOM_CATEGORY_ID && (
+                  <button
+                    className="btn-icon delete"
+                    onClick={() => deletePreset(preset.name)}
+                    title="Erase from library permanently"
+                  >
+                    🗑️
+                  </button>
+                )}
               </div>
             ))}
           </div>

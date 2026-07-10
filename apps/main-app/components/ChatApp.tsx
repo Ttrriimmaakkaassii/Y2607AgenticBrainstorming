@@ -27,6 +27,7 @@ import { getSession, onAuthStateChange } from '@/lib/auth';
 import { loadConversation, saveConversation } from '@/lib/storage';
 import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
+import { Theme, applyTheme, loadTheme } from '@/lib/theme';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
 import { AudioRail } from './AudioRail';
@@ -187,7 +188,33 @@ export function ChatApp() {
   useEffect(() => {
     statusRef.current = state.status;
   }, [state.status]);
+  const settingsRef = useRef(state.settings);
+  useEffect(() => {
+    settingsRef.current = state.settings;
+  }, [state.settings]);
   const [showAudioRail, setShowAudioRail] = useState(true);
+  const [theme, setTheme] = useState<Theme>('light');
+  const [devMode, setDevMode] = useState(false);
+
+  useEffect(() => {
+    const t = loadTheme();
+    setTheme(t);
+    applyTheme(t);
+  }, []);
+
+  function changeTheme(next: Theme) {
+    setTheme(next);
+    applyTheme(next);
+  }
+
+  useEffect(() => {
+    document.body.classList.toggle('dev-mode', devMode);
+  }, [devMode]);
+
+  /** In Dev Mode, every tagged element shows this code as a small badge (CSS ::after). */
+  function devRef(code: string): { 'data-devref'?: string } {
+    return devMode ? { 'data-devref': code } : {};
+  }
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -262,8 +289,12 @@ export function ChatApp() {
   }
 
   function withinLimits(thread: Thread): boolean {
-    if (state.settings.maxExchanges == null) return true;
-    return agentExchangeCount(thread) < state.settings.maxExchanges;
+    // Reads from the live ref (not the closured `state`) so extending the
+    // exchange limit mid-conversation takes effect immediately, even while
+    // an auto-loop is already running.
+    const maxExchanges = settingsRef.current.maxExchanges;
+    if (maxExchanges == null) return true;
+    return agentExchangeCount(thread) < maxExchanges;
   }
 
   function appendMessage(threadId: string, message: Message) {
@@ -338,7 +369,7 @@ export function ChatApp() {
     }
     if (connected.length === 0) return;
 
-    const hasLimit = state.settings.maxExchanges != null;
+    const hasLimit = () => settingsRef.current.maxExchanges != null;
     const isRunnable = () => {
       const s: string = statusRef.current;
       return s !== 'paused' && s !== 'stopped';
@@ -372,7 +403,7 @@ export function ChatApp() {
         threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
         updatedAt: Date.now(),
       }));
-    } while (hasLimit && withinLimits(updatedThread) && isRunnable());
+    } while (hasLimit() && withinLimits(updatedThread) && isRunnable());
   }
 
   async function startDiscussion() {
@@ -619,13 +650,42 @@ export function ChatApp() {
   }
 
   function pauseConversation() {
+    statusRef.current = 'paused';
     setState((prev) => ({ ...prev, status: 'paused' }));
     showToast('⏸️ Conversation paused');
   }
 
   function stopConversation() {
+    statusRef.current = 'stopped';
     setState((prev) => ({ ...prev, status: 'stopped' }));
     showToast('⏹️ Conversation stopped');
+  }
+
+  function playConversation() {
+    const lastThread = state.threads[state.threads.length - 1];
+    if (!lastThread) {
+      showToast('Start a discussion first.');
+      return;
+    }
+    const connectedActive = state.agents.filter((a) => a.active && agentIsConnected(a));
+    if (connectedActive.length === 0) {
+      showToast('No connected, participating agents to resume with.');
+      return;
+    }
+    statusRef.current = 'running';
+    setState((prev) => ({ ...prev, status: 'running' }));
+    if (!withinLimits(lastThread)) {
+      showToast('Already at the exchange limit — use +10 to extend it first.');
+      return;
+    }
+    runAgentRound(lastThread, connectedActive);
+    showToast('▶️ Resumed');
+  }
+
+  function extendExchanges(amount: number) {
+    const current = state.settings.maxExchanges ?? 0;
+    updateSettings({ maxExchanges: current + amount });
+    showToast(`➕ Exchange limit extended to ${current + amount}`);
   }
 
   function resetConversation() {
@@ -796,40 +856,58 @@ export function ChatApp() {
           </select>
         </div>
         <div className="header-right">
-          <button className="icon-btn" onClick={() => setShowAudioRail((v) => !v)}>
+          <button className="icon-btn" {...devRef('a1')} onClick={() => setShowAudioRail((v) => !v)}>
             🎙️ Rail
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('library')}>
+          <button className="icon-btn" {...devRef('a2')} onClick={() => setActiveModal('library')}>
             📚 Library
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('llmProviders')}>
+          <button className="icon-btn" {...devRef('a3')} onClick={() => setActiveModal('llmProviders')}>
             🔌 LLMs
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('audio')}>
+          <button className="icon-btn" {...devRef('a4')} onClick={() => setActiveModal('audio')}>
             🎧 Audio
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('analytics')}>
+          <button className="icon-btn" {...devRef('a5')} onClick={() => setActiveModal('analytics')}>
             📊 Analytics
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('export')}>
+          <button className="icon-btn" {...devRef('a6')} onClick={() => setActiveModal('export')}>
             📥 Export
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('archives')}>
+          <button className="icon-btn" {...devRef('a7')} onClick={() => setActiveModal('archives')}>
             🗄️ Archives
           </button>
-          <button className="icon-btn" onClick={() => setActiveModal('settings')}>
+          <button className="icon-btn" {...devRef('a8')} onClick={() => setActiveModal('settings')}>
             ⚙️ Settings
+          </button>
+          <select
+            className="icon-btn"
+            value={theme}
+            onChange={(e) => changeTheme(e.target.value as Theme)}
+            title="Theme"
+          >
+            <option value="light">☀️ Light</option>
+            <option value="dark">🌙 Dark</option>
+            <option value="ascii">🟢 ASCII</option>
+          </select>
+          <button
+            className={`icon-btn ${devMode ? 'active' : ''}`}
+            onClick={() => setDevMode((v) => !v)}
+            title="Dev Mode: show a unique reference code on every section/feature/button/field"
+          >
+            🛠️ Dev
           </button>
         </div>
       </div>
 
-      <div className="participants-bar">
+      <div className="participants-bar" {...devRef('p1')}>
         <span className="control-label">Participants:</span>
-        {state.agents.map((agent) => {
+        {state.agents.map((agent, agentIndex) => {
           const connected = agentIsConnected(agent);
           return (
             <button
               key={agent.id}
+              {...devRef(`p${agentIndex + 2}`)}
               className={`participant-chip ${agent.active && connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
               style={{ borderColor: agent.color }}
               onClick={() => toggleAgentActive(agent.id)}
@@ -854,6 +932,7 @@ export function ChatApp() {
           <span className="control-label">Response Style:</span>
           <select
             className="control-input"
+            {...devRef('c1')}
             style={{ width: 'auto' }}
             value={state.settings.responseStyle}
             onChange={(e) => updateSettings({ responseStyle: e.target.value as ResponseStyle })}
@@ -870,6 +949,7 @@ export function ChatApp() {
             <input
               type="number"
               className="control-input"
+              {...devRef('c2')}
               min={1}
               max={10}
               value={state.settings.maxSentences}
@@ -882,18 +962,30 @@ export function ChatApp() {
           <input
             type="text"
             className="control-input"
+            {...devRef('c3')}
             value={state.settings.maxExchanges ?? '∞'}
             onChange={(e) => {
               const v = e.target.value.trim();
               updateSettings({ maxExchanges: v === '' || v === '∞' ? null : Number(v) || null });
             }}
           />
+          {state.settings.maxExchanges != null && (
+            <button
+              className="control-btn"
+              {...devRef('c4')}
+              title="Extend the exchange limit by 10, even mid-conversation"
+              onClick={() => extendExchanges(10)}
+            >
+              +10
+            </button>
+          )}
         </div>
         <div className="control-group">
           <span className="control-label">Tokens:</span>
           <input
             type="text"
             className="control-input"
+            {...devRef('c5')}
             value={state.settings.maxTokens ?? '∞'}
             onChange={(e) => {
               const v = e.target.value.trim();
@@ -906,6 +998,7 @@ export function ChatApp() {
           <input
             type="number"
             className="control-input"
+            {...devRef('c6')}
             min={0.5}
             max={2}
             step={0.1}
@@ -917,6 +1010,7 @@ export function ChatApp() {
           <span className="control-label">Voice Language:</span>
           <select
             className="control-input"
+            {...devRef('c7')}
             style={{ width: 'auto' }}
             value={state.settings.ttsLang}
             onChange={(e) => updateSettings({ ttsLang: e.target.value })}
@@ -938,6 +1032,7 @@ export function ChatApp() {
           <input
             type="checkbox"
             id="orchestrator"
+            {...devRef('c8')}
             checked={state.settings.orchestratorEnabled}
             onChange={(e) => updateSettings({ orchestratorEnabled: e.target.checked })}
           />
@@ -946,13 +1041,16 @@ export function ChatApp() {
           </label>
         </div>
         <div className="control-group">
-          <button className="control-btn" onClick={pauseConversation}>
+          <button className="control-btn" {...devRef('c9')} onClick={playConversation}>
+            ▶️ Play
+          </button>
+          <button className="control-btn" {...devRef('c10')} onClick={pauseConversation}>
             ⏸️ Pause
           </button>
-          <button className="control-btn" onClick={stopConversation}>
+          <button className="control-btn" {...devRef('c11')} onClick={stopConversation}>
             ⏹️ Stop
           </button>
-          <button className="control-btn" onClick={resetConversation}>
+          <button className="control-btn" {...devRef('c12')} onClick={resetConversation}>
             🔄 Reset
           </button>
         </div>
@@ -1058,8 +1156,25 @@ export function ChatApp() {
                         {(() => {
                           let n = 0;
                           const badge = () => ++n;
+                          const isSpeaking = speaking !== null;
                           return (
                             <>
+                              <button
+                                className="feedback-btn"
+                                title={
+                                  isSpeaking
+                                    ? `r${badge()}: Pause reading`
+                                    : `r${badge()}: Read aloud from here`
+                                }
+                                onClick={() =>
+                                  isSpeaking
+                                    ? stopSpeaking()
+                                    : playFromMessage(allMessages.findIndex((m) => m.id === msg.id))
+                                }
+                              >
+                                {isSpeaking ? '⏸️' : '▶️'}
+                                <span className="reaction-badge">r{n}</span>
+                              </button>
                               {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (
                                 <button
                                   key={type}
@@ -1068,7 +1183,7 @@ export function ChatApp() {
                                   onClick={() => handleFeedback(thread.id, msg.id, type)}
                                 >
                                   {type === 'like' ? '👍' : type === 'dislike' ? '👎' : '🤔'}
-                                  <sup className="reaction-badge">r{n}</sup>
+                                  <span className="reaction-badge">r{n}</span>
                                 </button>
                               ))}
                               <button
@@ -1076,7 +1191,7 @@ export function ChatApp() {
                                 title={`r${badge()}: Reply to this message`}
                                 onClick={() => setReplyingTo(msg)}
                               >
-                                ↩️<sup className="reaction-badge">r{n}</sup>
+                                ↩️<span className="reaction-badge">r{n}</span>
                               </button>
                               {!isUser &&
                                 AGENT_REACTIONS.map((r) => (
@@ -1087,7 +1202,7 @@ export function ChatApp() {
                                     onClick={() => handleReaction(thread.id, msg, r.type)}
                                   >
                                     {r.icon}
-                                    <sup className="reaction-badge">r{n}</sup>
+                                    <span className="reaction-badge">r{n}</span>
                                   </button>
                                 ))}
                               {UNIVERSAL_REACTIONS.map((r) => (
@@ -1098,7 +1213,7 @@ export function ChatApp() {
                                   onClick={() => handleReaction(thread.id, msg, r.type)}
                                 >
                                   {r.icon}
-                                  <sup className="reaction-badge">r{n}</sup>
+                                  <span className="reaction-badge">r{n}</span>
                                 </button>
                               ))}
                             </>
@@ -1127,10 +1242,11 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="input-area">
+      <div className="input-area" {...devRef('i1')}>
         <input
           type="text"
           className="message-input"
+          {...devRef('i2')}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyDown={(e) => {
@@ -1139,7 +1255,7 @@ export function ChatApp() {
           placeholder="Type message..."
           disabled={state.status === 'stopped'}
         />
-        <button className="send-btn" onClick={sendMessage} disabled={state.status === 'stopped'}>
+        <button className="send-btn" {...devRef('i3')} onClick={sendMessage} disabled={state.status === 'stopped'}>
           Send
         </button>
       </div>
