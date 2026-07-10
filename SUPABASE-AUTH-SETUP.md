@@ -32,6 +32,63 @@ rows owned by the signed-in user, so API keys are never visible to anyone
 else — unlike the `conversations`/`agents`/`messages` tables from the
 original setup, which still use public `USING (true)` policies.
 
+## 1b. Run this SQL too — user approval / super-admin
+
+New sign-ups are unusable until an admin activates them. `trimakassi@gmail.com`
+is auto-provisioned as the super admin the moment that account is created.
+
+```sql
+create table user_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  is_admin boolean not null default false,
+  is_approved boolean not null default false,
+  created_at timestamptz default now()
+);
+
+alter table user_profiles enable row level security;
+
+create policy "Users read their own profile"
+  on user_profiles for select
+  using (auth.uid() = user_id);
+
+create policy "Admins read all profiles"
+  on user_profiles for select
+  using (exists (
+    select 1 from user_profiles p where p.user_id = auth.uid() and p.is_admin
+  ));
+
+create policy "Admins update all profiles"
+  on user_profiles for update
+  using (exists (
+    select 1 from user_profiles p where p.user_id = auth.uid() and p.is_admin
+  ));
+
+create function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.user_profiles (user_id, email, is_admin, is_approved)
+  values (
+    new.id,
+    new.email,
+    new.email = 'trimakassi@gmail.com',
+    new.email = 'trimakassi@gmail.com'
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+```
+
+Every new sign-up gets a `user_profiles` row with `is_approved = false`,
+except `trimakassi@gmail.com`, which is auto-approved and marked admin. The
+🛡️ icon in the account bar opens the admin panel (pending requests +
+activate/deactivate) once signed in as that account. Everyone else sees an
+"Awaiting Approval" screen until the admin activates them.
+
 ## 2. Confirm email/password auth is enabled
 
 Supabase Dashboard → **Authentication → Providers → Email** — it's on by

@@ -22,6 +22,9 @@ const REACTION_INSTRUCTIONS: Record<ReactionType, string> = {
 function styleInstruction(style: ResponseStyle, maxSentences: number): string {
   if (style === 'bullets') return 'Reply as a concise bulleted list (3-6 bullet points), each starting with "- ".';
   if (style === 'detailed') return 'Reply with a thorough, detailed explanation (multiple paragraphs are fine).';
+  if (style === 'mindmap') {
+    return 'Reply as a short markdown outline suitable for a mind map: a single "# " title line, then 2-5 "- " bullet points, each optionally with one nested "  - " sub-point. No prose outside the outline.';
+  }
   return `Reply in at most ${maxSentences} sentence${maxSentences === 1 ? '' : 's'}.`;
 }
 

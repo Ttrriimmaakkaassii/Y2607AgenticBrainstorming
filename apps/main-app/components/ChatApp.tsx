@@ -28,6 +28,8 @@ import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
+import { AudioRail } from './AudioRail';
+import { MessageContent } from './MessageContent';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
 import { LLMProvidersModal } from './LLMProvidersModal';
@@ -95,6 +97,8 @@ function defaultState(): ConversationState {
       orchestratorEnabled: true,
       mood: 'debate',
       responseStyle: 'sentences',
+      ttsRate: 1,
+      ttsLang: 'en-US',
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -123,7 +127,12 @@ function migrateState(state: ConversationState): ConversationState {
     ...state,
     agents,
     threads,
-    settings: { ...state.settings, responseStyle: state.settings.responseStyle ?? 'sentences' },
+    settings: {
+      ...state.settings,
+      responseStyle: state.settings.responseStyle ?? 'sentences',
+      ttsRate: state.settings.ttsRate ?? 1,
+      ttsLang: state.settings.ttsLang ?? 'en-US',
+    },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
 }
@@ -152,6 +161,12 @@ export function ChatApp() {
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
   const [connections, setConnections] = useState<LLMConnection[]>([]);
   const [archives, setArchives] = useState<ArchivedConversation[]>([]);
+  const [speaking, setSpeaking] = useState<{
+    messageId: string;
+    charIndex: number;
+    charLength: number;
+  } | null>(null);
+  const speakingCancelledRef = useRef(false);
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -441,6 +456,50 @@ export function ChatApp() {
     });
   }
 
+  function stopSpeaking() {
+    speakingCancelledRef.current = true;
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeaking(null);
+  }
+
+  function playFromMessage(startIndex: number) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      showToast('Speech synthesis is not supported in this browser.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    speakingCancelledRef.current = false;
+
+    function speakAt(index: number) {
+      if (speakingCancelledRef.current || index >= allMessages.length) {
+        setSpeaking(null);
+        return;
+      }
+      const msg = allMessages[index];
+      const utterance = new SpeechSynthesisUtterance(msg.content);
+      utterance.rate = state.settings.ttsRate;
+      utterance.lang = state.settings.ttsLang;
+      utterance.onstart = () => setSpeaking({ messageId: msg.id, charIndex: 0, charLength: 0 });
+      utterance.onboundary = (e) => {
+        if (e.name && e.name !== 'word') return;
+        let charLength = (e as any).charLength;
+        if (!charLength) {
+          const rest = msg.content.slice(e.charIndex);
+          const match = /^\S+/.exec(rest);
+          charLength = match ? match[0].length : 1;
+        }
+        setSpeaking({ messageId: msg.id, charIndex: e.charIndex, charLength });
+      };
+      utterance.onend = () => speakAt(index + 1);
+      utterance.onerror = () => speakAt(index + 1);
+      window.speechSynthesis.speak(utterance);
+    }
+
+    speakAt(startIndex);
+  }
+
   function toggleAgentActive(id: string) {
     const agent = state.agents.find((a) => a.id === id);
     if (!agent) return;
@@ -700,6 +759,7 @@ export function ChatApp() {
             <option value="bullets">Bullet Points</option>
             <option value="sentences">N Sentences</option>
             <option value="detailed">More Detail</option>
+            <option value="mindmap">Mind Map Outline</option>
           </select>
         </div>
         {state.settings.responseStyle === 'sentences' && (
@@ -738,6 +798,39 @@ export function ChatApp() {
               updateSettings({ maxTokens: v === '' || v === '∞' ? null : Number(v) || null });
             }}
           />
+        </div>
+        <div className="control-group">
+          <span className="control-label">Voice Speed:</span>
+          <input
+            type="number"
+            className="control-input"
+            min={0.5}
+            max={2}
+            step={0.1}
+            value={state.settings.ttsRate}
+            onChange={(e) => updateSettings({ ttsRate: Number(e.target.value) || 1 })}
+          />
+        </div>
+        <div className="control-group">
+          <span className="control-label">Voice Language:</span>
+          <select
+            className="control-input"
+            style={{ width: 'auto' }}
+            value={state.settings.ttsLang}
+            onChange={(e) => updateSettings({ ttsLang: e.target.value })}
+          >
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="es-ES">Spanish</option>
+            <option value="fr-FR">French</option>
+            <option value="de-DE">German</option>
+            <option value="pt-BR">Portuguese (BR)</option>
+            <option value="it-IT">Italian</option>
+            <option value="zh-CN">Chinese (Mandarin)</option>
+            <option value="ja-JP">Japanese</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="ar-SA">Arabic</option>
+          </select>
         </div>
         <div className="control-group">
           <input
@@ -780,6 +873,14 @@ export function ChatApp() {
         </div>
       </div>
 
+      <div className="conversation-body">
+        <AudioRail
+          agents={state.agents}
+          messages={allMessages}
+          speakingMessageId={speaking?.messageId ?? null}
+          onPlayFrom={playFromMessage}
+          onStop={stopSpeaking}
+        />
       <div className="conversation-area" ref={conversationAreaRef}>
         {state.threads.length === 0 && (
           <div className="start-discussion">
@@ -830,7 +931,16 @@ export function ChatApp() {
                           <span className="quoted-snippet">{quoted.content.slice(0, 80)}</span>
                         </div>
                       )}
-                      <div className="bubble-text">{msg.content}</div>
+                      <div className="bubble-text">
+                        <MessageContent
+                          content={msg.content}
+                          spokenRange={
+                            speaking?.messageId === msg.id
+                              ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
+                              : null
+                          }
+                        />
+                      </div>
                       <div className="feedback-controls">
                         {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (
                           <button
@@ -876,6 +986,7 @@ export function ChatApp() {
             </div>
           );
         })}
+      </div>
       </div>
 
       {replyingTo && (

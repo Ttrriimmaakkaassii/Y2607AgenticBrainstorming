@@ -10,7 +10,7 @@ export type LLMProvider =
   | 'xai'
   | 'mistral';
 export type Effort = 'low' | 'medium' | 'high';
-export type ResponseStyle = 'bullets' | 'sentences' | 'detailed';
+export type ResponseStyle = 'bullets' | 'sentences' | 'detailed' | 'mindmap';
 export type ReactionType = 'elaborate' | 'explainFurther' | 'why' | 'sources' | 'mindmap' | 'bullets';
 
 export interface Agent {
@@ -68,6 +68,8 @@ export interface ConversationSettings {
   orchestratorEnabled: boolean;
   mood: Mood;
   responseStyle: ResponseStyle;
+  ttsRate: number;
+  ttsLang: string;
 }
 
 export interface ConversationState {

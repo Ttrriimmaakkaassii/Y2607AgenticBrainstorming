@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { getSession, onAuthStateChange, signIn, signOut, signUp, updatePassword } from '@/lib/auth';
+import { fetchMyProfile, UserProfile } from '@/lib/admin';
 import { supabase } from '@/lib/supabase';
+import { AdminPanel } from './AdminPanel';
 
 export function LoginGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [checked, setChecked] = useState(false);
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
@@ -14,6 +17,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
@@ -23,6 +27,23 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     });
     return onAuthStateChange(setSession);
   }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setProfile(null);
+      return;
+    }
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts += 1;
+      const p = await fetchMyProfile(session.user.id);
+      if (p || attempts > 5) {
+        setProfile(p);
+        clearInterval(poll);
+      }
+    }, 800);
+    return () => clearInterval(poll);
+  }, [session]);
 
   if (!supabase) {
     // No Supabase configured for this deployment — don't block the app.
@@ -41,7 +62,9 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
       try {
         if (mode === 'signUp') {
           await signUp(email, password);
-          setInfo('Account created. Check your email to confirm, then sign in.');
+          setInfo(
+            'Account created. Confirm your email, then sign in — an admin still needs to activate your account before you can use the app.'
+          );
           setMode('signIn');
         } else {
           await signIn(email, password);
@@ -96,6 +119,23 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (!profile || !profile.isApproved) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1 className="auth-title">Awaiting Approval</h1>
+          <p style={{ fontSize: 13, color: '#667781' }}>
+            Signed in as {session.user.email}. An admin needs to activate your account before you
+            can access the app.
+          </p>
+          <button className="btn-secondary" onClick={() => signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -113,6 +153,11 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     <>
       <div className="account-bar">
         <span className="account-email">{session.user.email}</span>
+        {profile.isAdmin && (
+          <button className="btn-icon" onClick={() => setShowAdminPanel(true)} title="Admin panel">
+            🛡️
+          </button>
+        )}
         <button className="btn-icon" onClick={() => setShowAccountMenu((v) => !v)} title="Account">
           ⚙️
         </button>
@@ -151,6 +196,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
+      {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
       {children}
     </>
   );
