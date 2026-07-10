@@ -1,0 +1,530 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Agent, ConversationState, Feedback, Message, Mood, Thread } from '@/lib/types';
+import { generateId } from '@/lib/id';
+import { generateAgentReply } from '@/lib/response-generator';
+import { loadConversation, saveConversation } from '@/lib/storage';
+import { SettingsModal } from './SettingsModal';
+import { AudioModal } from './AudioModal';
+import { AnalyticsModal } from './AnalyticsModal';
+import { ExportModal } from './ExportModal';
+
+const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
+
+const DEFAULT_AGENTS: Agent[] = [
+  {
+    id: generateId(),
+    name: 'Agent A',
+    role: 'Researcher',
+    instructions: 'Research recent developments and gather supporting evidence.',
+    color: '#3b99fc',
+    llmProvider: 'openai',
+  },
+  {
+    id: generateId(),
+    name: 'Agent B',
+    role: 'Analyst',
+    instructions: 'Weigh tradeoffs and challenge assumptions with data.',
+    color: '#2ecc71',
+    llmProvider: 'anthropic',
+  },
+  {
+    id: generateId(),
+    name: 'Agent C',
+    role: 'Moderator',
+    instructions: 'Keep the discussion balanced and summarize consensus.',
+    color: '#f39c12',
+    llmProvider: 'google',
+  },
+];
+
+function defaultState(): ConversationState {
+  return {
+    id: generateId(),
+    agents: DEFAULT_AGENTS,
+    threads: [],
+    settings: {
+      maxSentences: 5,
+      maxExchanges: null,
+      maxTokens: null,
+      orchestratorEnabled: true,
+      mood: 'debate',
+    },
+    status: 'idle',
+    updatedAt: Date.now(),
+  };
+}
+
+function getOrCreateConversationId(): string {
+  if (typeof window === 'undefined') return generateId();
+  const existing = window.localStorage.getItem(CONVERSATION_ID_KEY);
+  if (existing) return existing;
+  const id = generateId();
+  window.localStorage.setItem(CONVERSATION_ID_KEY, id);
+  return id;
+}
+
+export function ChatApp() {
+  const [state, setState] = useState<ConversationState>(defaultState);
+  const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
+  const [inputMessage, setInputMessage] = useState('');
+  const [toast, setToast] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
+  const [activeModal, setActiveModal] = useState<
+    'settings' | 'audio' | 'analytics' | 'export' | null
+  >(null);
+  const [hydrated, setHydrated] = useState(false);
+  const conversationAreaRef = useRef<HTMLDivElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const conversationId = getOrCreateConversationId();
+    loadConversation(conversationId).then((loaded) => {
+      if (loaded) {
+        setState(loaded);
+        setCurrentAgentId(loaded.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
+      } else {
+        setState((prev) => ({ ...prev, id: conversationId }));
+      }
+      setHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveConversation(state);
+  }, [state, hydrated]);
+
+  useEffect(() => {
+    conversationAreaRef.current?.scrollTo({
+      top: conversationAreaRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [state.threads]);
+
+  function showToast(message: string) {
+    setToast(message);
+    setToastVisible(true);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastVisible(false), 2000);
+  }
+
+  const allMessages = useMemo(() => state.threads.flatMap((t) => t.messages), [state.threads]);
+
+  function agentExchangeCount(thread: Thread): number {
+    return thread.messages.filter((m) => m.agentId !== 'user').length;
+  }
+
+  function withinLimits(thread: Thread): boolean {
+    if (state.settings.maxExchanges == null) return true;
+    return agentExchangeCount(thread) < state.settings.maxExchanges;
+  }
+
+  function appendMessage(threadId: string, message: Message) {
+    setState((prev) => ({
+      ...prev,
+      threads: prev.threads.map((t) =>
+        t.id === threadId ? { ...t, messages: [...t.messages, message] } : t
+      ),
+      updatedAt: Date.now(),
+    }));
+  }
+
+  function createThread(agentId: string, seedContent?: string): Thread {
+    const thread: Thread = {
+      id: generateId(),
+      agentId,
+      createdAt: Date.now(),
+      messages: [],
+    };
+    if (seedContent) {
+      thread.messages.push({
+        id: generateId(),
+        threadId: thread.id,
+        agentId,
+        content: seedContent,
+        timestamp: Date.now(),
+        feedback: null,
+      });
+    }
+    return thread;
+  }
+
+  function runAgentRound(thread: Thread, respondingAgents: Agent[]) {
+    let updatedThread = thread;
+    for (const agent of respondingAgents) {
+      if (!withinLimits(updatedThread)) break;
+      const reply = generateAgentReply(
+        agent,
+        state.settings.mood,
+        updatedThread.messages,
+        state.settings.maxSentences
+      );
+      const message: Message = {
+        id: generateId(),
+        threadId: updatedThread.id,
+        agentId: agent.id,
+        content: reply,
+        timestamp: Date.now(),
+        feedback: null,
+      };
+      updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
+    }
+    setState((prev) => ({
+      ...prev,
+      threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
+      updatedAt: Date.now(),
+    }));
+  }
+
+  function startDiscussion() {
+    if (state.agents.length === 0) {
+      showToast('Add at least one agent first.');
+      return;
+    }
+    const [opener, ...responders] = state.agents;
+    const openingLine = generateAgentReply(opener, state.settings.mood, [], state.settings.maxSentences);
+    const thread = createThread(opener.id, openingLine);
+    setState((prev) => ({
+      ...prev,
+      threads: [...prev.threads, thread],
+      status: 'running',
+      updatedAt: Date.now(),
+    }));
+    if (state.settings.orchestratorEnabled) {
+      setTimeout(() => runAgentRound(thread, responders), 300);
+    }
+    showToast('▶️ Discussion started!');
+  }
+
+  function handleNewThread(agentId: string) {
+    const agent = state.agents.find((a) => a.id === agentId);
+    if (!agent) return;
+    const openingLine = generateAgentReply(agent, state.settings.mood, [], state.settings.maxSentences);
+    const thread = createThread(agentId, openingLine);
+    setState((prev) => ({ ...prev, threads: [...prev.threads, thread], updatedAt: Date.now() }));
+    showToast(`🧵 New thread started with ${agent.name}`);
+  }
+
+  function sendMessage() {
+    const content = inputMessage.trim();
+    if (!content || state.status === 'stopped') return;
+
+    let targetThread = state.threads[state.threads.length - 1];
+    if (!targetThread) {
+      targetThread = createThread(state.agents[0]?.id ?? 'user');
+      setState((prev) => ({ ...prev, threads: [...prev.threads, targetThread] }));
+    }
+
+    const userMessage: Message = {
+      id: generateId(),
+      threadId: targetThread.id,
+      agentId: 'user',
+      content,
+      timestamp: Date.now(),
+      feedback: null,
+    };
+    appendMessage(targetThread.id, userMessage);
+    setInputMessage('');
+
+    if (state.settings.orchestratorEnabled && state.status !== 'paused') {
+      const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
+      setTimeout(() => runAgentRound(threadWithUserMsg, state.agents), 300);
+    }
+  }
+
+  function handleFeedback(threadId: string, messageId: string, type: Feedback) {
+    setState((prev) => ({
+      ...prev,
+      threads: prev.threads.map((t) =>
+        t.id !== threadId
+          ? t
+          : {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === messageId ? { ...m, feedback: m.feedback === type ? null : type } : m
+              ),
+            }
+      ),
+    }));
+    const labels: Record<Feedback, string> = {
+      like: '👍 Thanks for the feedback!',
+      dislike: '👎 Sorry you didn’t like this.',
+      clarify: '🤔 Noted — flagged for clarification.',
+    };
+    showToast(labels[type]);
+  }
+
+  function pauseConversation() {
+    setState((prev) => ({ ...prev, status: 'paused' }));
+    showToast('⏸️ Conversation paused');
+  }
+
+  function stopConversation() {
+    setState((prev) => ({ ...prev, status: 'stopped' }));
+    showToast('⏹️ Conversation stopped');
+  }
+
+  function resetConversation() {
+    setState((prev) => ({ ...prev, threads: [], status: 'idle' }));
+    showToast('🔄 Conversation reset');
+  }
+
+  function updateSettings(updates: Partial<ConversationState['settings']>) {
+    setState((prev) => ({ ...prev, settings: { ...prev.settings, ...updates } }));
+  }
+
+  function saveAgent(id: string, updates: Partial<Agent>) {
+    setState((prev) => ({
+      ...prev,
+      agents: prev.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
+    }));
+    showToast('✅ Agent settings saved!');
+  }
+
+  function addAgent() {
+    const newAgent: Agent = {
+      id: generateId(),
+      name: `Agent ${state.agents.length + 1}`,
+      role: 'Contributor',
+      instructions: 'Share a distinct perspective on the topic.',
+      color: '#8e44ad',
+      llmProvider: 'openai',
+    };
+    setState((prev) => ({ ...prev, agents: [...prev.agents, newAgent] }));
+    setCurrentAgentId(newAgent.id);
+    showToast('➕ New agent added');
+  }
+
+  function deleteAgent(id: string) {
+    if (state.agents.length <= 1) return;
+    setState((prev) => ({ ...prev, agents: prev.agents.filter((a) => a.id !== id) }));
+    if (currentAgentId === id) {
+      setCurrentAgentId(state.agents.find((a) => a.id !== id)?.id ?? '');
+    }
+    showToast('🗑️ Agent deleted');
+  }
+
+  function agentById(id: string): Agent | undefined {
+    return state.agents.find((a) => a.id === id);
+  }
+
+  return (
+    <div className="app-shell">
+      <div className="header">
+        <div className="header-left">
+          <select
+            className="select-input"
+            value={currentAgentId}
+            onChange={(e) => setCurrentAgentId(e.target.value)}
+          >
+            {state.agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name} ({agent.role})
+              </option>
+            ))}
+          </select>
+          <select
+            className="select-input"
+            value={state.settings.mood}
+            onChange={(e) => updateSettings({ mood: e.target.value as Mood })}
+          >
+            <option value="debate">🗣️ Debate</option>
+            <option value="complementary">💡 Complementary</option>
+            <option value="research">🔍 Research</option>
+          </select>
+        </div>
+        <div className="header-right">
+          <button className="icon-btn" onClick={() => setActiveModal('audio')}>
+            🎧 Audio
+          </button>
+          <button className="icon-btn" onClick={() => setActiveModal('analytics')}>
+            📊 Analytics
+          </button>
+          <button className="icon-btn" onClick={() => setActiveModal('export')}>
+            📥 Export
+          </button>
+          <button className="icon-btn" onClick={() => setActiveModal('settings')}>
+            ⚙️ Settings
+          </button>
+        </div>
+      </div>
+
+      <div className="controls-panel">
+        <div className="control-group">
+          <span className="control-label">Max Sentences:</span>
+          <input
+            type="number"
+            className="control-input"
+            min={1}
+            max={10}
+            value={state.settings.maxSentences}
+            onChange={(e) => updateSettings({ maxSentences: Number(e.target.value) || 1 })}
+          />
+        </div>
+        <div className="control-group">
+          <span className="control-label">Exchanges:</span>
+          <input
+            type="text"
+            className="control-input"
+            value={state.settings.maxExchanges ?? '∞'}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              updateSettings({ maxExchanges: v === '' || v === '∞' ? null : Number(v) || null });
+            }}
+          />
+        </div>
+        <div className="control-group">
+          <span className="control-label">Tokens:</span>
+          <input
+            type="text"
+            className="control-input"
+            value={state.settings.maxTokens ?? '∞'}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              updateSettings({ maxTokens: v === '' || v === '∞' ? null : Number(v) || null });
+            }}
+          />
+        </div>
+        <div className="control-group">
+          <input
+            type="checkbox"
+            id="orchestrator"
+            checked={state.settings.orchestratorEnabled}
+            onChange={(e) => updateSettings({ orchestratorEnabled: e.target.checked })}
+          />
+          <label htmlFor="orchestrator" className="control-label">
+            Orchestrator
+          </label>
+        </div>
+        <div className="control-group">
+          <button className="control-btn" onClick={pauseConversation}>
+            ⏸️ Pause
+          </button>
+          <button className="control-btn" onClick={stopConversation}>
+            ⏹️ Stop
+          </button>
+          <button className="control-btn" onClick={resetConversation}>
+            🔄 Reset
+          </button>
+        </div>
+        <div className="control-group">
+          <span className="stats-badge">{allMessages.length} messages</span>
+        </div>
+      </div>
+
+      <div className="conversation-area" ref={conversationAreaRef}>
+        {state.threads.length === 0 && (
+          <div className="start-discussion">
+            <button onClick={startDiscussion}>▶️ Start New Discussion</button>
+          </div>
+        )}
+
+        {state.threads.map((thread) => {
+          const owner = agentById(thread.agentId);
+          return (
+            <div className="message-thread" key={thread.id}>
+              <div className="thread-header">
+                <div className="avatar" style={{ background: owner?.color ?? '#999' }}>
+                  {(owner?.name ?? '?').charAt(0).toUpperCase()}
+                </div>
+                <div className="thread-info">
+                  <div className="thread-title">{owner?.name ?? 'Unknown agent'}</div>
+                  <div className="thread-timestamp">
+                    Started {new Date(thread.createdAt).toLocaleString()}
+                  </div>
+                </div>
+                <button
+                  className="control-btn"
+                  onClick={() => handleNewThread(thread.agentId)}
+                >
+                  + New Thread
+                </button>
+              </div>
+
+              {thread.messages.map((msg) => {
+                const isUser = msg.agentId === 'user';
+                const author = isUser ? null : agentById(msg.agentId);
+                return (
+                  <div className={`bubble-wrapper ${isUser ? 'user' : ''}`} key={msg.id}>
+                    <div
+                      className="avatar"
+                      style={{ background: isUser ? '#95ec69' : author?.color ?? '#999' }}
+                    >
+                      {isUser ? 'Y' : (author?.name ?? '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="bubble-content">
+                      <div className="bubble-name">{isUser ? 'You' : author?.name ?? 'Unknown'}</div>
+                      <div className="bubble-text">{msg.content}</div>
+                      <div className="feedback-controls">
+                        {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (
+                          <button
+                            key={type}
+                            className={`feedback-btn ${msg.feedback === type ? `active ${type}` : ''}`}
+                            onClick={() => handleFeedback(thread.id, msg.id, type)}
+                          >
+                            {type === 'like' ? '👍' : type === 'dislike' ? '👎' : '🤔'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="input-area">
+        <input
+          type="text"
+          className="message-input"
+          value={inputMessage}
+          onChange={(e) => setInputMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') sendMessage();
+          }}
+          placeholder="Type message..."
+          disabled={state.status === 'stopped'}
+        />
+        <button className="send-btn" onClick={sendMessage} disabled={state.status === 'stopped'}>
+          Send
+        </button>
+      </div>
+
+      <div className={`toast ${toastVisible ? 'show' : ''}`}>{toast}</div>
+
+      {activeModal === 'settings' && (
+        <SettingsModal
+          agents={state.agents}
+          currentAgentId={currentAgentId}
+          onSelectAgent={setCurrentAgentId}
+          onSave={saveAgent}
+          onAdd={addAgent}
+          onDelete={deleteAgent}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === 'audio' && (
+        <AudioModal
+          agents={state.agents}
+          threads={state.threads}
+          onClose={() => setActiveModal(null)}
+          onToast={showToast}
+        />
+      )}
+      {activeModal === 'analytics' && (
+        <AnalyticsModal
+          agents={state.agents}
+          threads={state.threads}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === 'export' && (
+        <ExportModal state={state} onClose={() => setActiveModal(null)} onToast={showToast} />
+      )}
+    </div>
+  );
+}
