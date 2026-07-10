@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Agent, ConversationState, Feedback, Message, Mood, Thread } from '@/lib/types';
 import { generateId } from '@/lib/id';
 import { generateAgentReply } from '@/lib/response-generator';
+import { fetchAgentReply } from '@/lib/llm-client';
 import { loadConversation, saveConversation } from '@/lib/storage';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
@@ -45,6 +46,7 @@ function defaultState(): ConversationState {
     agents: DEFAULT_AGENTS,
     threads: [],
     settings: {
+      topic: '',
       maxSentences: 5,
       maxExchanges: null,
       maxTokens: null,
@@ -75,6 +77,7 @@ export function ChatApp() {
     'settings' | 'audio' | 'analytics' | 'export' | null
   >(null);
   const [hydrated, setHydrated] = useState(false);
+  const [liveMode, setLiveMode] = useState<boolean | null>(null);
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,16 +154,34 @@ export function ChatApp() {
     return thread;
   }
 
-  function runAgentRound(thread: Thread, respondingAgents: Agent[]) {
+  async function getReply(agent: Agent, precedingMessages: Message[]): Promise<string> {
+    const live = await fetchAgentReply(
+      agent,
+      state.settings.mood,
+      state.settings.topic,
+      precedingMessages,
+      state.agents,
+      state.settings.maxSentences
+    );
+    if (live) {
+      setLiveMode(true);
+      return live;
+    }
+    setLiveMode((prev) => (prev === true ? prev : false));
+    return generateAgentReply(
+      agent,
+      state.settings.mood,
+      precedingMessages,
+      state.settings.maxSentences,
+      state.settings.topic
+    );
+  }
+
+  async function runAgentRound(thread: Thread, respondingAgents: Agent[]) {
     let updatedThread = thread;
     for (const agent of respondingAgents) {
       if (!withinLimits(updatedThread)) break;
-      const reply = generateAgentReply(
-        agent,
-        state.settings.mood,
-        updatedThread.messages,
-        state.settings.maxSentences
-      );
+      const reply = await getReply(agent, updatedThread.messages);
       const message: Message = {
         id: generateId(),
         threadId: updatedThread.id,
@@ -170,21 +191,21 @@ export function ChatApp() {
         feedback: null,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
+      setState((prev) => ({
+        ...prev,
+        threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
+        updatedAt: Date.now(),
+      }));
     }
-    setState((prev) => ({
-      ...prev,
-      threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
-      updatedAt: Date.now(),
-    }));
   }
 
-  function startDiscussion() {
+  async function startDiscussion() {
     if (state.agents.length === 0) {
       showToast('Add at least one agent first.');
       return;
     }
     const [opener, ...responders] = state.agents;
-    const openingLine = generateAgentReply(opener, state.settings.mood, [], state.settings.maxSentences);
+    const openingLine = await getReply(opener, []);
     const thread = createThread(opener.id, openingLine);
     setState((prev) => ({
       ...prev,
@@ -193,21 +214,21 @@ export function ChatApp() {
       updatedAt: Date.now(),
     }));
     if (state.settings.orchestratorEnabled) {
-      setTimeout(() => runAgentRound(thread, responders), 300);
+      runAgentRound(thread, responders);
     }
     showToast('▶️ Discussion started!');
   }
 
-  function handleNewThread(agentId: string) {
+  async function handleNewThread(agentId: string) {
     const agent = state.agents.find((a) => a.id === agentId);
     if (!agent) return;
-    const openingLine = generateAgentReply(agent, state.settings.mood, [], state.settings.maxSentences);
+    const openingLine = await getReply(agent, []);
     const thread = createThread(agentId, openingLine);
     setState((prev) => ({ ...prev, threads: [...prev.threads, thread], updatedAt: Date.now() }));
     showToast(`🧵 New thread started with ${agent.name}`);
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const content = inputMessage.trim();
     if (!content || state.status === 'stopped') return;
 
@@ -230,7 +251,7 @@ export function ChatApp() {
 
     if (state.settings.orchestratorEnabled && state.status !== 'paused') {
       const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
-      setTimeout(() => runAgentRound(threadWithUserMsg, state.agents), 300);
+      runAgentRound(threadWithUserMsg, state.agents);
     }
   }
 
@@ -314,6 +335,14 @@ export function ChatApp() {
     <div className="app-shell">
       <div className="header">
         <div className="header-left">
+          <input
+            type="text"
+            className="select-input"
+            style={{ minWidth: 220, flex: 1 }}
+            placeholder="Discussion topic (e.g. Should AI regulation be global?)"
+            value={state.settings.topic}
+            onChange={(e) => updateSettings({ topic: e.target.value })}
+          />
           <select
             className="select-input"
             value={currentAgentId}
@@ -411,6 +440,25 @@ export function ChatApp() {
         </div>
         <div className="control-group">
           <span className="stats-badge">{allMessages.length} messages</span>
+        </div>
+        <div className="control-group">
+          <span
+            className="stats-badge"
+            style={{
+              background: liveMode ? '#d4f7dc' : liveMode === false ? '#fff3cd' : '#f0f0f0',
+            }}
+            title={
+              liveMode === false
+                ? 'No LLM API key configured server-side — add OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY as Cloudflare secrets to enable live replies.'
+                : undefined
+            }
+          >
+            {liveMode === null
+              ? 'Mode: not started'
+              : liveMode
+              ? '⚡ Live LLM replies'
+              : '🤖 Simulated replies (no API key)'}
+          </span>
         </div>
       </div>
 

@@ -31,13 +31,16 @@ export function generateAgentReply(
   agent: Agent,
   mood: Mood,
   precedingMessages: Message[],
-  maxSentences: number
+  maxSentences: number,
+  topic?: string
 ): string {
   const opener = pick(MOOD_OPENERS[mood]);
   const last = precedingMessages[precedingMessages.length - 1];
-  const topic = last ? last.content.replace(/[.!?]+$/, '') : 'the topic at hand';
+  const subject = last
+    ? last.content.replace(/[.!?]+$/, '')
+    : topic?.trim() || 'the topic at hand';
 
-  const body = `${opener} As ${agent.role.toLowerCase()}, my take on "${topic.slice(
+  const body = `${opener} As ${agent.role.toLowerCase()}, my take on "${subject.slice(
     0,
     80
   )}" is that it deserves closer attention given ${agent.instructions

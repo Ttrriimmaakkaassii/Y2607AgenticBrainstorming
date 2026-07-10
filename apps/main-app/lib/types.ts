@@ -28,6 +28,7 @@ export interface Thread {
 }
 
 export interface ConversationSettings {
+  topic: string;
   maxSentences: number;
   maxExchanges: number | null;
   maxTokens: number | null;
