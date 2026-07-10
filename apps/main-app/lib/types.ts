@@ -10,6 +10,8 @@ export type LLMProvider =
   | 'xai'
   | 'mistral';
 export type Effort = 'low' | 'medium' | 'high';
+export type ResponseStyle = 'bullets' | 'sentences' | 'detailed';
+export type ReactionType = 'elaborate' | 'explainFurther' | 'why' | 'sources' | 'mindmap' | 'bullets';
 
 export interface Agent {
   id: string;
@@ -47,6 +49,8 @@ export interface Message {
   content: string;
   timestamp: number;
   feedback: Feedback | null;
+  /** Id of another message this one is replying to (WhatsApp-style quote reply). */
+  replyToId: string | null;
 }
 
 export interface Thread {
@@ -63,6 +67,7 @@ export interface ConversationSettings {
   maxTokens: number | null;
   orchestratorEnabled: boolean;
   mood: Mood;
+  responseStyle: ResponseStyle;
 }
 
 export interface ConversationState {
@@ -74,4 +79,11 @@ export interface ConversationState {
   updatedAt: number;
   /** Counter for the next Agt<N> reference number — never decreases, so numbers aren't reused. */
   nextAgentNumber: number;
+}
+
+export interface ArchivedConversation {
+  id: string;
+  title: string;
+  archivedAt: number;
+  state: ConversationState;
 }

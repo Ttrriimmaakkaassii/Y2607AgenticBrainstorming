@@ -1,21 +1,50 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Agent, ConversationState, Feedback, LLMConnection, Message, Mood, Thread } from '@/lib/types';
+import {
+  Agent,
+  ArchivedConversation,
+  ConversationState,
+  Feedback,
+  LLMConnection,
+  Message,
+  Mood,
+  ReactionType,
+  ResponseStyle,
+  Thread,
+} from '@/lib/types';
 import { AgentPreset } from '@/lib/agent-library';
 import { generateId } from '@/lib/id';
-import { generateAgentReply } from '@/lib/response-generator';
-import { fetchAgentReply } from '@/lib/llm-client';
-import { loadConnections, saveConnections } from '@/lib/llm-connections';
+import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
+import {
+  loadConnections,
+  loadConnectionsFromSupabase,
+  saveConnections,
+  syncConnectionsToSupabase,
+} from '@/lib/llm-connections';
+import { getSession, onAuthStateChange } from '@/lib/auth';
 import { loadConversation, saveConversation } from '@/lib/storage';
+import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
+import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AgentLibraryModal } from './AgentLibraryModal';
+import { MindmapModal } from './MindmapModal';
+import { ArchivesModal } from './ArchivesModal';
 
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
+
+const REACTIONS: { type: ReactionType; icon: string; label: string; tooltip: string }[] = [
+  { type: 'elaborate', icon: '🔎', label: 'Elaborate', tooltip: 'Ask this agent to elaborate with more depth' },
+  { type: 'explainFurther', icon: '💬', label: 'Explain Further', tooltip: 'Ask this agent to explain further, more simply' },
+  { type: 'why', icon: '❓', label: 'Why?', tooltip: 'Ask this agent why it said that' },
+  { type: 'sources', icon: '📚', label: 'Sources', tooltip: 'Ask this agent for its sources/reasoning' },
+  { type: 'bullets', icon: '•', label: 'Bullet Points', tooltip: 'Ask this agent to restate as bullet points' },
+  { type: 'mindmap', icon: '🗺️', label: 'Mind Map', tooltip: 'Turn this message into a mind map' },
+];
 
 const DEFAULT_AGENTS: Agent[] = [
   {
@@ -65,6 +94,7 @@ function defaultState(): ConversationState {
       maxTokens: null,
       orchestratorEnabled: true,
       mood: 'debate',
+      responseStyle: 'sentences',
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -72,7 +102,7 @@ function defaultState(): ConversationState {
   };
 }
 
-/** Backfills refNumber/nextAgentNumber for conversations saved before this feature existed. */
+/** Backfills fields for conversations saved before newer features existed. */
 function migrateState(state: ConversationState): ConversationState {
   let maxSeen = 0;
   const agents = state.agents.map((agent) => {
@@ -85,7 +115,17 @@ function migrateState(state: ConversationState): ConversationState {
     if (match) maxSeen = Math.max(maxSeen, Number(match[1]));
     return { ...agent, refNumber, active };
   });
-  return { ...state, agents, nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0) };
+  const threads = state.threads.map((t) => ({
+    ...t,
+    messages: t.messages.map((m) => ({ ...m, replyToId: m.replyToId ?? null })),
+  }));
+  return {
+    ...state,
+    agents,
+    threads,
+    settings: { ...state.settings, responseStyle: state.settings.responseStyle ?? 'sentences' },
+    nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
+  };
 }
 
 function getOrCreateConversationId(): string {
@@ -101,24 +141,46 @@ export function ChatApp() {
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
   const [inputMessage, setInputMessage] = useState('');
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [toast, setToast] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | 'library' | null
+    'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | 'library' | 'mindmap' | 'archives' | null
   >(null);
+  const [mindmapData, setMindmapData] = useState<{ markdown: string; title: string } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
   const [connections, setConnections] = useState<LLMConnection[]>([]);
+  const [archives, setArchives] = useState<ArchivedConversation[]>([]);
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [userId, setUserId] = useState<string | null>(null);
+
   useEffect(() => {
     setConnections(loadConnections());
+    setArchives(loadArchives());
+
+    getSession().then((session) => {
+      if (session) setUserId(session.user.id);
+    });
+    return onAuthStateChange((session) => setUserId(session?.user.id ?? null));
   }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    loadConnectionsFromSupabase(userId).then((remote) => {
+      if (remote) {
+        setConnections(remote);
+        saveConnections(remote);
+      }
+    });
+  }, [userId]);
 
   function updateConnections(next: LLMConnection[]) {
     setConnections(next);
     saveConnections(next);
+    if (userId) syncConnectionsToSupabase(next, userId);
   }
 
   useEffect(() => {
@@ -150,10 +212,14 @@ export function ChatApp() {
     setToast(message);
     setToastVisible(true);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToastVisible(false), 2000);
+    toastTimer.current = setTimeout(() => setToastVisible(false), 2500);
   }
 
   const allMessages = useMemo(() => state.threads.flatMap((t) => t.messages), [state.threads]);
+
+  function agentIsConnected(agent: Agent): boolean {
+    return !!agent.connectionId && connections.some((c) => c.id === agent.connectionId);
+  }
 
   function agentExchangeCount(thread: Thread): number {
     return thread.messages.filter((m) => m.agentId !== 'user').length;
@@ -189,40 +255,53 @@ export function ChatApp() {
         content: seedContent,
         timestamp: Date.now(),
         feedback: null,
+        replyToId: null,
       });
     }
     return thread;
   }
 
-  async function getReply(agent: Agent, precedingMessages: Message[]): Promise<string> {
-    const live = await fetchAgentReply(
+  /** Never falls back to a simulated/mock message — returns null if the agent has no working LLM. */
+  async function getReply(
+    agent: Agent,
+    precedingMessages: Message[],
+    extraInstruction?: string
+  ): Promise<string | null> {
+    if (!agentIsConnected(agent)) return null;
+    const reply = await fetchAgentReply(
       agent,
       connections,
       state.settings.mood,
       state.settings.topic,
       precedingMessages,
       state.agents,
-      state.settings.maxSentences
-    );
-    if (live) {
-      setLiveMode(true);
-      return live;
-    }
-    setLiveMode((prev) => (prev === true ? prev : false));
-    return generateAgentReply(
-      agent,
-      state.settings.mood,
-      precedingMessages,
+      state.settings.responseStyle,
       state.settings.maxSentences,
-      state.settings.topic
+      extraInstruction
     );
+    if (reply) {
+      setLiveMode(true);
+    } else {
+      setLiveMode((prev) => (prev === true ? prev : false));
+    }
+    return reply;
   }
 
   async function runAgentRound(thread: Thread, respondingAgents: Agent[]) {
+    const connected = respondingAgents.filter(agentIsConnected);
+    const skipped = respondingAgents.filter((a) => !agentIsConnected(a));
+    if (skipped.length > 0) {
+      showToast(`Skipped ${skipped.map((a) => a.refNumber).join(', ')} — no LLM connected.`);
+    }
+
     let updatedThread = thread;
-    for (const agent of respondingAgents) {
+    for (const agent of connected) {
       if (!withinLimits(updatedThread)) break;
       const reply = await getReply(agent, updatedThread.messages);
+      if (!reply) {
+        showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
+        continue;
+      }
       const message: Message = {
         id: generateId(),
         threadId: updatedThread.id,
@@ -230,6 +309,7 @@ export function ChatApp() {
         content: reply,
         timestamp: Date.now(),
         feedback: null,
+        replyToId: null,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       setState((prev) => ({
@@ -242,12 +322,21 @@ export function ChatApp() {
 
   async function startDiscussion() {
     const activeAgents = state.agents.filter((a) => a.active);
-    if (activeAgents.length === 0) {
-      showToast('Select at least one participating agent first.');
+    const connectedActive = activeAgents.filter(agentIsConnected);
+    if (connectedActive.length === 0) {
+      showToast(
+        activeAgents.length === 0
+          ? 'Select at least one participating agent first.'
+          : 'None of the selected agents have an LLM connected — assign one in 🔌 LLMs.'
+      );
       return;
     }
-    const [opener, ...responders] = activeAgents;
+    const [opener, ...responders] = connectedActive;
     const openingLine = await getReply(opener, []);
+    if (!openingLine) {
+      showToast(`⚠️ ${opener.refNumber} failed to respond — check its LLM connection.`);
+      return;
+    }
     const thread = createThread(opener.id, openingLine);
     setState((prev) => ({
       ...prev,
@@ -264,7 +353,15 @@ export function ChatApp() {
   async function handleNewThread(agentId: string) {
     const agent = state.agents.find((a) => a.id === agentId);
     if (!agent) return;
+    if (!agentIsConnected(agent)) {
+      showToast(`${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs first.`);
+      return;
+    }
     const openingLine = await getReply(agent, []);
+    if (!openingLine) {
+      showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
+      return;
+    }
     const thread = createThread(agentId, openingLine);
     setState((prev) => ({ ...prev, threads: [...prev.threads, thread], updatedAt: Date.now() }));
     showToast(`🧵 New thread started with ${agent.name}`);
@@ -287,9 +384,11 @@ export function ChatApp() {
       content,
       timestamp: Date.now(),
       feedback: null,
+      replyToId: replyingTo?.id ?? null,
     };
     appendMessage(targetThread.id, userMessage);
     setInputMessage('');
+    setReplyingTo(null);
 
     if (state.settings.orchestratorEnabled && state.status !== 'paused') {
       const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
@@ -297,7 +396,58 @@ export function ChatApp() {
     }
   }
 
+  async function handleReaction(threadId: string, message: Message, type: ReactionType) {
+    if (type === 'mindmap') {
+      const markdown = buildMessageMindmapMarkdown(state.agents, message);
+      const author = state.agents.find((a) => a.id === message.agentId);
+      setMindmapData({ markdown, title: `${author ? author.refNumber : 'Message'} Mind Map` });
+      setActiveModal('mindmap');
+      return;
+    }
+
+    const author = state.agents.find((a) => a.id === message.agentId);
+    if (!author) {
+      showToast('Reactions that ask for a follow-up only work on agent messages.');
+      return;
+    }
+    if (!agentIsConnected(author)) {
+      showToast(`${author.refNumber} has no LLM connected — assign one in 🔌 LLMs first.`);
+      return;
+    }
+
+    const thread = state.threads.find((t) => t.id === threadId);
+    if (!thread) return;
+    const index = thread.messages.findIndex((m) => m.id === message.id);
+    const precedingMessages = thread.messages.slice(0, index + 1);
+
+    const instruction =
+      type === 'bullets'
+        ? reactionInstruction('bullets')
+        : reactionInstruction(type);
+
+    const reply = await getReply(author, precedingMessages, instruction);
+    if (!reply) {
+      showToast(`⚠️ ${author.refNumber} failed to respond — check its LLM connection.`);
+      return;
+    }
+    appendMessage(threadId, {
+      id: generateId(),
+      threadId,
+      agentId: author.id,
+      content: reply,
+      timestamp: Date.now(),
+      feedback: null,
+      replyToId: message.id,
+    });
+  }
+
   function toggleAgentActive(id: string) {
+    const agent = state.agents.find((a) => a.id === id);
+    if (!agent) return;
+    if (!agent.active && !agentIsConnected(agent)) {
+      showToast(`${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs first.`);
+      return;
+    }
     setState((prev) => ({
       ...prev,
       agents: prev.agents.map((a) => (a.id === id ? { ...a, active: !a.active } : a)),
@@ -337,8 +487,38 @@ export function ChatApp() {
   }
 
   function resetConversation() {
+    if (allMessages.length === 0) {
+      setState((prev) => ({ ...prev, threads: [], status: 'idle' }));
+      showToast('🔄 Conversation reset');
+      return;
+    }
+    const userTitle = window.prompt('Give this conversation a title before archiving it:', '');
+    if (userTitle === null) return;
+    const title = buildArchiveTitle(userTitle.trim(), state);
+    const archive: ArchivedConversation = {
+      id: generateId(),
+      title,
+      archivedAt: Date.now(),
+      state,
+    };
+    const nextArchives = [...archives, archive];
+    setArchives(nextArchives);
+    saveArchives(nextArchives);
     setState((prev) => ({ ...prev, threads: [], status: 'idle' }));
-    showToast('🔄 Conversation reset');
+    showToast(`🗄️ Archived as "${title}" and reset`);
+  }
+
+  function restoreArchive(archive: ArchivedConversation) {
+    setState(migrateState(archive.state));
+    setActiveModal(null);
+    showToast(`♻️ Restored "${archive.title}"`);
+  }
+
+  function deleteArchive(id: string) {
+    const next = archives.filter((a) => a.id !== id);
+    setArchives(next);
+    saveArchives(next);
+    showToast('🗑️ Archive deleted');
   }
 
   function updateSettings(updates: Partial<ConversationState['settings']>) {
@@ -351,6 +531,10 @@ export function ChatApp() {
       agents: prev.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     }));
     showToast('✅ Agent settings saved!');
+  }
+
+  function updateAgentsBulk(nextAgents: Agent[]) {
+    setState((prev) => ({ ...prev, agents: nextAgents }));
   }
 
   function addAgent() {
@@ -410,6 +594,16 @@ export function ChatApp() {
     return state.agents.find((a) => a.id === id);
   }
 
+  function messageById(id: string): Message | undefined {
+    return allMessages.find((m) => m.id === id);
+  }
+
+  function authorLabel(agentId: string): string {
+    if (agentId === 'user') return 'You';
+    const agent = agentById(agentId);
+    return agent ? `${agent.refNumber} · ${agent.name}` : 'Unknown';
+  }
+
   return (
     <div className="app-shell">
       <div className="header">
@@ -459,6 +653,9 @@ export function ChatApp() {
           <button className="icon-btn" onClick={() => setActiveModal('export')}>
             📥 Export
           </button>
+          <button className="icon-btn" onClick={() => setActiveModal('archives')}>
+            🗄️ Archives
+          </button>
           <button className="icon-btn" onClick={() => setActiveModal('settings')}>
             ⚙️ Settings
           </button>
@@ -467,32 +664,57 @@ export function ChatApp() {
 
       <div className="participants-bar">
         <span className="control-label">Participants:</span>
-        {state.agents.map((agent) => (
-          <button
-            key={agent.id}
-            className={`participant-chip ${agent.active ? 'active' : ''}`}
-            style={{ borderColor: agent.color }}
-            onClick={() => toggleAgentActive(agent.id)}
-            title={agent.active ? 'Click to remove from discussion' : 'Click to include in discussion'}
-          >
-            <span className="participant-dot" style={{ background: agent.color }} />
-            {agent.refNumber} {agent.name}
-          </button>
-        ))}
+        {state.agents.map((agent) => {
+          const connected = agentIsConnected(agent);
+          return (
+            <button
+              key={agent.id}
+              className={`participant-chip ${agent.active && connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
+              style={{ borderColor: agent.color }}
+              onClick={() => toggleAgentActive(agent.id)}
+              title={
+                !connected
+                  ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs`
+                  : agent.active
+                  ? 'Click to remove from discussion'
+                  : 'Click to include in discussion'
+              }
+            >
+              <span className="participant-dot" style={{ background: agent.color }} />
+              {agent.refNumber} {agent.name}
+              {!connected && ' ⚠'}
+            </button>
+          );
+        })}
       </div>
 
       <div className="controls-panel">
         <div className="control-group">
-          <span className="control-label">Max Sentences:</span>
-          <input
-            type="number"
+          <span className="control-label">Response Style:</span>
+          <select
             className="control-input"
-            min={1}
-            max={10}
-            value={state.settings.maxSentences}
-            onChange={(e) => updateSettings({ maxSentences: Number(e.target.value) || 1 })}
-          />
+            style={{ width: 'auto' }}
+            value={state.settings.responseStyle}
+            onChange={(e) => updateSettings({ responseStyle: e.target.value as ResponseStyle })}
+          >
+            <option value="bullets">Bullet Points</option>
+            <option value="sentences">N Sentences</option>
+            <option value="detailed">More Detail</option>
+          </select>
         </div>
+        {state.settings.responseStyle === 'sentences' && (
+          <div className="control-group">
+            <span className="control-label">Sentences:</span>
+            <input
+              type="number"
+              className="control-input"
+              min={1}
+              max={10}
+              value={state.settings.maxSentences}
+              onChange={(e) => updateSettings({ maxSentences: Number(e.target.value) || 1 })}
+            />
+          </div>
+        )}
         <div className="control-group">
           <span className="control-label">Exchanges:</span>
           <input
@@ -548,17 +770,12 @@ export function ChatApp() {
             style={{
               background: liveMode ? '#d4f7dc' : liveMode === false ? '#fff3cd' : '#f0f0f0',
             }}
-            title={
-              liveMode === false
-                ? 'No LLM API key configured server-side — add OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY as Cloudflare secrets to enable live replies.'
-                : undefined
-            }
           >
             {liveMode === null
               ? 'Mode: not started'
               : liveMode
               ? '⚡ Live LLM replies'
-              : '🤖 Simulated replies (no API key)'}
+              : '⚠️ No responses yet — connect an LLM'}
           </span>
         </div>
       </div>
@@ -580,16 +797,13 @@ export function ChatApp() {
                 </div>
                 <div className="thread-info">
                   <div className="thread-title">
-                  {owner ? `${owner.refNumber} · ${owner.name}` : 'Unknown agent'}
-                </div>
+                    {owner ? `${owner.refNumber} · ${owner.name}` : 'Unknown agent'}
+                  </div>
                   <div className="thread-timestamp">
                     Started {new Date(thread.createdAt).toLocaleString()}
                   </div>
                 </div>
-                <button
-                  className="control-btn"
-                  onClick={() => handleNewThread(thread.agentId)}
-                >
+                <button className="control-btn" onClick={() => handleNewThread(thread.agentId)}>
                   + New Thread
                 </button>
               </div>
@@ -597,6 +811,7 @@ export function ChatApp() {
               {thread.messages.map((msg) => {
                 const isUser = msg.agentId === 'user';
                 const author = isUser ? null : agentById(msg.agentId);
+                const quoted = msg.replyToId ? messageById(msg.replyToId) : undefined;
                 return (
                   <div className={`bubble-wrapper ${isUser ? 'user' : ''}`} key={msg.id}>
                     <div
@@ -609,6 +824,12 @@ export function ChatApp() {
                       <div className="bubble-name">
                         {isUser ? 'You' : author ? `${author.refNumber} · ${author.name}` : 'Unknown'}
                       </div>
+                      {quoted && (
+                        <div className="quoted-reply">
+                          <span className="quoted-author">{authorLabel(quoted.agentId)}</span>
+                          <span className="quoted-snippet">{quoted.content.slice(0, 80)}</span>
+                        </div>
+                      )}
                       <div className="bubble-text">{msg.content}</div>
                       <div className="feedback-controls">
                         {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (
@@ -620,6 +841,33 @@ export function ChatApp() {
                             {type === 'like' ? '👍' : type === 'dislike' ? '👎' : '🤔'}
                           </button>
                         ))}
+                        <button
+                          className="feedback-btn"
+                          title="Reply to this message"
+                          onClick={() => setReplyingTo(msg)}
+                        >
+                          ↩️
+                        </button>
+                        {!isUser &&
+                          REACTIONS.map((r) => (
+                            <button
+                              key={r.type}
+                              className="feedback-btn"
+                              title={r.tooltip}
+                              onClick={() => handleReaction(thread.id, msg, r.type)}
+                            >
+                              {r.icon}
+                            </button>
+                          ))}
+                        {isUser && (
+                          <button
+                            className="feedback-btn"
+                            title="Turn this message into a mind map"
+                            onClick={() => handleReaction(thread.id, msg, 'mindmap')}
+                          >
+                            🗺️
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -629,6 +877,18 @@ export function ChatApp() {
           );
         })}
       </div>
+
+      {replyingTo && (
+        <div className="reply-preview">
+          <div className="reply-preview-text">
+            <span className="quoted-author">Replying to {authorLabel(replyingTo.agentId)}</span>
+            <span className="quoted-snippet">{replyingTo.content.slice(0, 80)}</span>
+          </div>
+          <button className="btn-icon" onClick={() => setReplyingTo(null)}>
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="input-area">
         <input
@@ -667,6 +927,8 @@ export function ChatApp() {
         <LLMProvidersModal
           connections={connections}
           onChange={updateConnections}
+          agents={state.agents}
+          onUpdateAgents={updateAgentsBulk}
           onClose={() => setActiveModal(null)}
           onToast={showToast}
         />
@@ -690,7 +952,30 @@ export function ChatApp() {
         />
       )}
       {activeModal === 'export' && (
-        <ExportModal state={state} onClose={() => setActiveModal(null)} onToast={showToast} />
+        <ExportModal
+          state={state}
+          onClose={() => setActiveModal(null)}
+          onToast={showToast}
+          onOpenMindmap={(markdown, title) => {
+            setMindmapData({ markdown, title });
+            setActiveModal('mindmap');
+          }}
+        />
+      )}
+      {activeModal === 'mindmap' && mindmapData && (
+        <MindmapModal
+          markdown={mindmapData.markdown}
+          title={mindmapData.title}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === 'archives' && (
+        <ArchivesModal
+          archives={archives}
+          onRestore={restoreArchive}
+          onDelete={deleteArchive}
+          onClose={() => setActiveModal(null)}
+        />
       )}
     </div>
   );

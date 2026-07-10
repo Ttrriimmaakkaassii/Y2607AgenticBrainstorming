@@ -1,11 +1,13 @@
 'use client';
 
 import { Agent, ConversationState, Thread } from '@/lib/types';
+import { buildConversationMindmapMarkdown } from '@/lib/mindmap';
 
 interface ExportModalProps {
   state: ConversationState;
   onClose: () => void;
   onToast: (message: string) => void;
+  onOpenMindmap: (markdown: string, title: string) => void;
 }
 
 function download(filename: string, content: string, mimeType: string) {
@@ -69,7 +71,7 @@ function buildReport(state: ConversationState): string {
   return lines.join('\n');
 }
 
-export function ExportModal({ state, onClose, onToast }: ExportModalProps) {
+export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportModalProps) {
   function exportJSON() {
     download('conversation.json', JSON.stringify(state, null, 2), 'application/json');
     onToast('📋 Downloaded JSON');
@@ -80,9 +82,18 @@ export function ExportModal({ state, onClose, onToast }: ExportModalProps) {
     onToast('📝 Downloaded Markdown');
   }
 
-  function exportMindmap() {
+  function exportMindmapOutline() {
     download('mindmap-outline.md', buildOutline(state), 'text/markdown');
     onToast('🗺️ Downloaded mind map outline');
+  }
+
+  function openMindmap() {
+    const markdown = buildConversationMindmapMarkdown(
+      state.agents,
+      state.threads,
+      state.settings.topic
+    );
+    onOpenMindmap(markdown, state.settings.topic || 'Conversation Mind Map');
   }
 
   function exportReport() {
@@ -122,8 +133,11 @@ export function ExportModal({ state, onClose, onToast }: ExportModalProps) {
             <button className="btn-secondary" onClick={exportReport}>
               📊 Generate Report
             </button>
-            <button className="btn-secondary" onClick={exportMindmap}>
-              🗺️ Generate Mind Map Outline
+            <button className="btn-secondary" onClick={openMindmap}>
+              🗺️ Open Interactive Mind Map
+            </button>
+            <button className="btn-secondary" onClick={exportMindmapOutline}>
+              📝 Download Mind Map Outline (.md)
             </button>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { getModel, getProvider } from './llm-catalog';
-import { Agent, Effort, LLMConnection, LLMProvider, Message, Mood } from './types';
+import { Agent, Effort, LLMConnection, LLMProvider, Message, Mood, ReactionType, ResponseStyle } from './types';
 
 const OPENAI_COMPATIBLE_PROVIDERS: LLMProvider[] = [
   'openai',
@@ -10,16 +10,36 @@ const OPENAI_COMPATIBLE_PROVIDERS: LLMProvider[] = [
   'mistral',
 ];
 
-interface ChatApiResponse {
-  content?: string;
-  error?: string;
+const REACTION_INSTRUCTIONS: Record<ReactionType, string> = {
+  elaborate: 'Elaborate on your previous message with more depth.',
+  explainFurther: 'Explain your previous point further, in simpler terms if helpful.',
+  why: 'Explain why you believe what you just said — justify your reasoning.',
+  sources: 'List the sources, evidence, or reasoning basis behind your previous claim.',
+  bullets: 'Restate your previous point as a concise bulleted list.',
+  mindmap: 'Summarize your previous point as a short hierarchical outline suitable for a mind map.',
+};
+
+function styleInstruction(style: ResponseStyle, maxSentences: number): string {
+  if (style === 'bullets') return 'Reply as a concise bulleted list (3-6 bullet points), each starting with "- ".';
+  if (style === 'detailed') return 'Reply with a thorough, detailed explanation (multiple paragraphs are fine).';
+  return `Reply in at most ${maxSentences} sentence${maxSentences === 1 ? '' : 's'}.`;
 }
 
-function buildSystemPrompt(agent: Agent, mood: Mood, maxSentences: number): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions} The discussion mood is "${mood}". Reply in at most ${maxSentences} sentences, in character, without restating your name.`;
+function buildSystemPrompt(
+  agent: Agent,
+  mood: Mood,
+  style: ResponseStyle,
+  maxSentences: number
+): string {
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions} The discussion mood is "${mood}". ${styleInstruction(style, maxSentences)} Stay in character, without restating your name.`;
 }
 
-function buildUserPrompt(topic: string, history: Message[], agents: Agent[]): string {
+function buildUserPrompt(
+  topic: string,
+  history: Message[],
+  agents: Agent[],
+  extraInstruction?: string
+): string {
   const transcript = history
     .slice(-8)
     .map((m) => {
@@ -29,10 +49,11 @@ function buildUserPrompt(topic: string, history: Message[], agents: Agent[]): st
     })
     .join('\n');
 
-  if (!transcript) {
-    return `Start a discussion on: ${topic || 'a topic of your choosing'}`;
-  }
-  return `Topic: ${topic || '(unspecified)'}\n\nConversation so far:\n${transcript}\n\nContinue the discussion with your next message.`;
+  const base = transcript
+    ? `Topic: ${topic || '(unspecified)'}\n\nConversation so far:\n${transcript}`
+    : `Start a discussion on: ${topic || 'a topic of your choosing'}`;
+
+  return extraInstruction ? `${base}\n\nInstruction: ${extraInstruction}` : `${base}\n\nContinue the discussion with your next message.`;
 }
 
 function effortToBudgetTokens(effort: Effort): number {
@@ -58,7 +79,7 @@ async function callOpenAICompatibleDirect(
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    max_tokens: 300,
+    max_tokens: 500,
   };
   if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
 
@@ -83,7 +104,7 @@ async function callAnthropicDirect(
   const modelInfo = getModel('anthropic', connection.model);
   const body: Record<string, unknown> = {
     model: connection.model,
-    max_tokens: 300,
+    max_tokens: 500,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   };
@@ -157,30 +178,11 @@ async function callDirect(
   }
 }
 
-async function callServerProxy(
-  agent: Agent,
-  systemPrompt: string,
-  userPrompt: string
-): Promise<string | null> {
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: agent.llmProvider, systemPrompt, userPrompt }),
-    });
-    if (!res.ok) return null;
-    const data: ChatApiResponse = await res.json();
-    return data.content?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Resolves a real LLM reply for an agent: tries the agent's connected
- * user-supplied LLM connection (called directly from the browser) first,
- * then falls back to the server-side proxy (Cloudflare secrets), then
- * returns null so the caller can fall back to the simulated generator.
+ * Resolves a real LLM reply for an agent using its connected, user-supplied
+ * LLM connection. Returns null if the agent has no connection or the call
+ * fails — callers must treat null as "this agent cannot respond right now"
+ * and must never substitute a simulated/mock message for it.
  */
 export async function fetchAgentReply(
   agent: Agent,
@@ -189,19 +191,20 @@ export async function fetchAgentReply(
   topic: string,
   history: Message[],
   agents: Agent[],
-  maxSentences: number
+  responseStyle: ResponseStyle,
+  maxSentences: number,
+  extraInstruction?: string
 ): Promise<string | null> {
-  const systemPrompt = buildSystemPrompt(agent, mood, maxSentences);
-  const userPrompt = buildUserPrompt(topic, history, agents);
-
   const connection = agent.connectionId
     ? connections.find((c) => c.id === agent.connectionId)
     : undefined;
+  if (!connection) return null;
 
-  if (connection) {
-    const direct = await callDirect(connection, systemPrompt, userPrompt);
-    if (direct) return direct;
-  }
+  const systemPrompt = buildSystemPrompt(agent, mood, responseStyle, maxSentences);
+  const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction);
+  return callDirect(connection, systemPrompt, userPrompt);
+}
 
-  return callServerProxy(agent, systemPrompt, userPrompt);
+export function reactionInstruction(type: ReactionType): string {
+  return REACTION_INSTRUCTIONS[type];
 }
