@@ -52,3 +52,27 @@ export async function setApproval(userId: string, isApproved: boolean): Promise<
   if (!supabase) return;
   await supabase.from('user_profiles').update({ is_approved: isApproved }).eq('user_id', userId);
 }
+
+/**
+ * The conversation the user was last working on, tracked per-account (not
+ * per-browser), so signing in on a different device/browser resumes the
+ * same conversation instead of starting a new blank one.
+ */
+export async function getCurrentConversationId(userId: string): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('current_conversation_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.current_conversation_id ?? null;
+}
+
+export async function setCurrentConversationId(userId: string, conversationId: string): Promise<void> {
+  if (!supabase) return;
+  await supabase
+    .from('user_profiles')
+    .update({ current_conversation_id: conversationId })
+    .eq('user_id', userId);
+}

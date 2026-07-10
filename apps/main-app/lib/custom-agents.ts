@@ -12,7 +12,14 @@ export function loadCustomAgents(): AgentPreset[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AgentPreset[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as (AgentPreset & { category?: string })[];
+    // Migrate the old single `category` field to the new `categories` array.
+    return parsed.map((p) => {
+      if (p.categories) return p;
+      const { category, ...rest } = p;
+      return { ...rest, categories: category ? [category] : [] };
+    });
   } catch {
     return [];
   }

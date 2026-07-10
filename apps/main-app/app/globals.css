@@ -154,6 +154,29 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
+.floating-play-btn {
+  position: fixed;
+  bottom: 90px;
+  right: 16px;
+  z-index: 25;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 22px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-play-btn:hover {
+  filter: brightness(1.1);
+}
+
 .settings-gear-btn:hover {
   background: var(--bg-input);
 }
@@ -860,6 +883,43 @@ body.dev-mode [data-devref]::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.category-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.category-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.category-badge {
+  font-size: 10px;
+  color: white;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.category-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.category-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .changelog-entry {

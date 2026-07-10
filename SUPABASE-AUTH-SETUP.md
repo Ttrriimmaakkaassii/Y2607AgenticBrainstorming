@@ -146,6 +146,15 @@ create policy "Admins update all profiles"
 
 Then re-run the section 1c backfill (it's idempotent) and reload the app.
 
+## 1e. Track the current conversation per-account
+
+So opening the app on a different device/browser resumes the same
+conversation instead of starting a new blank one:
+
+```sql
+alter table user_profiles add column if not exists current_conversation_id text;
+```
+
 ## 2. Confirm email/password auth is enabled
 
 Supabase Dashboard → **Authentication → Providers → Email** — it's on by

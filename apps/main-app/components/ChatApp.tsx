@@ -29,6 +29,7 @@ import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { Theme, applyTheme, loadTheme } from '@/lib/theme';
 import { addCustomMood, loadCustomMoods } from '@/lib/moods';
+import { getCurrentConversationId, setCurrentConversationId } from '@/lib/admin';
 import { logFieldChanges } from '@/lib/changelog';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
@@ -265,13 +266,15 @@ export function ChatApp() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
 
   useEffect(() => {
     setConnections(loadConnections());
     setArchives(loadArchives());
 
     getSession().then((session) => {
-      if (session) setUserId(session.user.id);
+      setUserId(session?.user.id ?? null);
+      setAuthResolved(true);
     });
     return onAuthStateChange((session) => setUserId(session?.user.id ?? null));
   }, []);
@@ -293,8 +296,29 @@ export function ChatApp() {
   }
 
   useEffect(() => {
-    const conversationId = getOrCreateConversationId();
-    loadConversation(conversationId).then((loaded) => {
+    if (!authResolved) return;
+    let cancelled = false;
+
+    (async () => {
+      // When signed in, the "current conversation" is tracked per-account
+      // (not per-browser), so opening the app on a different device/browser
+      // resumes the same conversation instead of starting a new blank one.
+      let conversationId: string;
+      if (userId) {
+        const remoteId = await getCurrentConversationId(userId);
+        if (remoteId) {
+          conversationId = remoteId;
+        } else {
+          conversationId = getOrCreateConversationId();
+          await setCurrentConversationId(userId, conversationId);
+        }
+      } else {
+        conversationId = getOrCreateConversationId();
+      }
+      if (cancelled) return;
+
+      const loaded = await loadConversation(conversationId);
+      if (cancelled) return;
       if (loaded) {
         setState(migrateState(loaded));
         setCurrentAgentId(loaded.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
@@ -302,8 +326,12 @@ export function ChatApp() {
         setState((prev) => ({ ...prev, id: conversationId }));
       }
       setHydrated(true);
-    });
-  }, []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authResolved, userId]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -893,10 +921,11 @@ export function ChatApp() {
   }
 
   function updateSettings(updates: Partial<ConversationState['settings']>) {
-    logFieldChanges('settings', 'Conversation Settings', state.settings, {
-      ...state.settings,
-      ...updates,
-    });
+    // Excludes "topic" — it fires on every keystroke while typing, which
+    // would flood the log with meaningless per-character diffs.
+    const { topic: prevTopic, ...prevRest } = state.settings;
+    const { topic: nextTopic, ...nextRest } = { ...state.settings, ...updates };
+    logFieldChanges('settings', 'Conversation Settings', prevRest, nextRest);
     setState((prev) => ({ ...prev, settings: { ...prev.settings, ...updates } }));
   }
 
@@ -1293,6 +1322,14 @@ export function ChatApp() {
           </span>
         </div>
       </div>
+
+      <button
+        className="floating-play-btn"
+        onClick={state.status === 'running' ? pauseConversation : playConversation}
+        title={state.status === 'running' ? 'Pause conversation' : 'Play/resume conversation'}
+      >
+        {state.status === 'running' ? '⏸️' : '▶️'}
+      </button>
 
       <div className="conversation-body">
         {showAudioRail && (

@@ -8,6 +8,7 @@ import {
   addCustomCategory,
   deleteCustomCategory,
   loadCustomCategories,
+  recolorCustomCategory,
   renameCustomCategory,
 } from '@/lib/categories';
 
@@ -17,13 +18,13 @@ interface AgentLibraryModalProps {
 }
 
 const CUSTOM_AGENTS_VIEW = 'custom';
-const UNCATEGORIZED = 'Uncategorized';
 
 export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('📁');
+  const [newCategoryColor, setNewCategoryColor] = useState('#8e44ad');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
@@ -34,21 +35,23 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
 
   // A custom agent tagged with any category's name also shows up browsing
   // that category, alongside any built-in presets it has.
-  const categories: (SkillCategory & { isCustom?: boolean })[] = [
+  const categories: (SkillCategory & { isCustom?: boolean; color?: string })[] = [
     { id: CUSTOM_AGENTS_VIEW, name: 'My Saved Agents', icon: '⭐', presets: customAgents },
     ...AGENT_LIBRARY.map((c) => ({
       ...c,
-      presets: [...c.presets, ...customAgents.filter((a) => a.category === c.name)],
+      presets: [...c.presets, ...customAgents.filter((a) => a.categories?.includes(c.name))],
     })),
     ...customCategories.map((c) => ({
       id: c.id,
       name: c.name,
       icon: c.icon,
-      presets: customAgents.filter((a) => a.category === c.name),
+      color: c.color,
+      presets: customAgents.filter((a) => a.categories?.includes(c.name)),
       isCustom: true,
     })),
   ];
 
+  const categoryColors = new Map(customCategories.map((c) => [c.name, c.color]));
   const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
 
   const [categoryId, setCategoryId] = useState(CUSTOM_AGENTS_VIEW);
@@ -59,19 +62,19 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
     setCustomAgents((prev) => prev.filter((p) => p.name !== name));
   }
 
-  function setPresetCategory(preset: AgentPreset, newCategory: string) {
-    const updated = { ...preset, category: newCategory === UNCATEGORIZED ? undefined : newCategory };
+  function togglePresetCategory(preset: AgentPreset, categoryName: string) {
+    const current = preset.categories ?? [];
+    const next = current.includes(categoryName)
+      ? current.filter((c) => c !== categoryName)
+      : [...current, categoryName];
+    const updated = { ...preset, categories: next };
     upsertCustomAgent(updated);
     setCustomAgents((prev) => prev.map((p) => (p.name === preset.name ? updated : p)));
   }
 
-  function removeFromCategory(preset: AgentPreset) {
-    setPresetCategory(preset, UNCATEGORIZED);
-  }
-
   function handleAddCategory() {
     if (!newCategoryName.trim()) return;
-    const next = addCustomCategory(newCategoryName, newCategoryIcon);
+    const next = addCustomCategory(newCategoryName, newCategoryIcon, newCategoryColor);
     setCustomCategories(next);
     setNewCategoryName('');
     setNewCategoryIcon('📁');
@@ -87,6 +90,10 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
     setRenamingId(null);
   }
 
+  function handleRecolorCategory(id: string, color: string) {
+    setCustomCategories(recolorCustomCategory(id, color));
+  }
+
   function handleDeleteCategory(id: string) {
     setCustomCategories(deleteCustomCategory(id));
     setCustomAgents(loadCustomAgents());
@@ -95,7 +102,7 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
 
   return (
     <div className="modal-overlay active" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-header">
           <span className="modal-title">📚 Agent Library</span>
           <button className="modal-close" onClick={onClose}>
@@ -111,7 +118,7 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                   <option key={c.id} value={c.id}>
                     {c.icon} {c.name}
                     {c.id !== CUSTOM_AGENTS_VIEW &&
-                      customAgents.some((a) => a.category === c.name) &&
+                      customAgents.some((a) => a.categories?.includes(c.name)) &&
                       ' ⭐'}
                   </option>
                 ))}
@@ -126,6 +133,7 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
             )}
             {customCategories.map((c) => (
               <div className="agent-list-item" key={c.id}>
+                <span className="category-dot" style={{ background: c.color }} />
                 {renamingId === c.id ? (
                   <input
                     autoFocus
@@ -142,6 +150,13 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                     </div>
                   </div>
                 )}
+                <input
+                  type="color"
+                  value={c.color}
+                  onChange={(e) => handleRecolorCategory(c.id, e.target.value)}
+                  title="Category color"
+                  style={{ width: 28, height: 24, padding: 0, border: 'none' }}
+                />
                 <button
                   className="btn-icon"
                   title="Rename"
@@ -170,6 +185,13 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                 title="Icon (emoji)"
               />
               <input
+                type="color"
+                value={newCategoryColor}
+                onChange={(e) => setNewCategoryColor(e.target.value)}
+                title="Category color"
+                style={{ width: 32, height: 32, padding: 0, border: 'none' }}
+              />
+              <input
                 type="text"
                 placeholder="New category name"
                 value={newCategoryName}
@@ -190,13 +212,13 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
               <div className="empty-state">
                 {categoryId === CUSTOM_AGENTS_VIEW
                   ? 'No saved agents yet — any agent you add or edit in a conversation is automatically saved here, and stays even after you delete it from that conversation, until you erase it below.'
-                  : 'No agents in this category yet — tag one from "My Saved Agents" below, or add a new agent to a conversation and tag it here afterward.'}
+                  : 'No agents in this category yet — check the boxes below to add one.'}
               </div>
             )}
             {category.presets.map((preset) => {
               const isCustom = customAgents.some((a) => a.name === preset.name);
               return (
-                <div className="agent-list-item" key={preset.name}>
+                <div className="agent-list-item" key={preset.name} style={{ alignItems: 'flex-start' }}>
                   <div className="avatar" style={{ background: preset.color }}>
                     {preset.role.charAt(0).toUpperCase()}
                   </div>
@@ -205,34 +227,37 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                       {preset.name} — {preset.role}
                     </div>
                     <div className="agent-instructions">{preset.instructions}</div>
-                    {isCustom && (categoryId === CUSTOM_AGENTS_VIEW || category.isCustom) && (
-                      <select
-                        value={preset.category ?? UNCATEGORIZED}
-                        onChange={(e) => setPresetCategory(preset, e.target.value)}
-                        style={{ marginTop: 4, fontSize: 11, padding: '2px 4px' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <option value={UNCATEGORIZED}>{UNCATEGORIZED}</option>
-                        {allCategoryNames.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
+                    {preset.categories && preset.categories.length > 0 && (
+                      <div className="category-badges">
+                        {preset.categories.map((cat) => (
+                          <span
+                            key={cat}
+                            className="category-badge"
+                            style={{ background: categoryColors.get(cat) ?? '#999' }}
+                          >
+                            {cat}
+                          </span>
                         ))}
-                      </select>
+                      </div>
+                    )}
+                    {isCustom && (
+                      <div className="category-checklist">
+                        {allCategoryNames.map((name) => (
+                          <label key={name} className="category-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={preset.categories?.includes(name) ?? false}
+                              onChange={() => togglePresetCategory(preset, name)}
+                            />
+                            {name}
+                          </label>
+                        ))}
+                      </div>
                     )}
                   </div>
                   <button className="btn-icon" onClick={() => onAdd(preset)} title="Add to conversation">
                     ➕
                   </button>
-                  {isCustom && category.isCustom && (
-                    <button
-                      className="btn-icon delete"
-                      onClick={() => removeFromCategory(preset)}
-                      title="Remove from this category (keeps the agent in the library)"
-                    >
-                      ➖
-                    </button>
-                  )}
                   {categoryId === CUSTOM_AGENTS_VIEW && isCustom && (
                     <button
                       className="btn-icon delete"

@@ -3,8 +3,8 @@ export interface AgentPreset {
   role: string;
   instructions: string;
   color: string;
-  /** Skill category name this custom-saved agent is filed under (e.g. "Philosophy"). */
-  category?: string;
+  /** Skill category names this custom-saved agent is filed under (e.g. ["Philosophy", "Ethics"]). */
+  categories?: string[];
 }
 
 export interface SkillCategory {

@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getProvider } from '@/lib/llm-catalog';
 import { Agent, ArchivedConversation, LLMConnection, Thread } from '@/lib/types';
+import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
+import { loadCustomAgents, upsertCustomAgent } from '@/lib/custom-agents';
+import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
@@ -67,6 +70,43 @@ export function SettingsModal({
   const [connectionId, setConnectionId] = useState<string | null>(
     currentAgent?.connectionId ?? null
   );
+  const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+
+  useEffect(() => {
+    setCustomAgents(loadCustomAgents());
+    setCustomCategories(loadCustomCategories());
+  }, []);
+
+  const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
+  const currentAgentCategories =
+    customAgents.find((a) => a.name === (currentAgent?.name ?? ''))?.categories ?? [];
+
+  function toggleCurrentAgentCategory(categoryName: string) {
+    if (!currentAgent) return;
+    const existing = customAgents.find((a) => a.name === currentAgent.name);
+    const current = existing?.categories ?? [];
+    const nextCategories = current.includes(categoryName)
+      ? current.filter((c) => c !== categoryName)
+      : [...current, categoryName];
+    const updated: AgentPreset = {
+      name: currentAgent.name,
+      role: currentAgent.role,
+      instructions: currentAgent.instructions,
+      color: currentAgent.color,
+      categories: nextCategories,
+    };
+    upsertCustomAgent(updated);
+    setCustomAgents((prev) => {
+      const idx = prev.findIndex((a) => a.name === updated.name);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updated;
+        return copy;
+      }
+      return [...prev, updated];
+    });
+  }
 
   function selectAgent(id: string) {
     const agent = agents.find((a) => a.id === id);
@@ -172,6 +212,21 @@ export function SettingsModal({
                     onChange={(e) => setColor(e.target.value)}
                     style={{ width: 50, height: 30, border: '1px solid #ddd', padding: 0 }}
                   />
+                </div>
+                <div className="form-group">
+                  <label>Skill Categories (assign as many as you like)</label>
+                  <div className="category-checklist">
+                    {allCategoryNames.map((name) => (
+                      <label key={name} className="category-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={currentAgentCategories.includes(name)}
+                          onChange={() => toggleCurrentAgentCategory(name)}
+                        />
+                        {name}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <button className="btn-primary" onClick={save}>
                   Save Changes
