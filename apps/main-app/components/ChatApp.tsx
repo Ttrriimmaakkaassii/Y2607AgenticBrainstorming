@@ -549,6 +549,25 @@ export function ChatApp() {
     setInputMessage('');
     setReplyingTo(null);
 
+    const mentionMatch = /@(Agt\d+)/i.exec(content);
+    const mentionedAgent = mentionMatch
+      ? state.agents.find((a) => a.refNumber.toLowerCase() === mentionMatch[1].toLowerCase())
+      : null;
+
+    if (mentionedAgent) {
+      // Deactivate immediately so the participants bar reflects that this
+      // agent was addressed directly and won't auto-join future rounds
+      // until the user re-selects it.
+      setState((prev) => ({
+        ...prev,
+        agents: prev.agents.map((a) => (a.id === mentionedAgent.id ? { ...a, active: false } : a)),
+      }));
+      showToast(`Directed at ${mentionedAgent.refNumber} — it's been unselected from Participants.`);
+      const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
+      runAgentRound(threadWithUserMsg, [mentionedAgent]);
+      return;
+    }
+
     if (state.settings.orchestratorEnabled && state.status !== 'paused') {
       const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
       runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.active));
@@ -1501,7 +1520,7 @@ export function ChatApp() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') sendMessage();
           }}
-          placeholder="Type message..."
+          placeholder="Type message... (@Agt2 to ask only that agent)"
           disabled={state.status === 'stopped'}
         />
         <button className="send-btn" {...devRef('i3')} onClick={sendMessage} disabled={state.status === 'stopped'}>

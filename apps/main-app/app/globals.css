@@ -116,9 +116,11 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 4px 52px 4px 12px;
   background: #e9edf1;
   font-size: 12px;
+  position: relative;
+  z-index: 30;
 }
 
 .account-email {
