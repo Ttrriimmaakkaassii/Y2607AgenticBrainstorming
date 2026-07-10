@@ -1,5 +1,14 @@
-import { getModel } from './llm-catalog';
-import { Agent, Effort, LLMConnection, Message, Mood } from './types';
+import { getModel, getProvider } from './llm-catalog';
+import { Agent, Effort, LLMConnection, LLMProvider, Message, Mood } from './types';
+
+const OPENAI_COMPATIBLE_PROVIDERS: LLMProvider[] = [
+  'openai',
+  'deepseek',
+  'zhipu',
+  'moonshot',
+  'xai',
+  'mistral',
+];
 
 interface ChatApiResponse {
   content?: string;
@@ -30,12 +39,19 @@ function effortToBudgetTokens(effort: Effort): number {
   return effort === 'high' ? 16000 : effort === 'medium' ? 4096 : 1024;
 }
 
-async function callOpenAIDirect(
+/**
+ * Shared caller for every provider whose chat API mirrors OpenAI's
+ * /v1/chat/completions shape (OpenAI, DeepSeek, Z.ai, Moonshot, xAI, Mistral).
+ */
+async function callOpenAICompatibleDirect(
   connection: LLMConnection,
   systemPrompt: string,
   userPrompt: string
 ): Promise<string | null> {
-  const modelInfo = getModel('openai', connection.model);
+  const provider = getProvider(connection.provider);
+  if (!provider) return null;
+  const modelInfo = getModel(connection.provider, connection.model);
+
   const body: Record<string, unknown> = {
     model: connection.model,
     messages: [
@@ -46,7 +62,7 @@ async function callOpenAIDirect(
   };
   if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch(provider.endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -125,9 +141,10 @@ async function callDirect(
   userPrompt: string
 ): Promise<string | null> {
   try {
+    if (OPENAI_COMPATIBLE_PROVIDERS.includes(connection.provider)) {
+      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt);
+    }
     switch (connection.provider) {
-      case 'openai':
-        return await callOpenAIDirect(connection, systemPrompt, userPrompt);
       case 'anthropic':
         return await callAnthropicDirect(connection, systemPrompt, userPrompt);
       case 'google':

@@ -7,10 +7,25 @@ interface Env {
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GOOGLE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
+  ZHIPU_API_KEY?: string;
+  MOONSHOT_API_KEY?: string;
+  XAI_API_KEY?: string;
+  MISTRAL_API_KEY?: string;
 }
 
+type Provider =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'deepseek'
+  | 'zhipu'
+  | 'moonshot'
+  | 'xai'
+  | 'mistral';
+
 interface ChatRequestBody {
-  provider: 'openai' | 'anthropic' | 'google';
+  provider: Provider;
   model?: string;
   systemPrompt: string;
   userPrompt: string;
@@ -23,17 +38,58 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-async function callOpenAI(env: Env, body: ChatRequestBody): Promise<Response> {
-  if (!env.OPENAI_API_KEY) return json({ error: 'not_configured' });
+const OPENAI_COMPATIBLE: Record<
+  Exclude<Provider, 'anthropic' | 'google'>,
+  { endpoint: string; envKey: keyof Env; defaultModel: string }
+> = {
+  openai: {
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    envKey: 'OPENAI_API_KEY',
+    defaultModel: 'gpt-4o-mini',
+  },
+  deepseek: {
+    endpoint: 'https://api.deepseek.com/chat/completions',
+    envKey: 'DEEPSEEK_API_KEY',
+    defaultModel: 'deepseek-chat',
+  },
+  zhipu: {
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    envKey: 'ZHIPU_API_KEY',
+    defaultModel: 'glm-4.6',
+  },
+  moonshot: {
+    endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+    envKey: 'MOONSHOT_API_KEY',
+    defaultModel: 'moonshot-v1-32k',
+  },
+  xai: {
+    endpoint: 'https://api.x.ai/v1/chat/completions',
+    envKey: 'XAI_API_KEY',
+    defaultModel: 'grok-4',
+  },
+  mistral: {
+    endpoint: 'https://api.mistral.ai/v1/chat/completions',
+    envKey: 'MISTRAL_API_KEY',
+    defaultModel: 'mistral-small-latest',
+  },
+};
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callOpenAICompatible(
+  env: Env,
+  body: ChatRequestBody,
+  config: { endpoint: string; envKey: keyof Env; defaultModel: string }
+): Promise<Response> {
+  const apiKey = env[config.envKey];
+  if (!apiKey) return json({ error: 'not_configured' });
+
+  const res = await fetch(config.endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: body.model || 'gpt-4o-mini',
+      model: body.model || config.defaultModel,
       messages: [
         { role: 'system', content: body.systemPrompt },
         { role: 'user', content: body.userPrompt },
@@ -100,14 +156,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return json({ error: 'invalid_json' }, 400);
   }
 
-  switch (body.provider) {
-    case 'openai':
-      return callOpenAI(context.env, body);
-    case 'anthropic':
-      return callAnthropic(context.env, body);
-    case 'google':
-      return callGoogle(context.env, body);
-    default:
-      return json({ error: 'unknown_provider' }, 400);
+  if (body.provider === 'anthropic') return callAnthropic(context.env, body);
+  if (body.provider === 'google') return callGoogle(context.env, body);
+  if (body.provider in OPENAI_COMPATIBLE) {
+    return callOpenAICompatible(
+      context.env,
+      body,
+      OPENAI_COMPATIBLE[body.provider as keyof typeof OPENAI_COMPATIBLE]
+    );
   }
+  return json({ error: 'unknown_provider' }, 400);
 };

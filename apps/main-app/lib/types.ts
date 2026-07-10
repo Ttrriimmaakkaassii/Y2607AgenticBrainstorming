@@ -1,6 +1,14 @@
 export type Feedback = 'like' | 'dislike' | 'clarify';
 export type Mood = 'debate' | 'complementary' | 'research';
-export type LLMProvider = 'openai' | 'anthropic' | 'google';
+export type LLMProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'deepseek'
+  | 'zhipu'
+  | 'moonshot'
+  | 'xai'
+  | 'mistral';
 export type Effort = 'low' | 'medium' | 'high';
 
 export interface Agent {

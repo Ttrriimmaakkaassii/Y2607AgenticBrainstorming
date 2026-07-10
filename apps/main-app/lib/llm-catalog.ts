@@ -49,6 +49,54 @@ export const LLM_CATALOG: ProviderInfo[] = [
       { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', supportsEffort: false },
     ],
   },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    endpoint: 'https://api.deepseek.com/chat/completions',
+    models: [
+      { id: 'deepseek-chat', label: 'DeepSeek-V3 (chat)', supportsEffort: false },
+      { id: 'deepseek-reasoner', label: 'DeepSeek-R1 (reasoner)', supportsEffort: false },
+    ],
+  },
+  {
+    id: 'zhipu',
+    name: 'Z.ai (Zhipu GLM)',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    models: [
+      { id: 'glm-4.6', label: 'GLM-4.6', supportsEffort: false },
+      { id: 'glm-4.5-air', label: 'GLM-4.5 Air', supportsEffort: false },
+    ],
+  },
+  {
+    id: 'moonshot',
+    name: 'Moonshot AI (Kimi)',
+    endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+    models: [
+      { id: 'kimi-k2-0905-preview', label: 'Kimi K2', supportsEffort: false },
+      { id: 'moonshot-v1-32k', label: 'Moonshot v1 32k', supportsEffort: false },
+      { id: 'moonshot-v1-128k', label: 'Moonshot v1 128k', supportsEffort: false },
+    ],
+  },
+  {
+    id: 'xai',
+    name: 'xAI (Grok)',
+    endpoint: 'https://api.x.ai/v1/chat/completions',
+    models: [
+      { id: 'grok-4', label: 'Grok 4', supportsEffort: false },
+      { id: 'grok-4-fast', label: 'Grok 4 Fast', supportsEffort: false },
+      { id: 'grok-3-mini', label: 'Grok 3 Mini (reasoning)', supportsEffort: false },
+    ],
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral',
+    endpoint: 'https://api.mistral.ai/v1/chat/completions',
+    models: [
+      { id: 'mistral-large-latest', label: 'Mistral Large', supportsEffort: false },
+      { id: 'mistral-small-latest', label: 'Mistral Small', supportsEffort: false },
+      { id: 'magistral-medium-latest', label: 'Magistral Medium (reasoning)', supportsEffort: false },
+    ],
+  },
 ];
 
 export function getProvider(id: LLMProvider): ProviderInfo | undefined {
