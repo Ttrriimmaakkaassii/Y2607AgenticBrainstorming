@@ -44,7 +44,10 @@ export function AudioRail({ agents, messages, speakingMessageId, onPlayFrom, onS
           onClick={() => onPlayFrom(i)}
           title={`Play from: ${msg.content.slice(0, 60)}`}
         >
-          <span className="audio-rail-author">{authorLabel(agents, msg.agentId)}</span>
+          <span className="audio-rail-author">
+            {msg.id === speakingMessageId && <span className="speaking-dot">🔊</span>}
+            {authorLabel(agents, msg.agentId)}
+          </span>
           <span className="audio-rail-snippet">{msg.content.slice(0, 36)}</span>
         </button>
       ))}

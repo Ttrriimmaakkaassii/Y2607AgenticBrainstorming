@@ -12,6 +12,7 @@
   "dependencies": {
     "clsx": "^2.0.0",
     "date-fns": "^3.0.0",
+    "jspdf": "^4.2.1",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
     "next": "^14.0.4",

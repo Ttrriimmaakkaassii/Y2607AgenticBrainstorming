@@ -465,6 +465,14 @@ export function ChatApp() {
     setSpeaking(null);
   }
 
+  function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
+    const voices = window.speechSynthesis.getVoices();
+    return (
+      voices.find((v) => v.lang === lang) ||
+      voices.find((v) => v.lang.startsWith(lang.split('-')[0]))
+    );
+  }
+
   function playFromMessage(startIndex: number) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       showToast('Speech synthesis is not supported in this browser.');
@@ -473,15 +481,29 @@ export function ChatApp() {
     window.speechSynthesis.cancel();
     speakingCancelledRef.current = false;
 
+    // Chrome silently drops boundary/word events if speak() is called in
+    // the same tick as cancel(), and can stall on long utterances unless
+    // periodically nudged with pause()/resume() — both are long-standing
+    // Web Speech API quirks, not bugs in this app's logic.
+    const keepAlive = setInterval(() => {
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 10000);
+
     function speakAt(index: number) {
       if (speakingCancelledRef.current || index >= allMessages.length) {
         setSpeaking(null);
+        clearInterval(keepAlive);
         return;
       }
       const msg = allMessages[index];
       const utterance = new SpeechSynthesisUtterance(msg.content);
       utterance.rate = state.settings.ttsRate;
       utterance.lang = state.settings.ttsLang;
+      const voice = pickVoice(state.settings.ttsLang);
+      if (voice) utterance.voice = voice;
       utterance.onstart = () => setSpeaking({ messageId: msg.id, charIndex: 0, charLength: 0 });
       utterance.onboundary = (e) => {
         if (e.name && e.name !== 'word') return;
@@ -498,7 +520,15 @@ export function ChatApp() {
       window.speechSynthesis.speak(utterance);
     }
 
-    speakAt(startIndex);
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.addEventListener(
+        'voiceschanged',
+        () => setTimeout(() => speakAt(startIndex), 50),
+        { once: true }
+      );
+    } else {
+      setTimeout(() => speakAt(startIndex), 50);
+    }
   }
 
   function toggleAgentActive(id: string) {
