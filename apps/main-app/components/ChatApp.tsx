@@ -195,6 +195,21 @@ export function ChatApp() {
   const [showAudioRail, setShowAudioRail] = useState(true);
   const [theme, setTheme] = useState<Theme>('light');
   const [devMode, setDevMode] = useState(false);
+  /** agentId -> threadId, for every agent currently awaiting an LLM reply. */
+  const [thinking, setThinking] = useState<Map<string, string>>(new Map());
+
+  function startThinking(agentId: string, threadId: string) {
+    setThinking((prev) => new Map(prev).set(agentId, threadId));
+  }
+
+  function stopThinking(agentId: string) {
+    setThinking((prev) => {
+      if (!prev.has(agentId)) return prev;
+      const next = new Map(prev);
+      next.delete(agentId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const t = loadTheme();
@@ -383,7 +398,9 @@ export function ChatApp() {
 
       const agent = connected[turn % connected.length];
       turn += 1;
+      startThinking(agent.id, updatedThread.id);
       const reply = await getReply(agent, updatedThread.messages);
+      stopThinking(agent.id);
       if (!reply) {
         showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
         break;
@@ -418,7 +435,9 @@ export function ChatApp() {
       return;
     }
     const [opener, ...responders] = connectedActive;
+    startThinking(opener.id, 'pending');
     const openingLine = await getReply(opener, []);
+    stopThinking(opener.id);
     if (!openingLine) {
       showToast(`⚠️ ${opener.refNumber} failed to respond — check its LLM connection.`);
       return;
@@ -443,7 +462,9 @@ export function ChatApp() {
       showToast(`${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs first.`);
       return;
     }
+    startThinking(agent.id, 'pending');
     const openingLine = await getReply(agent, []);
+    stopThinking(agent.id);
     if (!openingLine) {
       showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
       return;
@@ -517,7 +538,9 @@ export function ChatApp() {
     const precedingMessages = thread.messages.slice(0, index + 1);
     const instruction = reactionInstruction(type);
 
+    startThinking(author.id, threadId);
     const reply = await getReply(author, precedingMessages, instruction);
+    stopThinking(author.id);
     if (!reply) {
       showToast(`⚠️ ${author.refNumber} failed to respond — check its LLM connection.`);
       return;
@@ -1093,6 +1116,27 @@ export function ChatApp() {
           </div>
         )}
 
+        {Array.from(thinking.entries())
+          .filter(([, threadId]) => threadId === 'pending')
+          .map(([agentId]) => {
+            const agent = agentById(agentId);
+            return (
+              <div className="thinking-indicator" key={agentId}>
+                <span className="avatar" style={{ background: agent?.color ?? '#999' }}>
+                  {(agent?.name ?? '?').charAt(0).toUpperCase()}
+                </span>
+                <span>
+                  {agent ? `${agent.refNumber} ${agent.name}` : 'Agent'} is thinking
+                  <span className="thinking-dots">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+
         {state.threads.map((thread) => {
           const owner = agentById(thread.agentId);
           return (
@@ -1224,6 +1268,26 @@ export function ChatApp() {
                   </div>
                 );
               })}
+              {Array.from(thinking.entries())
+                .filter(([, threadId]) => threadId === thread.id)
+                .map(([agentId]) => {
+                  const agent = agentById(agentId);
+                  return (
+                    <div className="thinking-indicator" key={agentId}>
+                      <span className="avatar" style={{ background: agent?.color ?? '#999' }}>
+                        {(agent?.name ?? '?').charAt(0).toUpperCase()}
+                      </span>
+                      <span>
+                        {agent ? `${agent.refNumber} ${agent.name}` : 'Agent'} is thinking
+                        <span className="thinking-dots">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
             </div>
           );
         })}
