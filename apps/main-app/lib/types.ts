@@ -11,7 +11,16 @@ export type LLMProvider =
   | 'mistral';
 export type Effort = 'low' | 'medium' | 'high';
 export type ResponseStyle = 'bullets' | 'sentences' | 'detailed' | 'mindmap';
-export type ReactionType = 'elaborate' | 'explainFurther' | 'why' | 'sources' | 'mindmap' | 'bullets';
+export type ReactionType =
+  | 'elaborate'
+  | 'explainFurther'
+  | 'why'
+  | 'sources'
+  | 'mindmap'
+  | 'bullets'
+  | 'suggest'
+  | 'youtube'
+  | 'tiktok';
 
 export interface Agent {
   id: string;

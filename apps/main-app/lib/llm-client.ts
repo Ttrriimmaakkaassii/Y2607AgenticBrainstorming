@@ -17,6 +17,10 @@ const REACTION_INSTRUCTIONS: Record<ReactionType, string> = {
   sources: 'List the sources, evidence, or reasoning basis behind your previous claim.',
   bullets: 'Restate your previous point as a concise bulleted list.',
   mindmap: 'Summarize your previous point as a short hierarchical outline suitable for a mind map.',
+  suggest:
+    'Suggest one logical follow-up question or response the user could give next. Reply with just that single sentence, no preamble.',
+  youtube: '',
+  tiktok: '',
 };
 
 function styleInstruction(style: ResponseStyle, maxSentences: number): string {

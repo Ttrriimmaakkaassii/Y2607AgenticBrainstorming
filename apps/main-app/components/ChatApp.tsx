@@ -39,13 +39,28 @@ import { ArchivesModal } from './ArchivesModal';
 
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
 
-const REACTIONS: { type: ReactionType; icon: string; label: string; tooltip: string }[] = [
+interface ReactionDef {
+  type: ReactionType;
+  icon: string;
+  label: string;
+  tooltip: string;
+}
+
+// Requires the message's author to be a connected agent — triggers a real follow-up reply.
+const AGENT_REACTIONS: ReactionDef[] = [
   { type: 'elaborate', icon: '🔎', label: 'Elaborate', tooltip: 'Ask this agent to elaborate with more depth' },
   { type: 'explainFurther', icon: '💬', label: 'Explain Further', tooltip: 'Ask this agent to explain further, more simply' },
   { type: 'why', icon: '❓', label: 'Why?', tooltip: 'Ask this agent why it said that' },
   { type: 'sources', icon: '📚', label: 'Sources', tooltip: 'Ask this agent for its sources/reasoning' },
   { type: 'bullets', icon: '•', label: 'Bullet Points', tooltip: 'Ask this agent to restate as bullet points' },
+  { type: 'suggest', icon: '💡', label: 'Suggest', tooltip: 'Suggest a logical follow-up question or response' },
+];
+
+// Work on any message (agent or user) — no LLM call needed.
+const UNIVERSAL_REACTIONS: ReactionDef[] = [
   { type: 'mindmap', icon: '🗺️', label: 'Mind Map', tooltip: 'Turn this message into a mind map' },
+  { type: 'youtube', icon: '📺', label: 'YouTube', tooltip: 'Search YouTube for related videos' },
+  { type: 'tiktok', icon: '🎵', label: 'TikTok', tooltip: 'Search TikTok for related videos' },
 ];
 
 const DEFAULT_AGENTS: Agent[] = [
@@ -421,6 +436,16 @@ export function ChatApp() {
       return;
     }
 
+    if (type === 'youtube' || type === 'tiktok') {
+      const query = `${state.settings.topic} ${message.content}`.trim().slice(0, 150);
+      const url =
+        type === 'youtube'
+          ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
+          : `https://www.tiktok.com/search?q=${encodeURIComponent(query)}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
     const author = state.agents.find((a) => a.id === message.agentId);
     if (!author) {
       showToast('Reactions that ask for a follow-up only work on agent messages.');
@@ -435,17 +460,20 @@ export function ChatApp() {
     if (!thread) return;
     const index = thread.messages.findIndex((m) => m.id === message.id);
     const precedingMessages = thread.messages.slice(0, index + 1);
-
-    const instruction =
-      type === 'bullets'
-        ? reactionInstruction('bullets')
-        : reactionInstruction(type);
+    const instruction = reactionInstruction(type);
 
     const reply = await getReply(author, precedingMessages, instruction);
     if (!reply) {
       showToast(`⚠️ ${author.refNumber} failed to respond — check its LLM connection.`);
       return;
     }
+
+    if (type === 'suggest') {
+      setInputMessage(reply);
+      showToast('💡 Suggestion added to the composer — edit and send, or discard.');
+      return;
+    }
+
     appendMessage(threadId, {
       id: generateId(),
       threadId,
@@ -981,42 +1009,55 @@ export function ChatApp() {
                         />
                       </div>
                       <div className="feedback-controls">
-                        {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (
-                          <button
-                            key={type}
-                            className={`feedback-btn ${msg.feedback === type ? `active ${type}` : ''}`}
-                            onClick={() => handleFeedback(thread.id, msg.id, type)}
-                          >
-                            {type === 'like' ? '👍' : type === 'dislike' ? '👎' : '🤔'}
-                          </button>
-                        ))}
-                        <button
-                          className="feedback-btn"
-                          title="Reply to this message"
-                          onClick={() => setReplyingTo(msg)}
-                        >
-                          ↩️
-                        </button>
-                        {!isUser &&
-                          REACTIONS.map((r) => (
-                            <button
-                              key={r.type}
-                              className="feedback-btn"
-                              title={r.tooltip}
-                              onClick={() => handleReaction(thread.id, msg, r.type)}
-                            >
-                              {r.icon}
-                            </button>
-                          ))}
-                        {isUser && (
-                          <button
-                            className="feedback-btn"
-                            title="Turn this message into a mind map"
-                            onClick={() => handleReaction(thread.id, msg, 'mindmap')}
-                          >
-                            🗺️
-                          </button>
-                        )}
+                        {(() => {
+                          let n = 0;
+                          const badge = () => ++n;
+                          return (
+                            <>
+                              {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (
+                                <button
+                                  key={type}
+                                  className={`feedback-btn ${msg.feedback === type ? `active ${type}` : ''}`}
+                                  title={`r${badge()}: ${type}`}
+                                  onClick={() => handleFeedback(thread.id, msg.id, type)}
+                                >
+                                  {type === 'like' ? '👍' : type === 'dislike' ? '👎' : '🤔'}
+                                  <sup className="reaction-badge">r{n}</sup>
+                                </button>
+                              ))}
+                              <button
+                                className="feedback-btn"
+                                title={`r${badge()}: Reply to this message`}
+                                onClick={() => setReplyingTo(msg)}
+                              >
+                                ↩️<sup className="reaction-badge">r{n}</sup>
+                              </button>
+                              {!isUser &&
+                                AGENT_REACTIONS.map((r) => (
+                                  <button
+                                    key={r.type}
+                                    className="feedback-btn"
+                                    title={`r${badge()}: ${r.tooltip}`}
+                                    onClick={() => handleReaction(thread.id, msg, r.type)}
+                                  >
+                                    {r.icon}
+                                    <sup className="reaction-badge">r{n}</sup>
+                                  </button>
+                                ))}
+                              {UNIVERSAL_REACTIONS.map((r) => (
+                                <button
+                                  key={r.type}
+                                  className="feedback-btn"
+                                  title={`r${badge()}: ${r.tooltip}`}
+                                  onClick={() => handleReaction(thread.id, msg, r.type)}
+                                >
+                                  {r.icon}
+                                  <sup className="reaction-badge">r{n}</sup>
+                                </button>
+                              ))}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
