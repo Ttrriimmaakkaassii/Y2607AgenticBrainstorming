@@ -535,8 +535,49 @@ body {
 }
 
 @media (max-width: 768px) {
+  .header {
+    padding: 8px;
+  }
+
+  .header-left,
+  .header-right {
+    width: 100%;
+  }
+
+  .header-left input[type='text'] {
+    flex-basis: 100%;
+    min-width: 0 !important;
+  }
+
+  .header-left select,
+  .header-right button {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .controls-panel {
+    margin: 8px;
+    padding: 8px;
+  }
+
+  .control-group {
+    flex-wrap: wrap;
+  }
+
+  .control-input {
+    width: 48px;
+  }
+
+  .conversation-area {
+    padding: 0 8px 160px;
+  }
+
   .bubble-text {
     max-width: 85%;
+  }
+
+  .bubble-wrapper {
+    gap: 6px;
   }
 
   .feedback-btn {
@@ -544,8 +585,37 @@ body {
     padding: 3px 6px;
   }
 
+  .thread-header {
+    flex-wrap: wrap;
+  }
+
+  .input-area {
+    padding: 8px;
+  }
+
   .modal {
     width: 95%;
     max-height: 90vh;
+  }
+}
+
+@media (max-width: 420px) {
+  .header-right {
+    justify-content: space-between;
+  }
+
+  .header-right button {
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+
+  .bubble-text {
+    max-width: 92%;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 11px;
   }
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Agent, ConversationState, Feedback, LLMConnection, Message, Mood, Thread } from '@/lib/types';
+import { AgentPreset } from '@/lib/agent-library';
 import { generateId } from '@/lib/id';
 import { generateAgentReply } from '@/lib/response-generator';
 import { fetchAgentReply } from '@/lib/llm-client';
@@ -12,6 +13,7 @@ import { AudioModal } from './AudioModal';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
 import { LLMProvidersModal } from './LLMProvidersModal';
+import { AgentLibraryModal } from './AgentLibraryModal';
 
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
 
@@ -79,7 +81,7 @@ export function ChatApp() {
   const [toast, setToast] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | null
+    'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | 'library' | null
   >(null);
   const [hydrated, setHydrated] = useState(false);
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
@@ -335,6 +337,21 @@ export function ChatApp() {
     showToast('➕ New agent added');
   }
 
+  function addAgentFromPreset(preset: AgentPreset) {
+    const newAgent: Agent = {
+      id: generateId(),
+      name: preset.name,
+      role: preset.role,
+      instructions: preset.instructions,
+      color: preset.color,
+      llmProvider: 'openai',
+      connectionId: null,
+    };
+    setState((prev) => ({ ...prev, agents: [...prev.agents, newAgent] }));
+    setCurrentAgentId(newAgent.id);
+    showToast(`➕ Added ${preset.name}`);
+  }
+
   function deleteAgent(id: string) {
     if (state.agents.length <= 1) return;
     setState((prev) => ({ ...prev, agents: prev.agents.filter((a) => a.id !== id) }));
@@ -382,6 +399,9 @@ export function ChatApp() {
           </select>
         </div>
         <div className="header-right">
+          <button className="icon-btn" onClick={() => setActiveModal('library')}>
+            📚 Library
+          </button>
           <button className="icon-btn" onClick={() => setActiveModal('llmProviders')}>
             🔌 LLMs
           </button>
@@ -574,6 +594,7 @@ export function ChatApp() {
           onAdd={addAgent}
           onDelete={deleteAgent}
           onOpenLLMProviders={() => setActiveModal('llmProviders')}
+          onOpenLibrary={() => setActiveModal('library')}
           onClose={() => setActiveModal(null)}
         />
       )}
@@ -584,6 +605,9 @@ export function ChatApp() {
           onClose={() => setActiveModal(null)}
           onToast={showToast}
         />
+      )}
+      {activeModal === 'library' && (
+        <AgentLibraryModal onAdd={addAgentFromPreset} onClose={() => setActiveModal(null)} />
       )}
       {activeModal === 'audio' && (
         <AudioModal

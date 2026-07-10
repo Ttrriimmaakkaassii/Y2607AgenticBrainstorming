@@ -13,6 +13,7 @@ interface SettingsModalProps {
   onAdd: () => void;
   onDelete: (id: string) => void;
   onOpenLLMProviders: () => void;
+  onOpenLibrary: () => void;
   onClose: () => void;
 }
 
@@ -25,6 +26,7 @@ export function SettingsModal({
   onAdd,
   onDelete,
   onOpenLLMProviders,
+  onOpenLibrary,
   onClose,
 }: SettingsModalProps) {
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
@@ -157,7 +159,10 @@ export function SettingsModal({
               </div>
             ))}
             <button className="btn-secondary" onClick={onAdd}>
-              + Add Agent
+              + Add Blank Agent
+            </button>
+            <button className="btn-secondary" onClick={onOpenLibrary}>
+              📚 Browse Agent Library
             </button>
           </div>
         </div>
