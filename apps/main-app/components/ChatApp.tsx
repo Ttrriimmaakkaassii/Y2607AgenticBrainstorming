@@ -167,6 +167,7 @@ export function ChatApp() {
     charLength: number;
   } | null>(null);
   const speakingCancelledRef = useRef(false);
+  const [showAudioRail, setShowAudioRail] = useState(true);
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -697,6 +698,9 @@ export function ChatApp() {
           </select>
         </div>
         <div className="header-right">
+          <button className="icon-btn" onClick={() => setShowAudioRail((v) => !v)}>
+            🎙️ Rail
+          </button>
           <button className="icon-btn" onClick={() => setActiveModal('library')}>
             📚 Library
           </button>
@@ -874,13 +878,18 @@ export function ChatApp() {
       </div>
 
       <div className="conversation-body">
-        <AudioRail
-          agents={state.agents}
-          messages={allMessages}
-          speakingMessageId={speaking?.messageId ?? null}
-          onPlayFrom={playFromMessage}
-          onStop={stopSpeaking}
-        />
+        {showAudioRail && (
+          <>
+            <div className="audio-rail-backdrop" onClick={() => setShowAudioRail(false)} />
+            <AudioRail
+              agents={state.agents}
+              messages={allMessages}
+              speakingMessageId={speaking?.messageId ?? null}
+              onPlayFrom={playFromMessage}
+              onStop={stopSpeaking}
+            />
+          </>
+        )}
       <div className="conversation-area" ref={conversationAreaRef}>
         {state.threads.length === 0 && (
           <div className="start-discussion">

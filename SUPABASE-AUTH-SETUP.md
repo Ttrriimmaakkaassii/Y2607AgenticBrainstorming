@@ -89,6 +89,23 @@ except `trimakassi@gmail.com`, which is auto-approved and marked admin. The
 activate/deactivate) once signed in as that account. Everyone else sees an
 "Awaiting Approval" screen until the admin activates them.
 
+## 1c. Backfill the super-admin if you already signed up
+
+The trigger above only fires for *new* sign-ups. If `trimakassi@gmail.com`
+was created before you ran the SQL in step 1b, run this once to retroactively
+grant admin + approval (safe to re-run any time):
+
+```sql
+insert into user_profiles (user_id, email, is_admin, is_approved)
+select id, email, true, true
+from auth.users
+where email = 'trimakassi@gmail.com'
+on conflict (user_id) do update set is_admin = true, is_approved = true;
+```
+
+If sign-in still shows "Awaiting Approval" after running this, sign out and
+back in (or refresh) so the app re-fetches the profile.
+
 ## 2. Confirm email/password auth is enabled
 
 Supabase Dashboard → **Authentication → Providers → Email** — it's on by
