@@ -29,7 +29,6 @@
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.0.0",
     "@testing-library/jest-dom": "^6.0.0",
-    "@supabase/supabase-js": "^2.39.7",
-    "@types/supabase-js": "^2.0.0"
+    "@supabase/supabase-js": "^2.39.7"
   }
 }
