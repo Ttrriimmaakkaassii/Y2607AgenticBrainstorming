@@ -860,6 +860,51 @@ body.dev-mode [data-devref]::after {
   text-overflow: ellipsis;
 }
 
+.changelog-entry {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.changelog-entry:last-child {
+  border-bottom: none;
+}
+
+.changelog-time {
+  flex-shrink: 0;
+  width: 130px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.changelog-label {
+  font-weight: 600;
+}
+
+.changelog-field {
+  color: var(--text-secondary);
+}
+
+.changelog-diff {
+  margin-top: 2px;
+}
+
+.changelog-old {
+  color: #ff5c5c;
+  text-decoration: line-through;
+}
+
+.changelog-arrow {
+  color: var(--text-secondary);
+}
+
+.changelog-new {
+  color: #1db854;
+  font-weight: 600;
+}
+
 .btn-icon {
   background: none;
   border: none;

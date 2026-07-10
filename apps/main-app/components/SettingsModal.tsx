@@ -6,8 +6,9 @@ import { Agent, ArchivedConversation, LLMConnection, Thread } from '@/lib/types'
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
+import { ChangeLogPanel } from './ChangeLogPanel';
 
-type SettingsTab = 'agent' | 'llm' | 'audio' | 'archives';
+type SettingsTab = 'agent' | 'llm' | 'audio' | 'archives' | 'log';
 
 interface SettingsModalProps {
   agents: Agent[];
@@ -96,6 +97,7 @@ export function SettingsModal({
     { id: 'llm', label: '🔌 LLM' },
     { id: 'audio', label: '🎧 Audio' },
     { id: 'archives', label: '🗄️ Archives' },
+    { id: 'log', label: '📜 Log' },
   ];
 
   return (
@@ -253,6 +255,8 @@ export function SettingsModal({
               onClose={() => {}}
             />
           )}
+
+          {tab === 'log' && <ChangeLogPanel />}
         </div>
       </div>
     </div>

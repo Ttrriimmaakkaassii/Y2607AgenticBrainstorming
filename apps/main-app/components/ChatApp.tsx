@@ -29,6 +29,7 @@ import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { Theme, applyTheme, loadTheme } from '@/lib/theme';
 import { addCustomMood, loadCustomMoods } from '@/lib/moods';
+import { logFieldChanges } from '@/lib/changelog';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
 import { AudioRail } from './AudioRail';
@@ -860,10 +861,21 @@ export function ChatApp() {
   }
 
   function updateSettings(updates: Partial<ConversationState['settings']>) {
+    logFieldChanges('settings', 'Conversation Settings', state.settings, {
+      ...state.settings,
+      ...updates,
+    });
     setState((prev) => ({ ...prev, settings: { ...prev.settings, ...updates } }));
   }
 
   function saveAgent(id: string, updates: Partial<Agent>) {
+    const before = state.agents.find((a) => a.id === id);
+    if (before) {
+      logFieldChanges('agent', `${before.refNumber} ${before.name}`, before, {
+        ...before,
+        ...updates,
+      });
+    }
     setState((prev) => ({
       ...prev,
       agents: prev.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
