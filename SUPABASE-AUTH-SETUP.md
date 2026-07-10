@@ -52,17 +52,25 @@ create policy "Users read their own profile"
   on user_profiles for select
   using (auth.uid() = user_id);
 
+-- SECURITY DEFINER: bypasses RLS internally so this check doesn't
+-- re-trigger the same policy on user_profiles (which would cause
+-- "infinite recursion detected in policy" otherwise).
+create function public.is_admin(uid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce((select is_admin from user_profiles where user_id = uid), false);
+$$;
+
 create policy "Admins read all profiles"
   on user_profiles for select
-  using (exists (
-    select 1 from user_profiles p where p.user_id = auth.uid() and p.is_admin
-  ));
+  using (public.is_admin(auth.uid()));
 
 create policy "Admins update all profiles"
   on user_profiles for update
-  using (exists (
-    select 1 from user_profiles p where p.user_id = auth.uid() and p.is_admin
-  ));
+  using (public.is_admin(auth.uid()));
 
 create function public.handle_new_user()
 returns trigger as $$
@@ -105,6 +113,38 @@ on conflict (user_id) do update set is_admin = true, is_approved = true;
 
 If sign-in still shows "Awaiting Approval" after running this, sign out and
 back in (or refresh) so the app re-fetches the profile.
+
+## 1d. Fix "infinite recursion detected in policy" error
+
+If you already ran the original version of step 1b, its admin policies had a
+bug: they checked admin status with a subquery on `user_profiles` from
+*inside* a policy on `user_profiles`, which Postgres re-evaluates forever.
+Run this to replace just the two broken policies (safe — doesn't touch your
+table or data):
+
+```sql
+drop policy if exists "Admins read all profiles" on user_profiles;
+drop policy if exists "Admins update all profiles" on user_profiles;
+
+create or replace function public.is_admin(uid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce((select is_admin from user_profiles where user_id = uid), false);
+$$;
+
+create policy "Admins read all profiles"
+  on user_profiles for select
+  using (public.is_admin(auth.uid()));
+
+create policy "Admins update all profiles"
+  on user_profiles for update
+  using (public.is_admin(auth.uid()));
+```
+
+Then re-run the section 1c backfill (it's idempotent) and reload the app.
 
 ## 2. Confirm email/password auth is enabled
 
