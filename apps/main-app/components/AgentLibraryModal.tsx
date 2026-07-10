@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
+import { useEffect, useState } from 'react';
+import { AGENT_LIBRARY, AgentPreset, SkillCategory } from '@/lib/agent-library';
+import { loadCustomAgents } from '@/lib/custom-agents';
 
 interface AgentLibraryModalProps {
   onAdd: (preset: AgentPreset) => void;
@@ -9,8 +10,19 @@ interface AgentLibraryModalProps {
 }
 
 export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
-  const [categoryId, setCategoryId] = useState(AGENT_LIBRARY[0].id);
-  const category = AGENT_LIBRARY.find((c) => c.id === categoryId) ?? AGENT_LIBRARY[0];
+  const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
+
+  useEffect(() => {
+    setCustomAgents(loadCustomAgents());
+  }, []);
+
+  const categories: SkillCategory[] =
+    customAgents.length > 0
+      ? [{ id: 'custom', name: 'My Saved Agents', icon: '⭐', presets: customAgents }, ...AGENT_LIBRARY]
+      : AGENT_LIBRARY;
+
+  const [categoryId, setCategoryId] = useState(categories[0].id);
+  const category = categories.find((c) => c.id === categoryId) ?? categories[0];
 
   return (
     <div className="modal-overlay active" onClick={onClose}>
@@ -26,7 +38,7 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
             <div className="modal-section-title">Skill Category</div>
             <div className="form-group">
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                {AGENT_LIBRARY.map((c) => (
+                {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.icon} {c.name}
                   </option>
@@ -36,7 +48,15 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
           </div>
 
           <div className="modal-section">
-            <div className="modal-section-title">Suggested Agents</div>
+            <div className="modal-section-title">
+              {categoryId === 'custom' ? 'Saved Agents' : 'Suggested Agents'}
+            </div>
+            {category.presets.length === 0 && (
+              <div className="empty-state">
+                No saved agents yet — agents you add or edit in a conversation are automatically
+                saved here, even after you delete them from that conversation.
+              </div>
+            )}
             {category.presets.map((preset) => (
               <div className="agent-list-item" key={preset.name}>
                 <div className="avatar" style={{ background: preset.color }}>

@@ -374,6 +374,14 @@ body {
   white-space: pre-wrap;
 }
 
+.bubble-text-clickable {
+  cursor: pointer;
+}
+
+.bubble-text-clickable:hover {
+  filter: brightness(0.96);
+}
+
 .bubble-wrapper.user {
   flex-direction: row-reverse;
 }

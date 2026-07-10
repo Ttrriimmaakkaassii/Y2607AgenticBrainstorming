@@ -14,6 +14,7 @@ import {
   Thread,
 } from '@/lib/types';
 import { AgentPreset } from '@/lib/agent-library';
+import { upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import {
@@ -182,6 +183,10 @@ export function ChatApp() {
     charLength: number;
   } | null>(null);
   const speakingCancelledRef = useRef(false);
+  const statusRef = useRef(state.status);
+  useEffect(() => {
+    statusRef.current = state.status;
+  }, [state.status]);
   const [showAudioRail, setShowAudioRail] = useState(true);
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -318,20 +323,39 @@ export function ChatApp() {
     return reply;
   }
 
+  /**
+   * Runs one round-robin pass over `respondingAgents`. When a finite
+   * maxExchanges is set, keeps cycling through them (agent1, agent2,
+   * agent1, agent2, ...) until that many agent messages exist in the
+   * thread, rather than stopping after a single pass — so "20 exchanges,
+   * 2 agents" actually plays out as ~10 messages each, autonomously.
+   */
   async function runAgentRound(thread: Thread, respondingAgents: Agent[]) {
     const connected = respondingAgents.filter(agentIsConnected);
     const skipped = respondingAgents.filter((a) => !agentIsConnected(a));
     if (skipped.length > 0) {
       showToast(`Skipped ${skipped.map((a) => a.refNumber).join(', ')} — no LLM connected.`);
     }
+    if (connected.length === 0) return;
 
+    const hasLimit = state.settings.maxExchanges != null;
+    const isRunnable = () => {
+      const s: string = statusRef.current;
+      return s !== 'paused' && s !== 'stopped';
+    };
     let updatedThread = thread;
-    for (const agent of connected) {
+    let turn = 0;
+
+    do {
       if (!withinLimits(updatedThread)) break;
+      if (!isRunnable()) break;
+
+      const agent = connected[turn % connected.length];
+      turn += 1;
       const reply = await getReply(agent, updatedThread.messages);
       if (!reply) {
         showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
-        continue;
+        break;
       }
       const message: Message = {
         id: generateId(),
@@ -348,7 +372,7 @@ export function ChatApp() {
         threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
         updatedAt: Date.now(),
       }));
-    }
+    } while (hasLimit && withinLimits(updatedThread) && isRunnable());
   }
 
   async function startDiscussion() {
@@ -648,6 +672,13 @@ export function ChatApp() {
       ...prev,
       agents: prev.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     }));
+    const updated = { ...state.agents.find((a) => a.id === id), ...updates } as Agent;
+    upsertCustomAgent({
+      name: updated.name,
+      role: updated.role,
+      instructions: updated.instructions,
+      color: updated.color,
+    });
     showToast('✅ Agent settings saved!');
   }
 
@@ -674,6 +705,12 @@ export function ChatApp() {
       nextAgentNumber: prev.nextAgentNumber + 1,
     }));
     setCurrentAgentId(newAgent.id);
+    upsertCustomAgent({
+      name: newAgent.name,
+      role: newAgent.role,
+      instructions: newAgent.instructions,
+      color: newAgent.color,
+    });
     showToast(`➕ New agent added (${refNumber})`);
   }
 
@@ -696,11 +733,14 @@ export function ChatApp() {
       nextAgentNumber: prev.nextAgentNumber + 1,
     }));
     setCurrentAgentId(newAgent.id);
+    upsertCustomAgent(preset);
     showToast(`➕ Added ${preset.name} (${refNumber})`);
   }
 
   function deleteAgent(id: string) {
     if (state.agents.length <= 1) return;
+    // Only removed from this conversation — its definition stays in the
+    // agent library (custom-agents.ts) so it can be re-added later.
     setState((prev) => ({ ...prev, agents: prev.agents.filter((a) => a.id !== id) }));
     if (currentAgentId === id) {
       setCurrentAgentId(state.agents.find((a) => a.id !== id)?.id ?? '');
@@ -998,7 +1038,13 @@ export function ChatApp() {
                           <span className="quoted-snippet">{quoted.content.slice(0, 80)}</span>
                         </div>
                       )}
-                      <div className="bubble-text">
+                      <div
+                        className="bubble-text bubble-text-clickable"
+                        title="Click to read aloud from here"
+                        onClick={() =>
+                          playFromMessage(allMessages.findIndex((m) => m.id === msg.id))
+                        }
+                      >
                         <MessageContent
                           content={msg.content}
                           spokenRange={
