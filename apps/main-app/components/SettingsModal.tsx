@@ -1,25 +1,30 @@
 'use client';
 
 import { useState } from 'react';
-import { Agent, LLMProvider } from '@/lib/types';
+import { getProvider } from '@/lib/llm-catalog';
+import { Agent, LLMConnection } from '@/lib/types';
 
 interface SettingsModalProps {
   agents: Agent[];
   currentAgentId: string;
+  connections: LLMConnection[];
   onSelectAgent: (id: string) => void;
   onSave: (id: string, updates: Partial<Agent>) => void;
   onAdd: () => void;
   onDelete: (id: string) => void;
+  onOpenLLMProviders: () => void;
   onClose: () => void;
 }
 
 export function SettingsModal({
   agents,
   currentAgentId,
+  connections,
   onSelectAgent,
   onSave,
   onAdd,
   onDelete,
+  onOpenLLMProviders,
   onClose,
 }: SettingsModalProps) {
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
@@ -28,8 +33,8 @@ export function SettingsModal({
   const [role, setRole] = useState(currentAgent?.role ?? '');
   const [instructions, setInstructions] = useState(currentAgent?.instructions ?? '');
   const [color, setColor] = useState(currentAgent?.color ?? '#3b99fc');
-  const [llmProvider, setLlmProvider] = useState<LLMProvider>(
-    currentAgent?.llmProvider ?? 'openai'
+  const [connectionId, setConnectionId] = useState<string | null>(
+    currentAgent?.connectionId ?? null
   );
 
   function selectAgent(id: string) {
@@ -40,12 +45,20 @@ export function SettingsModal({
     setRole(agent.role);
     setInstructions(agent.instructions);
     setColor(agent.color);
-    setLlmProvider(agent.llmProvider);
+    setConnectionId(agent.connectionId);
   }
 
   function save() {
     if (!currentAgent) return;
-    onSave(currentAgent.id, { name, role, instructions, color, llmProvider });
+    const connection = connections.find((c) => c.id === connectionId);
+    onSave(currentAgent.id, {
+      name,
+      role,
+      instructions,
+      color,
+      connectionId,
+      llmProvider: connection?.provider ?? currentAgent.llmProvider,
+    });
   }
 
   return (
@@ -76,16 +89,26 @@ export function SettingsModal({
               />
             </div>
             <div className="form-group">
-              <label>LLM Provider</label>
+              <label>Connected LLM</label>
               <select
-                value={llmProvider}
-                onChange={(e) => setLlmProvider(e.target.value as LLMProvider)}
+                value={connectionId ?? ''}
+                onChange={(e) => setConnectionId(e.target.value || null)}
               >
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google</option>
+                <option value="">None (simulated responses)</option>
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label} ({getProvider(c.provider)?.name} · {c.model} · {c.effort})
+                  </option>
+                ))}
               </select>
             </div>
+            <button
+              className="btn-secondary"
+              onClick={onOpenLLMProviders}
+              style={{ marginBottom: 12 }}
+            >
+              🔌 Manage LLM Connections
+            </button>
             <div className="form-group">
               <label>Avatar Color</label>
               <input

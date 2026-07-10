@@ -1,6 +1,7 @@
 export type Feedback = 'like' | 'dislike' | 'clarify';
 export type Mood = 'debate' | 'complementary' | 'research';
 export type LLMProvider = 'openai' | 'anthropic' | 'google';
+export type Effort = 'low' | 'medium' | 'high';
 
 export interface Agent {
   id: string;
@@ -9,6 +10,22 @@ export interface Agent {
   instructions: string;
   color: string;
   llmProvider: LLMProvider;
+  connectionId: string | null;
+}
+
+/**
+ * A user-supplied provider credential + model choice. Lives only in
+ * localStorage (see lib/llm-connections.ts) — never included in
+ * ConversationState, since that gets synced to Supabase under a
+ * public-read policy.
+ */
+export interface LLMConnection {
+  id: string;
+  provider: LLMProvider;
+  model: string;
+  effort: Effort;
+  apiKey: string;
+  label: string;
 }
 
 export interface Message {

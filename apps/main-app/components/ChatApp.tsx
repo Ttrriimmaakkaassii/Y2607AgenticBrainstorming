@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Agent, ConversationState, Feedback, Message, Mood, Thread } from '@/lib/types';
+import { Agent, ConversationState, Feedback, LLMConnection, Message, Mood, Thread } from '@/lib/types';
 import { generateId } from '@/lib/id';
 import { generateAgentReply } from '@/lib/response-generator';
 import { fetchAgentReply } from '@/lib/llm-client';
+import { loadConnections, saveConnections } from '@/lib/llm-connections';
 import { loadConversation, saveConversation } from '@/lib/storage';
 import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
+import { LLMProvidersModal } from './LLMProvidersModal';
 
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
 
@@ -21,6 +23,7 @@ const DEFAULT_AGENTS: Agent[] = [
     instructions: 'Research recent developments and gather supporting evidence.',
     color: '#3b99fc',
     llmProvider: 'openai',
+    connectionId: null,
   },
   {
     id: generateId(),
@@ -29,6 +32,7 @@ const DEFAULT_AGENTS: Agent[] = [
     instructions: 'Weigh tradeoffs and challenge assumptions with data.',
     color: '#2ecc71',
     llmProvider: 'anthropic',
+    connectionId: null,
   },
   {
     id: generateId(),
@@ -37,6 +41,7 @@ const DEFAULT_AGENTS: Agent[] = [
     instructions: 'Keep the discussion balanced and summarize consensus.',
     color: '#f39c12',
     llmProvider: 'google',
+    connectionId: null,
   },
 ];
 
@@ -74,12 +79,22 @@ export function ChatApp() {
   const [toast, setToast] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'settings' | 'audio' | 'analytics' | 'export' | null
+    'settings' | 'audio' | 'analytics' | 'export' | 'llmProviders' | null
   >(null);
   const [hydrated, setHydrated] = useState(false);
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
+  const [connections, setConnections] = useState<LLMConnection[]>([]);
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setConnections(loadConnections());
+  }, []);
+
+  function updateConnections(next: LLMConnection[]) {
+    setConnections(next);
+    saveConnections(next);
+  }
 
   useEffect(() => {
     const conversationId = getOrCreateConversationId();
@@ -157,6 +172,7 @@ export function ChatApp() {
   async function getReply(agent: Agent, precedingMessages: Message[]): Promise<string> {
     const live = await fetchAgentReply(
       agent,
+      connections,
       state.settings.mood,
       state.settings.topic,
       precedingMessages,
@@ -312,6 +328,7 @@ export function ChatApp() {
       instructions: 'Share a distinct perspective on the topic.',
       color: '#8e44ad',
       llmProvider: 'openai',
+      connectionId: null,
     };
     setState((prev) => ({ ...prev, agents: [...prev.agents, newAgent] }));
     setCurrentAgentId(newAgent.id);
@@ -365,6 +382,9 @@ export function ChatApp() {
           </select>
         </div>
         <div className="header-right">
+          <button className="icon-btn" onClick={() => setActiveModal('llmProviders')}>
+            🔌 LLMs
+          </button>
           <button className="icon-btn" onClick={() => setActiveModal('audio')}>
             🎧 Audio
           </button>
@@ -548,11 +568,21 @@ export function ChatApp() {
         <SettingsModal
           agents={state.agents}
           currentAgentId={currentAgentId}
+          connections={connections}
           onSelectAgent={setCurrentAgentId}
           onSave={saveAgent}
           onAdd={addAgent}
           onDelete={deleteAgent}
+          onOpenLLMProviders={() => setActiveModal('llmProviders')}
           onClose={() => setActiveModal(null)}
+        />
+      )}
+      {activeModal === 'llmProviders' && (
+        <LLMProvidersModal
+          connections={connections}
+          onChange={updateConnections}
+          onClose={() => setActiveModal(null)}
+          onToast={showToast}
         />
       )}
       {activeModal === 'audio' && (
