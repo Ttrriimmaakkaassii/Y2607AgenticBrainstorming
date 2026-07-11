@@ -6,6 +6,7 @@ import {
   ArchivedConversation,
   ConversationState,
   Feedback,
+  InteractionStyle,
   LLMConnection,
   Message,
   Mood,
@@ -118,6 +119,7 @@ function defaultState(): ConversationState {
       orchestratorEnabled: true,
       mood: 'debate',
       responseStyle: 'sentences',
+      interactionStyle: 'dialogue',
       ttsRate: 1,
       ttsLang: 'en-US',
       whatsappNumber: '',
@@ -157,6 +159,7 @@ function migrateState(state: ConversationState): ConversationState {
     settings: {
       ...state.settings,
       responseStyle: state.settings.responseStyle ?? 'sentences',
+      interactionStyle: state.settings.interactionStyle ?? 'dialogue',
       ttsRate: state.settings.ttsRate ?? 1,
       ttsLang: state.settings.ttsLang ?? 'en-US',
       whatsappNumber: state.settings.whatsappNumber ?? '',
@@ -504,6 +507,7 @@ export function ChatApp() {
       state.agents,
       live.responseStyle,
       live.maxSentences,
+      live.interactionStyle,
       extraInstruction
     );
     if (reply) {
@@ -1455,6 +1459,20 @@ export function ChatApp() {
             <option value="sentences">N Sentences</option>
             <option value="detailed">More Detail</option>
             <option value="mindmap">Mind Map Outline</option>
+          </select>
+        </div>
+        <div className="control-group">
+          <span className="control-label">Interaction:</span>
+          <select
+            className="control-input"
+            {...devRef('c1b')}
+            style={{ width: 'auto' }}
+            value={state.settings.interactionStyle}
+            onChange={(e) => updateSettings({ interactionStyle: e.target.value as InteractionStyle })}
+            title="Monologue: agents each deliver their own standalone statement. Dialogue: agents address and react to each other directly."
+          >
+            <option value="monologue">🗣️ Monologue</option>
+            <option value="dialogue">💬 Engaging Dialogue</option>
           </select>
         </div>
         {state.settings.responseStyle === 'sentences' && (

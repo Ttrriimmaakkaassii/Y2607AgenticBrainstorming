@@ -1,5 +1,15 @@
 import { getModel, getProvider } from './llm-catalog';
-import { Agent, Effort, LLMConnection, LLMProvider, Message, Mood, ReactionType, ResponseStyle } from './types';
+import {
+  Agent,
+  Effort,
+  InteractionStyle,
+  LLMConnection,
+  LLMProvider,
+  Message,
+  Mood,
+  ReactionType,
+  ResponseStyle,
+} from './types';
 
 const OPENAI_COMPATIBLE_PROVIDERS: LLMProvider[] = [
   'openai',
@@ -32,13 +42,21 @@ function styleInstruction(style: ResponseStyle, maxSentences: number): string {
   return `Reply in at most ${maxSentences} sentence${maxSentences === 1 ? '' : 's'}.`;
 }
 
+function interactionInstruction(style: InteractionStyle): string {
+  if (style === 'monologue') {
+    return 'Deliver your own standalone statement on the topic. Do not address other agents by name, ask them questions, or react to what they specifically said — treat this as an independent contribution, even though you may build on the general discussion so far.';
+  }
+  return "Actively engage with the other participants: address them by name where natural, ask them questions, and directly react to, challenge, or build on the specific points they made earlier in the conversation.";
+}
+
 function buildSystemPrompt(
   agent: Agent,
   mood: Mood,
   style: ResponseStyle,
-  maxSentences: number
+  maxSentences: number,
+  interactionStyle: InteractionStyle
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions} The discussion mood is "${mood}". ${styleInstruction(style, maxSentences)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions} The discussion mood is "${mood}" — your tone, word choice, and energy must clearly reflect that mood throughout your reply. ${interactionInstruction(interactionStyle)} ${styleInstruction(style, maxSentences)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(
@@ -203,6 +221,7 @@ export async function fetchAgentReply(
   agents: Agent[],
   responseStyle: ResponseStyle,
   maxSentences: number,
+  interactionStyle: InteractionStyle,
   extraInstruction?: string
 ): Promise<string | null> {
   const connection = agent.connectionId
@@ -210,7 +229,7 @@ export async function fetchAgentReply(
     : undefined;
   if (!connection) return null;
 
-  const systemPrompt = buildSystemPrompt(agent, mood, responseStyle, maxSentences);
+  const systemPrompt = buildSystemPrompt(agent, mood, responseStyle, maxSentences, interactionStyle);
   const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction);
   return callDirect(connection, systemPrompt, userPrompt);
 }

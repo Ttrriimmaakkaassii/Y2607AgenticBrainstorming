@@ -12,6 +12,8 @@ export type LLMProvider =
   | 'mistral';
 export type Effort = 'low' | 'medium' | 'high';
 export type ResponseStyle = 'bullets' | 'sentences' | 'detailed' | 'mindmap';
+/** How agents relate to each other's messages: standalone statements vs. actively engaging back-and-forth. */
+export type InteractionStyle = 'monologue' | 'dialogue';
 export type ReactionType =
   | 'elaborate'
   | 'explainFurther'
@@ -80,6 +82,7 @@ export interface ConversationSettings {
   orchestratorEnabled: boolean;
   mood: Mood;
   responseStyle: ResponseStyle;
+  interactionStyle: InteractionStyle;
   ttsRate: number;
   ttsLang: string;
   /** Digits only, international format without leading 00/+ (e.g. "212661320000"). */
