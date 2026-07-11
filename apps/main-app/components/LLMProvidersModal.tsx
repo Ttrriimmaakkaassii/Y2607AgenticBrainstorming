@@ -7,6 +7,7 @@ import { generateId } from '@/lib/id';
 import { renameCustomAgent } from '@/lib/custom-agents';
 import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
+import { describeGoogleTtsError, fetchGoogleVoicesDetailed } from '@/lib/google-tts';
 
 interface LLMProvidersModalProps {
   connections: LLMConnection[];
@@ -44,9 +45,22 @@ export function LLMProvidersModal({
   const [bulkConnectionId, setBulkConnectionId] = useState('');
   const [ttsApiKey, setTtsApiKey] = useState(() => loadTtsApiKey());
 
-  function saveTtsKey() {
-    saveTtsApiKey(ttsApiKey);
-    onToast(ttsApiKey.trim() ? '✅ TTS API key saved' : '🗑️ TTS API key cleared — using browser voices');
+  async function saveTtsKey() {
+    const trimmed = ttsApiKey.trim();
+    saveTtsApiKey(trimmed);
+    if (!trimmed) {
+      onToast('🗑️ TTS API key cleared — using browser voices');
+      return;
+    }
+    onToast('🔄 Verifying TTS key…');
+    const { voices, errorStatus } = await fetchGoogleVoicesDetailed(trimmed, 'en-US');
+    if (voices.length > 0) {
+      onToast(`✅ TTS API key saved and verified (${voices.length} English voices found)`);
+    } else if (errorStatus != null) {
+      onToast(`⚠️ Key saved, but ${describeGoogleTtsError(errorStatus)}`);
+    } else {
+      onToast('⚠️ Key saved, but the verification request failed — check your connection and try again.');
+    }
   }
 
   const selectedProviderInfo = getProvider(provider);

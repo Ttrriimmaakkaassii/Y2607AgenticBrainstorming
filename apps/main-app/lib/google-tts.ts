@@ -9,27 +9,53 @@ export interface GoogleVoice {
   ssmlGender: string;
 }
 
+// Cache key includes the API key itself — keying by languageCode alone
+// would keep serving voices fetched under a previous key after the user
+// changes it, since the same languageCode would hit as "cached".
 const voicesCache = new Map<string, GoogleVoice[]>();
 
-export async function fetchGoogleVoices(apiKey: string, languageCode: string): Promise<GoogleVoice[]> {
-  if (!apiKey) return [];
-  const cached = voicesCache.get(languageCode);
-  if (cached) return cached;
+export interface GoogleVoicesResult {
+  voices: GoogleVoice[];
+  /** HTTP status if the request reached Google but was rejected (e.g. 401/403 = bad key or API not enabled). Null on success or network failure. */
+  errorStatus: number | null;
+}
+
+export async function fetchGoogleVoicesDetailed(
+  apiKey: string,
+  languageCode: string
+): Promise<GoogleVoicesResult> {
+  if (!apiKey) return { voices: [], errorStatus: null };
+  const cacheKey = `${apiKey}:${languageCode}`;
+  const cached = voicesCache.get(cacheKey);
+  if (cached) return { voices: cached, errorStatus: null };
   try {
     const res = await fetch(
       `https://texttospeech.googleapis.com/v1/voices?languageCode=${encodeURIComponent(languageCode)}&key=${apiKey}`
     );
-    if (!res.ok) return [];
+    if (!res.ok) return { voices: [], errorStatus: res.status };
     const data = await res.json();
     const voices: GoogleVoice[] = (data.voices ?? []).map((v: any) => ({
       name: v.name,
       ssmlGender: v.ssmlGender,
     }));
-    voicesCache.set(languageCode, voices);
-    return voices;
+    voicesCache.set(cacheKey, voices);
+    return { voices, errorStatus: null };
   } catch {
-    return [];
+    return { voices: [], errorStatus: null };
   }
+}
+
+export async function fetchGoogleVoices(apiKey: string, languageCode: string): Promise<GoogleVoice[]> {
+  return (await fetchGoogleVoicesDetailed(apiKey, languageCode)).voices;
+}
+
+/** Human-readable explanation for a Google TTS HTTP error status, for toasts. */
+export function describeGoogleTtsError(status: number): string {
+  if (status === 401 || status === 403) {
+    return 'Google rejected this key (401/403). Make sure it\'s a Google Cloud Console API key (not an AI Studio/Gemini key) with the "Cloud Text-to-Speech API" enabled and billing active on that project.';
+  }
+  if (status === 429) return 'Google TTS quota exceeded for this key — try again later.';
+  return `Google TTS request failed (HTTP ${status}).`;
 }
 
 /**
