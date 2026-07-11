@@ -1,61 +1,129 @@
 /**
- * Direct browser -> Google Cloud Text-to-Speech calls, BYOK (same shape as
- * callGoogleDirect in lib/llm-client.ts for Gemini). No server component —
- * the user's own API key never leaves the browser except to Google's API.
+ * Direct browser -> Gemini API text-to-speech calls, BYOK. Uses the same
+ * Gemini Developer API key type (and host) as callGoogleDirect in
+ * lib/llm-client.ts for the Gemini LLM connection — NOT the separate
+ * Google Cloud Text-to-Speech REST API, which requires a different kind of
+ * key (GCP Console + billing) and was the source of 401s when users pasted
+ * their Gemini/AI Studio key into it.
  */
+
+export interface GeminiTtsModel {
+  id: string;
+  label: string;
+}
+
+/** Ordered cheapest-first; UI defaults to the first entry. */
+export const GEMINI_TTS_MODELS: GeminiTtsModel[] = [
+  { id: 'gemini-2.5-flash-preview-tts', label: 'Gemini 2.5 Flash TTS (cheapest)' },
+  { id: 'gemini-2.5-pro-preview-tts', label: 'Gemini 2.5 Pro TTS (higher quality)' },
+  { id: 'gemini-3.1-flash-tts-preview', label: 'Gemini 3.1 Flash TTS (preview, streaming-capable)' },
+];
 
 export interface GoogleVoice {
   name: string;
-  ssmlGender: string;
+  desc: string;
 }
 
-// Cache key includes the API key itself — keying by languageCode alone
-// would keep serving voices fetched under a previous key after the user
-// changes it, since the same languageCode would hit as "cached".
-const voicesCache = new Map<string, GoogleVoice[]>();
+/** Fixed catalog of prebuilt voices — Gemini TTS doesn't expose a "list voices" endpoint. */
+export const GEMINI_TTS_VOICES: GoogleVoice[] = [
+  { name: 'Zephyr', desc: 'Bright' },
+  { name: 'Puck', desc: 'Upbeat' },
+  { name: 'Charon', desc: 'Informative' },
+  { name: 'Kore', desc: 'Firm' },
+  { name: 'Fenrir', desc: 'Excitable' },
+  { name: 'Leda', desc: 'Youthful' },
+  { name: 'Orus', desc: 'Firm' },
+  { name: 'Aoede', desc: 'Breezy' },
+  { name: 'Callirrhoe', desc: 'Easy-going' },
+  { name: 'Autonoe', desc: 'Bright' },
+  { name: 'Enceladus', desc: 'Breathy' },
+  { name: 'Iapetus', desc: 'Clear' },
+  { name: 'Umbriel', desc: 'Easy-going' },
+  { name: 'Algieba', desc: 'Smooth' },
+  { name: 'Despina', desc: 'Smooth' },
+  { name: 'Erinome', desc: 'Clear' },
+  { name: 'Algenib', desc: 'Gravelly' },
+  { name: 'Rasalgethi', desc: 'Informative' },
+  { name: 'Laomedeia', desc: 'Upbeat' },
+  { name: 'Achernar', desc: 'Soft' },
+  { name: 'Alnilam', desc: 'Firm' },
+  { name: 'Schedar', desc: 'Even' },
+  { name: 'Gacrux', desc: 'Mature' },
+  { name: 'Pulcherrima', desc: 'Forward' },
+  { name: 'Achird', desc: 'Friendly' },
+  { name: 'Zubenelgenubi', desc: 'Casual' },
+  { name: 'Vindemiatrix', desc: 'Gentle' },
+  { name: 'Sadachbia', desc: 'Lively' },
+  { name: 'Sadaltager', desc: 'Knowledgeable' },
+  { name: 'Sulafat', desc: 'Warm' },
+];
 
-export interface GoogleVoicesResult {
-  voices: GoogleVoice[];
-  /** HTTP status if the request reached Google but was rejected (e.g. 401/403 = bad key or API not enabled). Null on success or network failure. */
-  errorStatus: number | null;
-}
-
-export async function fetchGoogleVoicesDetailed(
-  apiKey: string,
-  languageCode: string
-): Promise<GoogleVoicesResult> {
-  if (!apiKey) return { voices: [], errorStatus: null };
-  const cacheKey = `${apiKey}:${languageCode}`;
-  const cached = voicesCache.get(cacheKey);
-  if (cached) return { voices: cached, errorStatus: null };
+/** Cheap metadata call (no generation cost) used to verify a key actually works. */
+export async function validateGeminiKey(apiKey: string): Promise<{ ok: boolean; errorStatus: number | null }> {
+  if (!apiKey) return { ok: false, errorStatus: null };
   try {
-    const res = await fetch(
-      `https://texttospeech.googleapis.com/v1/voices?languageCode=${encodeURIComponent(languageCode)}&key=${apiKey}`
-    );
-    if (!res.ok) return { voices: [], errorStatus: res.status };
-    const data = await res.json();
-    const voices: GoogleVoice[] = (data.voices ?? []).map((v: any) => ({
-      name: v.name,
-      ssmlGender: v.ssmlGender,
-    }));
-    voicesCache.set(cacheKey, voices);
-    return { voices, errorStatus: null };
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    return { ok: res.ok, errorStatus: res.ok ? null : res.status };
   } catch {
-    return { voices: [], errorStatus: null };
+    return { ok: false, errorStatus: null };
   }
 }
 
-export async function fetchGoogleVoices(apiKey: string, languageCode: string): Promise<GoogleVoice[]> {
-  return (await fetchGoogleVoicesDetailed(apiKey, languageCode)).voices;
-}
-
-/** Human-readable explanation for a Google TTS HTTP error status, for toasts. */
+/** Human-readable explanation for a Gemini API error status, for toasts. */
 export function describeGoogleTtsError(status: number): string {
   if (status === 401 || status === 403) {
-    return 'Google rejected this key (401/403). Make sure it\'s a Google Cloud Console API key (not an AI Studio/Gemini key) with the "Cloud Text-to-Speech API" enabled and billing active on that project.';
+    return 'Gemini rejected this key (401/403). Double-check it was copied correctly from Google AI Studio, and that it has not been revoked.';
   }
-  if (status === 429) return 'Google TTS quota exceeded for this key — try again later.';
-  return `Google TTS request failed (HTTP ${status}).`;
+  if (status === 429) return 'Gemini API quota exceeded for this key — try again later.';
+  return `Gemini TTS request failed (HTTP ${status}).`;
+}
+
+/** Wraps raw 16-bit PCM (as Gemini returns it) in a minimal WAV container so it can play via <audio>/new Audio(). */
+function pcmToWavDataUrl(base64Pcm: string, sampleRate: number): string {
+  const pcmBytes = atob(base64Pcm);
+  const pcmLength = pcmBytes.length;
+  const buffer = new ArrayBuffer(44 + pcmLength);
+  const view = new DataView(buffer);
+
+  function writeString(offset: number, s: string) {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcmLength, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate (16-bit mono)
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, 'data');
+  view.setUint32(40, pcmLength, true);
+  for (let i = 0; i < pcmLength; i++) view.setUint8(44 + i, pcmBytes.charCodeAt(i));
+
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+/**
+ * Turns the app's 0.5-2 numeric speed slider into a natural-language pace
+ * tag, since Gemini TTS controls pace via prompt instructions rather than a
+ * numeric parameter. Gemini strips bracket tags from the spoken output.
+ */
+function paceTag(rate: number): string {
+  if (rate <= 0.75) return '[very slow] ';
+  if (rate <= 0.9) return '[slowly] ';
+  if (rate >= 1.35) return '[very fast] ';
+  if (rate >= 1.1) return '[quickly] ';
+  return '';
 }
 
 /**
@@ -66,25 +134,37 @@ export function describeGoogleTtsError(status: number): string {
 export async function synthesizeGoogleAudio(
   apiKey: string,
   text: string,
-  languageCode: string,
   voiceName: string,
+  model: string,
   rate: number
 ): Promise<string | null> {
   if (!apiKey) return null;
   try {
-    const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        input: { text },
-        voice: { languageCode, name: voiceName },
-        audioConfig: { audioEncoding: 'MP3', speakingRate: rate },
-      }),
-    });
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${paceTag(rate)}${text}` }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+          },
+        }),
+      }
+    );
     if (!res.ok) return null;
     const data = await res.json();
-    if (!data.audioContent) return null;
-    return `data:audio/mp3;base64,${data.audioContent}`;
+    const part = data.candidates?.[0]?.content?.parts?.[0];
+    const audioData: string | undefined = part?.inlineData?.data;
+    if (!audioData) return null;
+    // Gemini returns raw 16-bit PCM at 24kHz (audio/L16;rate=24000), not a
+    // ready-made container format, so it must be wrapped before <audio> can play it.
+    const mimeType: string = part?.inlineData?.mimeType ?? 'audio/L16;rate=24000';
+    const rateMatch = /rate=(\d+)/.exec(mimeType);
+    const sampleRate = rateMatch ? Number(rateMatch[1]) : 24000;
+    return pcmToWavDataUrl(audioData, sampleRate);
   } catch {
     return null;
   }
@@ -99,20 +179,15 @@ function hashString(s: string): number {
 }
 
 /**
- * Deterministically assigns a Google voice per agent, mirroring
+ * Deterministically assigns a Gemini TTS voice per agent, mirroring
  * pickVoiceForAgent in lib/voice-picker.ts — same agent always gets the
  * same voice, different agents tend to get different ones. Honors an
- * explicit per-agent override if it's still present in the fetched list.
+ * explicit per-agent override if set.
  */
-export function pickGoogleVoiceForAgent(
-  agentId: string,
-  preferredVoiceName: string | null | undefined,
-  voices: GoogleVoice[]
-): string | null {
-  if (preferredVoiceName && voices.some((v) => v.name === preferredVoiceName)) {
+export function pickGoogleVoiceForAgent(agentId: string, preferredVoiceName: string | null | undefined): string {
+  if (preferredVoiceName && GEMINI_TTS_VOICES.some((v) => v.name === preferredVoiceName)) {
     return preferredVoiceName;
   }
-  if (voices.length === 0) return null;
   const hash = hashString(agentId);
-  return voices[hash % voices.length].name;
+  return GEMINI_TTS_VOICES[hash % GEMINI_TTS_VOICES.length].name;
 }

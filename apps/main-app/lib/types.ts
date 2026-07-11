@@ -92,8 +92,10 @@ export interface ConversationSettings {
   interactionStyle: InteractionStyle;
   ttsRate: number;
   ttsLang: string;
-  /** 'google' requires a saved Google Cloud TTS API key; falls back to 'browser' when absent. */
+  /** 'google' requires a saved Gemini API key; falls back to 'browser' when absent. */
   ttsProvider: 'browser' | 'google';
+  /** Gemini TTS model id, e.g. "gemini-2.5-flash-preview-tts". */
+  googleTtsModel: string;
   /** Digits only, international format without leading 00/+ (e.g. "212661320000"). */
   whatsappNumber: string;
 }

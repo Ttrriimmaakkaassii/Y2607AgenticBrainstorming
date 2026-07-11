@@ -7,7 +7,7 @@ import { generateId } from '@/lib/id';
 import { renameCustomAgent } from '@/lib/custom-agents';
 import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
-import { describeGoogleTtsError, fetchGoogleVoicesDetailed } from '@/lib/google-tts';
+import { describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
 
 interface LLMProvidersModalProps {
   connections: LLMConnection[];
@@ -52,10 +52,10 @@ export function LLMProvidersModal({
       onToast('🗑️ TTS API key cleared — using browser voices');
       return;
     }
-    onToast('🔄 Verifying TTS key…');
-    const { voices, errorStatus } = await fetchGoogleVoicesDetailed(trimmed, 'en-US');
-    if (voices.length > 0) {
-      onToast(`✅ TTS API key saved and verified (${voices.length} English voices found)`);
+    onToast('🔄 Verifying key…');
+    const { ok, errorStatus } = await validateGeminiKey(trimmed);
+    if (ok) {
+      onToast('✅ Gemini API key saved and verified');
     } else if (errorStatus != null) {
       onToast(`⚠️ Key saved, but ${describeGoogleTtsError(errorStatus)}`);
     } else {
@@ -275,7 +275,7 @@ export function LLMProvidersModal({
           <div className="modal-section">
             <div className="modal-section-title">🔊 TTS API (optional)</div>
             <div className="form-group">
-              <label>Google Cloud Text-to-Speech API Key</label>
+              <label>Gemini API Key</label>
               <input
                 type="password"
                 {...devRef('l8')}
@@ -288,10 +288,12 @@ export function LLMProvidersModal({
               💾 Save TTS Key
             </button>
             <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
-              Optional. Adding a Google Cloud TTS key unlocks more natural, realistic voices (enable it
-              in Settings → 🎧 Audio → TTS Engine). Stored only in this browser, same as your LLM keys
-              above — never synced anywhere. Without a key, read-aloud keeps using your browser's free
-              built-in voices.
+              Optional. Adding a Gemini API key (get one free from Google AI Studio) unlocks more
+              natural, realistic voices via Gemini TTS (enable it in Settings → 🎧 Audio → TTS Engine
+              → Gemini TTS, and pick a model — the cheapest is selected by default). This is the same
+              kind of key used for a Gemini LLM connection above, not a separate Google Cloud Console
+              key. Stored only in this browser, same as your LLM keys — never synced anywhere. Without
+              a key, read-aloud keeps using your browser's free built-in voices.
             </div>
           </div>
 

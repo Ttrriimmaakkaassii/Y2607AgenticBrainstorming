@@ -20,7 +20,7 @@ import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { devRef } from '@/lib/devref';
-import { fetchGoogleVoices, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
+import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
   loadConnections,
@@ -145,6 +145,7 @@ function defaultState(): ConversationState {
       ttsRate: 1,
       ttsLang: 'en-US',
       ttsProvider: 'browser',
+      googleTtsModel: GEMINI_TTS_MODELS[0].id,
       whatsappNumber: '',
     },
     status: 'idle',
@@ -196,6 +197,7 @@ function migrateState(state: ConversationState): ConversationState {
       ttsRate: state.settings.ttsRate ?? 1,
       ttsLang: state.settings.ttsLang ?? 'en-US',
       ttsProvider: state.settings.ttsProvider ?? 'browser',
+      googleTtsModel: state.settings.googleTtsModel ?? GEMINI_TTS_MODELS[0].id,
       whatsappNumber: state.settings.whatsappNumber ?? '',
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
@@ -1097,14 +1099,17 @@ export function ChatApp() {
 
       async function speakSentenceGoogle(apiKey: string, text: string, offset: number) {
         const author = agentById(msg.agentId);
-        const voices = await fetchGoogleVoices(apiKey, state.settings.ttsLang);
-        const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName, voices);
-        const audioUrl = voiceName
-          ? await synthesizeGoogleAudio(apiKey, text, state.settings.ttsLang, voiceName, state.settings.ttsRate)
-          : null;
+        const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
+        const audioUrl = await synthesizeGoogleAudio(
+          apiKey,
+          text,
+          voiceName,
+          state.settings.googleTtsModel,
+          state.settings.ttsRate
+        );
         if (speakingCancelledRef.current) return;
         if (!audioUrl) {
-          showToast('⚠️ Google TTS failed — falling back to the browser voice.');
+          showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
           speakSentenceBrowser(text, offset);
           return;
         }
@@ -2462,6 +2467,7 @@ export function ChatApp() {
           ttsRate={state.settings.ttsRate}
           ttsLang={state.settings.ttsLang}
           ttsProvider={state.settings.ttsProvider}
+          googleTtsModel={state.settings.googleTtsModel}
           onUpdateTts={(updates) => updateSettings(updates)}
           archives={archives}
           onRestoreArchive={restoreArchive}

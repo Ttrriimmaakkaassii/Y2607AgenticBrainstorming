@@ -20,8 +20,7 @@ import {
   deleteTraitDef,
   loadTraitCategories,
 } from '@/lib/traits';
-import { GoogleVoice, fetchGoogleVoices } from '@/lib/google-tts';
-import { loadTtsApiKey } from '@/lib/tts-connection';
+import { GEMINI_TTS_VOICES } from '@/lib/google-tts';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
 import { LLMProvidersModal } from './LLMProvidersModal';
@@ -84,7 +83,13 @@ interface SettingsModalProps {
   ttsRate: number;
   ttsLang: string;
   ttsProvider: 'browser' | 'google';
-  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string; ttsProvider?: 'browser' | 'google' }) => void;
+  googleTtsModel: string;
+  onUpdateTts: (updates: {
+    ttsRate?: number;
+    ttsLang?: string;
+    ttsProvider?: 'browser' | 'google';
+    googleTtsModel?: string;
+  }) => void;
   archives: ArchivedConversation[];
   onRestoreArchive: (archive: ArchivedConversation) => void;
   onDeleteArchive: (id: string) => void;
@@ -115,6 +120,7 @@ export function SettingsModal({
   ttsRate,
   ttsLang,
   ttsProvider,
+  googleTtsModel,
   onUpdateTts,
   archives,
   onRestoreArchive,
@@ -144,7 +150,6 @@ export function SettingsModal({
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [googleVoices, setGoogleVoices] = useState<GoogleVoice[]>([]);
   const [newGuidelineText, setNewGuidelineText] = useState('');
   const [newGuidelineCategory, setNewGuidelineCategory] = useState('');
   const [newTraitName, setNewTraitName] = useState('');
@@ -177,15 +182,6 @@ export function SettingsModal({
     window.speechSynthesis.addEventListener('voiceschanged', load);
     return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
   }, []);
-
-  useEffect(() => {
-    const apiKey = loadTtsApiKey();
-    if (!apiKey) {
-      setGoogleVoices([]);
-      return;
-    }
-    fetchGoogleVoices(apiKey, ttsLang).then(setGoogleVoices);
-  }, [ttsLang]);
 
   const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
   const currentAgentCategories =
@@ -471,25 +467,19 @@ export function SettingsModal({
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Google Cloud Voice (used when TTS Engine is set to Google Cloud)</label>
+                  <label>Gemini TTS Voice (used when TTS Engine is set to Gemini TTS)</label>
                   <select
                     {...devRef('sc6')}
                     value={googleVoiceName ?? ''}
                     onChange={(e) => setGoogleVoiceName(e.target.value || null)}
                   >
                     <option value="">Auto (assigned automatically, distinct per agent)</option>
-                    {googleVoices.map((v) => (
+                    {GEMINI_TTS_VOICES.map((v) => (
                       <option key={v.name} value={v.name}>
-                        {v.name} ({v.ssmlGender})
+                        {v.name} ({v.desc})
                       </option>
                     ))}
                   </select>
-                  {googleVoices.length === 0 && (
-                    <div style={{ fontSize: 11, color: '#667781', marginTop: 4 }}>
-                      Add a TTS API key in 🔌 LLM to see available Google voices for the current
-                      language.
-                    </div>
-                  )}
                 </div>
                 <div className="form-group">
                   <label>Avatar Color</label>
@@ -724,6 +714,7 @@ export function SettingsModal({
               ttsRate={ttsRate}
               ttsLang={ttsLang}
               ttsProvider={ttsProvider}
+              googleTtsModel={googleTtsModel}
               onUpdateTts={onUpdateTts}
               onClose={() => {}}
               onToast={onToast}

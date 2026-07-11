@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { Agent, Message, Thread } from '@/lib/types';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
-import { fetchGoogleVoices, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
+import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import { devRef } from '@/lib/devref';
 
@@ -13,7 +13,13 @@ interface AudioModalProps {
   ttsRate: number;
   ttsLang: string;
   ttsProvider: 'browser' | 'google';
-  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string; ttsProvider?: 'browser' | 'google' }) => void;
+  googleTtsModel: string;
+  onUpdateTts: (updates: {
+    ttsRate?: number;
+    ttsLang?: string;
+    ttsProvider?: 'browser' | 'google';
+    googleTtsModel?: string;
+  }) => void;
   onClose: () => void;
   onToast: (message: string) => void;
   embedded?: boolean;
@@ -25,6 +31,7 @@ export function AudioModal({
   ttsRate,
   ttsLang,
   ttsProvider,
+  googleTtsModel,
   onUpdateTts,
   onClose,
   onToast,
@@ -73,14 +80,17 @@ export function AudioModal({
 
     async function speakAtGoogle(index: number, msg: Message, apiKey: string) {
       const agent = agents.find((a) => a.id === msg.agentId);
-      const voices = await fetchGoogleVoices(apiKey, ttsLang);
-      const voiceName = pickGoogleVoiceForAgent(msg.agentId, agent?.googleVoiceName, voices);
-      const audioUrl = voiceName
-        ? await synthesizeGoogleAudio(apiKey, `${authorName(msg)} says: ${msg.content}`, ttsLang, voiceName, ttsRate)
-        : null;
+      const voiceName = pickGoogleVoiceForAgent(msg.agentId, agent?.googleVoiceName);
+      const audioUrl = await synthesizeGoogleAudio(
+        apiKey,
+        `${authorName(msg)} says: ${msg.content}`,
+        voiceName,
+        googleTtsModel,
+        ttsRate
+      );
       if (cancelledRef.current) return;
       if (!audioUrl) {
-        onToast('⚠️ Google TTS failed — falling back to the browser voice.');
+        onToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
         speakAtBrowser(index, msg);
         return;
       }
@@ -159,9 +169,25 @@ export function AudioModal({
             onChange={(e) => onUpdateTts({ ttsProvider: e.target.value as 'browser' | 'google' })}
           >
             <option value="browser">🔊 Browser (free, built-in)</option>
-            <option value="google">☁️ Google Cloud (higher quality — needs an API key in 🔌 LLM)</option>
+            <option value="google">✨ Gemini TTS (higher quality — needs an API key in 🔌 LLM)</option>
           </select>
         </div>
+        {ttsProvider === 'google' && (
+          <div className="form-group">
+            <label>Gemini TTS Model</label>
+            <select
+              {...devRef('au6')}
+              value={googleTtsModel}
+              onChange={(e) => onUpdateTts({ googleTtsModel: e.target.value })}
+            >
+              {GEMINI_TTS_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="form-group">
           <label>Voice Speed</label>
           <input
@@ -210,8 +236,8 @@ export function AudioModal({
         <div className="modal-section-title">Note</div>
         <div style={{ fontSize: 12, color: '#667781' }}>
           By default, playback uses your browser&apos;s built-in text-to-speech engine — free, but
-          voice quality depends on your device. Add your own Google Cloud TTS API key in 🔌 LLM → TTS
-          API and switch the TTS Engine above to Google Cloud for more natural, realistic voices.
+          voice quality depends on your device. Add your own Gemini API key in 🔌 LLM → TTS API and
+          switch the TTS Engine above to Gemini TTS for more natural, realistic voices.
         </div>
       </div>
     </>
