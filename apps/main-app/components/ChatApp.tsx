@@ -326,8 +326,14 @@ export function ChatApp() {
     charIndex: number;
     charLength: number;
   } | null>(null);
+  // Gemini TTS now synthesizes a whole message before any audio can start,
+  // which can take a couple of seconds for longer messages — this tracks
+  // which message is mid-generation so the UI can show it's working rather
+  // than looking stuck/broken.
+  const [ttsLoadingMessageId, setTtsLoadingMessageId] = useState<string | null>(null);
   const speakingCancelledRef = useRef(false);
   const googleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAbortControllerRef = useRef<AbortController | null>(null);
   const statusRef = useRef(state.status);
   useEffect(() => {
     statusRef.current = state.status;
@@ -970,7 +976,12 @@ export function ChatApp() {
       googleAudioRef.current.pause();
       googleAudioRef.current = null;
     }
+    if (ttsAbortControllerRef.current) {
+      ttsAbortControllerRef.current.abort();
+      ttsAbortControllerRef.current = null;
+    }
     setSpeaking(null);
+    setTtsLoadingMessageId(null);
   }
 
   /**
@@ -1049,13 +1060,19 @@ export function ChatApp() {
     async function speakMessageGoogle(index: number, msg: Message, apiKey: string) {
       const author = agentById(msg.agentId);
       const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
+      setTtsLoadingMessageId(msg.id);
+      const abortController = new AbortController();
+      ttsAbortControllerRef.current = abortController;
       const audioUrl = await synthesizeGoogleAudio(
         apiKey,
         msg.content,
         voiceName,
         state.settings.googleTtsModel,
-        state.settings.ttsRate
+        state.settings.ttsRate,
+        abortController.signal
       );
+      if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
+      setTtsLoadingMessageId((prev) => (prev === msg.id ? null : prev));
       if (speakingCancelledRef.current) return;
       if (!audioUrl) {
         showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
@@ -2294,22 +2311,25 @@ export function ChatApp() {
                           let n = 0;
                           const badge = () => ++n;
                           const isSpeaking = speaking !== null;
+                          const isLoadingAudio = ttsLoadingMessageId === msg.id;
                           return (
                             <>
                               <button
                                 className="feedback-btn"
                                 title={
-                                  isSpeaking
+                                  isLoadingAudio
+                                    ? `r${badge()}: Generating audio…`
+                                    : isSpeaking
                                     ? `r${badge()}: Pause reading`
                                     : `r${badge()}: Read aloud from here`
                                 }
                                 onClick={() =>
-                                  isSpeaking
+                                  isSpeaking || isLoadingAudio
                                     ? stopSpeaking()
                                     : playFromMessage(allMessages.findIndex((m) => m.id === msg.id))
                                 }
                               >
-                                {isSpeaking ? '⏸️' : '▶️'}
+                                {isLoadingAudio ? '⏳' : isSpeaking ? '⏸️' : '▶️'}
                                 <span className="reaction-badge">r{n}</span>
                               </button>
                               {(['like', 'dislike', 'clarify'] as Feedback[]).map((type) => (

@@ -41,6 +41,7 @@ export function AudioModal({
   const messages = threads.flatMap((t) => t.messages);
   const cancelledRef = useRef(false);
   const googleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAbortControllerRef = useRef<AbortController | null>(null);
 
   function authorName(msg: Message): string {
     if (msg.agentId === 'user') return 'You';
@@ -81,13 +82,17 @@ export function AudioModal({
     async function speakAtGoogle(index: number, msg: Message, apiKey: string) {
       const agent = agents.find((a) => a.id === msg.agentId);
       const voiceName = pickGoogleVoiceForAgent(msg.agentId, agent?.googleVoiceName);
+      const abortController = new AbortController();
+      ttsAbortControllerRef.current = abortController;
       const audioUrl = await synthesizeGoogleAudio(
         apiKey,
         `${authorName(msg)} says: ${msg.content}`,
         voiceName,
         googleTtsModel,
-        ttsRate
+        ttsRate,
+        abortController.signal
       );
+      if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
       if (cancelledRef.current) return;
       if (!audioUrl) {
         onToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
@@ -134,6 +139,10 @@ export function AudioModal({
     if (googleAudioRef.current) {
       googleAudioRef.current.pause();
       googleAudioRef.current = null;
+    }
+    if (ttsAbortControllerRef.current) {
+      ttsAbortControllerRef.current.abort();
+      ttsAbortControllerRef.current = null;
     }
     setPlayingIndex(null);
     onToast('⏹️ Playback stopped');

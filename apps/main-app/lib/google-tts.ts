@@ -131,7 +131,8 @@ async function synthesizeGoogleAudioOnce(
   text: string,
   voiceName: string,
   model: string,
-  rate: number
+  rate: number,
+  signal?: AbortSignal
 ): Promise<{ audioUrl: string | null; status: number | null }> {
   try {
     const res = await fetch(
@@ -146,6 +147,7 @@ async function synthesizeGoogleAudioOnce(
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
           },
         }),
+        signal,
       }
     );
     if (!res.ok) return { audioUrl: null, status: res.status };
@@ -180,13 +182,15 @@ export async function synthesizeGoogleAudio(
   voiceName: string,
   model: string,
   rate: number,
+  signal?: AbortSignal,
   maxRetries = 2
 ): Promise<string | null> {
   if (!apiKey) return null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const { audioUrl, status } = await synthesizeGoogleAudioOnce(apiKey, text, voiceName, model, rate);
+    if (signal?.aborted) return null;
+    const { audioUrl, status } = await synthesizeGoogleAudioOnce(apiKey, text, voiceName, model, rate, signal);
     if (audioUrl) return audioUrl;
-    if (status !== 500 || attempt === maxRetries) return null;
+    if (status !== 500 || attempt === maxRetries || signal?.aborted) return null;
     await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
   }
   return null;
