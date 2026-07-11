@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { getSession, onAuthStateChange, signIn, signOut, signUp, updatePassword } from '@/lib/auth';
+import { getSession, onAuthStateChange, signIn, signOut, signUp } from '@/lib/auth';
 import { fetchMyProfile, UserProfile } from '@/lib/admin';
 import { supabase } from '@/lib/supabase';
+import { AuthContext } from '@/lib/auth-context';
 import { AdminPanel } from './AdminPanel';
 
 export function LoginGate({ children }: { children: React.ReactNode }) {
@@ -18,9 +19,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
     getSession().then((s) => {
@@ -172,68 +171,17 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setInfo('');
-    try {
-      await updatePassword(newPassword);
-      setInfo('Password updated.');
-      setNewPassword('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
-    }
-  }
-
   return (
-    <>
-      <div className="account-bar">
-        <span className="account-email">{session.user.email}</span>
-        {profile.isAdmin && (
-          <button className="btn-icon" onClick={() => setShowAdminPanel(true)} title="Admin panel">
-            🛡️
-          </button>
-        )}
-        <button className="btn-icon" onClick={() => setShowAccountMenu((v) => !v)} title="Account">
-          ⚙️
-        </button>
-        <button className="btn-icon" onClick={() => signOut()} title="Sign out">
-          🚪
-        </button>
-      </div>
-      {showAccountMenu && (
-        <div className="modal-overlay active" onClick={() => setShowAccountMenu(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Account</span>
-              <button className="modal-close" onClick={() => setShowAccountMenu(false)}>
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <form onSubmit={handleChangePassword}>
-                <div className="form-group">
-                  <label>New Password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    minLength={6}
-                    required
-                  />
-                </div>
-                {error && <div className="auth-error">{error}</div>}
-                {info && <div className="auth-info">{info}</div>}
-                <button className="btn-primary" type="submit">
-                  Change Password
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+    <AuthContext.Provider
+      value={{
+        session,
+        profile,
+        onSignOut: () => signOut(),
+        onOpenAdminPanel: () => setShowAdminPanel(true),
+      }}
+    >
       {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
       {children}
-    </>
+    </AuthContext.Provider>
   );
 }

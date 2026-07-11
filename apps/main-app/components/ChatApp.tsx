@@ -328,7 +328,8 @@ export function ChatApp() {
   useEffect(() => {
     settingsRef.current = state.settings;
   }, [state.settings]);
-  const [showAudioRail, setShowAudioRail] = useState(true);
+  const [showAudioRail, setShowAudioRail] = useState(false);
+  const [topicExpanded, setTopicExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
   const [customMoods, setCustomMoods] = useState<CustomMood[]>([]);
   const [moodsMenuOpen, setMoodsMenuOpen] = useState(false);
@@ -380,6 +381,13 @@ export function ChatApp() {
   function changeTheme(next: Theme) {
     setTheme(next);
     applyTheme(next);
+  }
+
+  const THEME_ORDER: Theme[] = ['light', 'dark', 'ascii'];
+  const THEME_ICONS: Record<Theme, string> = { light: '☀️', dark: '🌙', ascii: '🟢' };
+  function cycleTheme() {
+    const idx = THEME_ORDER.indexOf(theme);
+    changeTheme(THEME_ORDER[(idx + 1) % THEME_ORDER.length]);
   }
 
   useEffect(() => {
@@ -1470,6 +1478,33 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
+      <div className="fixed-top-icons">
+        <button
+          className="icon-btn"
+          {...devRef('a1')}
+          onClick={() => setShowAudioRail((v) => !v)}
+          title="Toggle audio rail"
+        >
+          🔊
+        </button>
+        <button
+          className="icon-btn"
+          {...devRef('a9')}
+          onClick={cycleTheme}
+          title={`Theme: ${theme} (click to cycle)`}
+        >
+          {THEME_ICONS[theme]}
+        </button>
+        <button
+          className={`icon-btn ${devMode ? 'active' : ''}`}
+          {...devRef('a10')}
+          onClick={() => setDevMode((v) => !v)}
+          title="Dev Mode: show a unique reference code on every section/feature/button/field"
+        >
+          🛠️
+        </button>
+      </div>
+
       <button
         className="settings-gear-btn"
         {...devRef('a8')}
@@ -1477,7 +1512,7 @@ export function ChatApp() {
           setModalReturnTo(null);
           setActiveModal('settings');
         }}
-        title="Settings (Agents, LLMs, Audio, Archives)"
+        title="Settings (Agents, LLMs, Audio, Archives, Account)"
       >
         ⚙️
       </button>
@@ -1497,14 +1532,36 @@ export function ChatApp() {
       <div className="top-panel-inner">
       <div className="header">
         <div className="header-left">
-          <input
-            type="text"
-            className="select-input"
-            style={{ minWidth: 220, flex: 1 }}
-            placeholder="Discussion topic (e.g. Should AI regulation be global?)"
-            value={state.settings.topic}
-            onChange={(e) => updateSettings({ topic: e.target.value })}
-          />
+          <div className="topic-field-wrap">
+            {topicExpanded ? (
+              <textarea
+                className="select-input topic-textarea"
+                {...devRef('h1')}
+                placeholder="Discussion topic (e.g. Should AI regulation be global?)"
+                value={state.settings.topic}
+                onChange={(e) => updateSettings({ topic: e.target.value })}
+              />
+            ) : (
+              <input
+                type="text"
+                className="select-input"
+                {...devRef('h1')}
+                style={{ minWidth: 220, flex: 1 }}
+                placeholder="Discussion topic (e.g. Should AI regulation be global?)"
+                value={state.settings.topic}
+                onChange={(e) => updateSettings({ topic: e.target.value })}
+              />
+            )}
+            <button
+              type="button"
+              className="btn-icon"
+              {...devRef('h2')}
+              title={topicExpanded ? 'Collapse' : 'Expand to full text'}
+              onClick={() => setTopicExpanded((v) => !v)}
+            >
+              {topicExpanded ? '🗕' : '🗖'}
+            </button>
+          </div>
           <select
             className="select-input"
             value={currentAgentId}
@@ -1625,9 +1682,6 @@ export function ChatApp() {
           </div>
         </div>
         <div className="header-right">
-          <button className="icon-btn" {...devRef('a1')} onClick={() => setShowAudioRail((v) => !v)}>
-            🎙️ Rail
-          </button>
           <button
             className="icon-btn"
             {...devRef('a2')}
@@ -1643,23 +1697,6 @@ export function ChatApp() {
           </button>
           <button className="icon-btn" {...devRef('a6')} onClick={() => setActiveModal('export')}>
             📥 Export
-          </button>
-          <select
-            className="icon-btn"
-            value={theme}
-            onChange={(e) => changeTheme(e.target.value as Theme)}
-            title="Theme"
-          >
-            <option value="light">☀️ Light</option>
-            <option value="dark">🌙 Dark</option>
-            <option value="ascii">🟢 ASCII</option>
-          </select>
-          <button
-            className={`icon-btn ${devMode ? 'active' : ''}`}
-            onClick={() => setDevMode((v) => !v)}
-            title="Dev Mode: show a unique reference code on every section/feature/button/field"
-          >
-            🛠️ Dev
           </button>
         </div>
       </div>

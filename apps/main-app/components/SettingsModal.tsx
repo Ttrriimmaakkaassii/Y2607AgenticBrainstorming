@@ -22,12 +22,14 @@ import {
 } from '@/lib/traits';
 import { GoogleVoice, fetchGoogleVoices } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
+import { useAuthContext } from '@/lib/auth-context';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
 import { ChangeLogPanel } from './ChangeLogPanel';
+import { AccountSettingsPanel } from './AccountSettingsPanel';
 
-type SettingsTab = 'agent' | 'llm' | 'audio' | 'archives' | 'log';
+type SettingsTab = 'agent' | 'llm' | 'audio' | 'archives' | 'log' | 'account';
 
 /** A real dropdown for freeform-tag category fields, with a "+ New category…" escape hatch. */
 function CategorySelect({
@@ -264,12 +266,14 @@ export function SettingsModal({
     });
   }
 
+  const auth = useAuthContext();
   const TABS: { id: SettingsTab; label: string }[] = [
     { id: 'agent', label: '🧑 Agent' },
     { id: 'llm', label: '🔌 LLM' },
     { id: 'audio', label: '🎧 Audio' },
     { id: 'archives', label: '🗄️ Archives' },
     { id: 'log', label: '📜 Log' },
+    ...(auth ? [{ id: 'account' as const, label: '👤 Account' }] : []),
   ];
 
   return (
@@ -678,6 +682,8 @@ export function SettingsModal({
           )}
 
           {tab === 'log' && <ChangeLogPanel />}
+
+          {tab === 'account' && <AccountSettingsPanel />}
         </div>
       </div>
     </div>
