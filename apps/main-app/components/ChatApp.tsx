@@ -19,7 +19,7 @@ import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/cu
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
-import { devRef } from '@/lib/devref';
+import { devRef, resetDevRefCounter } from '@/lib/devref';
 import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
@@ -267,6 +267,10 @@ function useInfinityField(value: number | null, onCommit: (v: number | null) => 
 }
 
 export function ChatApp() {
+  // Reset once per render pass so every devRef() call below (including in
+  // child components like SettingsModal) gets a stable, unique, purely
+  // numeric code for as long as the render tree shape doesn't change.
+  resetDevRefCounter();
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
   const [inputMessage, setInputMessage] = useState('');
@@ -1562,10 +1566,10 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
-      <div className="fixed-top-icons" {...devRef('sec-top-icons')}>
+      <div className="fixed-top-icons" {...devRef()}>
         <button
           className="icon-btn"
-          {...devRef('a1')}
+          {...devRef()}
           onClick={() => setShowAudioRail((v) => !v)}
           title="Toggle audio rail"
         >
@@ -1573,7 +1577,7 @@ export function ChatApp() {
         </button>
         <button
           className="icon-btn"
-          {...devRef('a9')}
+          {...devRef()}
           onClick={cycleTheme}
           title={`Theme: ${theme} (click to cycle)`}
         >
@@ -1581,7 +1585,7 @@ export function ChatApp() {
         </button>
         <button
           className={`icon-btn ${devMode ? 'active' : ''}`}
-          {...devRef('a10')}
+          {...devRef()}
           onClick={() => setDevMode((v) => !v)}
           title="Dev Mode: show a unique reference code on every section/feature/button/field"
         >
@@ -1591,7 +1595,7 @@ export function ChatApp() {
 
       <button
         className="settings-gear-btn"
-        {...devRef('a8')}
+        {...devRef()}
         onClick={() => {
           setModalReturnTo(null);
           setActiveModal('settings');
@@ -1601,10 +1605,10 @@ export function ChatApp() {
         ⚙️
       </button>
 
-      <div className="top-panel-toggle-row" {...devRef('sec-top-panel-toggle')}>
+      <div className="top-panel-toggle-row" {...devRef()}>
         <button
           className="control-btn top-panel-toggle-btn"
-          {...devRef('tp1')}
+          {...devRef()}
           onClick={() => setTopPanelOpen((v) => !v)}
           title={topPanelOpen ? 'Collapse header/search/participants/controls' : 'Show header/search/participants/controls'}
         >
@@ -1614,13 +1618,13 @@ export function ChatApp() {
 
       <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
       <div className="top-panel-inner">
-      <div className="header" {...devRef('sec-header')}>
+      <div className="header" {...devRef()}>
         <div className="header-left">
           <div className="topic-field-wrap">
             {topicExpanded ? (
               <textarea
                 className="select-input topic-textarea"
-                {...devRef('h1')}
+                {...devRef()}
                 placeholder="Discussion topic (e.g. Should AI regulation be global?)"
                 value={state.settings.topic}
                 onChange={(e) => updateSettings({ topic: e.target.value })}
@@ -1629,7 +1633,7 @@ export function ChatApp() {
               <input
                 type="text"
                 className="select-input"
-                {...devRef('h1')}
+                {...devRef()}
                 style={{ minWidth: 220, flex: 1 }}
                 placeholder="Discussion topic (e.g. Should AI regulation be global?)"
                 value={state.settings.topic}
@@ -1639,7 +1643,7 @@ export function ChatApp() {
             <button
               type="button"
               className="btn-icon"
-              {...devRef('h2')}
+              {...devRef()}
               title={topicExpanded ? 'Collapse' : 'Expand to full text'}
               onClick={() => setTopicExpanded((v) => !v)}
             >
@@ -1649,7 +1653,7 @@ export function ChatApp() {
           <div className="moods-menu-wrap">
             <button
               className="control-btn"
-              {...devRef('h3')}
+              {...devRef()}
               onClick={() => setMoodsMenuOpen((v) => !v)}
               title="Select one or more discussion moods to blend"
             >
@@ -1660,7 +1664,7 @@ export function ChatApp() {
                 <input
                   type="text"
                   className="control-input"
-                  {...devRef('h4')}
+                  {...devRef()}
                   placeholder="Filter or add a new mood…"
                   value={moodFilter}
                   onChange={(e) => setMoodFilter(e.target.value)}
@@ -1681,7 +1685,7 @@ export function ChatApp() {
                             <label>
                               <input
                                 type="checkbox"
-                                {...devRef(`h5-${m.key}`)}
+                                {...devRef()}
                                 checked={state.settings.moods.includes(m.name)}
                                 onChange={() => {
                                   const has = state.settings.moods.includes(m.name);
@@ -1698,7 +1702,7 @@ export function ChatApp() {
                               <span className="moods-menu-actions">
                                 <button
                                   className="btn-icon"
-                                  {...devRef(`h6-${m.key}`)}
+                                  {...devRef()}
                                   title="Rename"
                                   onClick={() => {
                                     const next = window.prompt('Rename mood:', m.name);
@@ -1719,7 +1723,7 @@ export function ChatApp() {
                                 </button>
                                 <button
                                   className="btn-icon delete"
-                                  {...devRef(`h7-${m.key}`)}
+                                  {...devRef()}
                                   title="Delete"
                                   onClick={() => {
                                     setCustomMoods(deleteCustomMood(m.custom!.id));
@@ -1743,7 +1747,7 @@ export function ChatApp() {
                       {q && !exactMatch && (
                         <button
                           className="control-btn"
-                          {...devRef('h8')}
+                          {...devRef()}
                           onClick={() => {
                             setCustomMoods(addCustomMood(q));
                             updateSettings({ moods: [...state.settings.moods, moodFilter.trim()] });
@@ -1763,7 +1767,7 @@ export function ChatApp() {
         <div className="header-right">
           <button
             className="icon-btn"
-            {...devRef('a2')}
+            {...devRef()}
             onClick={() => {
               setModalReturnTo(null);
               setActiveModal('library');
@@ -1771,20 +1775,20 @@ export function ChatApp() {
           >
             📚 Library
           </button>
-          <button className="icon-btn" {...devRef('a5')} onClick={() => setActiveModal('analytics')}>
+          <button className="icon-btn" {...devRef()} onClick={() => setActiveModal('analytics')}>
             📊 Analytics
           </button>
-          <button className="icon-btn" {...devRef('a6')} onClick={() => setActiveModal('export')}>
+          <button className="icon-btn" {...devRef()} onClick={() => setActiveModal('export')}>
             📥 Export
           </button>
         </div>
       </div>
 
-      <div className="search-bar" {...devRef('sec-search-bar')}>
+      <div className="search-bar" {...devRef()}>
         <input
           type="text"
           className="select-input"
-          {...devRef('s1')}
+          {...devRef()}
           style={{ flex: 1 }}
           placeholder="🔎 Search discussion... (filters live as you type)"
           value={searchQuery}
@@ -1793,7 +1797,7 @@ export function ChatApp() {
         <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <input
             type="checkbox"
-            {...devRef('s2')}
+            {...devRef()}
             checked={filterStarredOnly}
             onChange={(e) => setFilterStarredOnly(e.target.checked)}
           />
@@ -1801,7 +1805,7 @@ export function ChatApp() {
         </label>
         <select
           className="select-input"
-          {...devRef('s3')}
+          {...devRef()}
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
         >
@@ -1815,7 +1819,7 @@ export function ChatApp() {
         {(searchQuery || filterStarredOnly || filterCategory) && (
           <button
             className="btn-icon"
-            {...devRef('s4')}
+            {...devRef()}
             onClick={() => {
               setSearchQuery('');
               setFilterStarredOnly(false);
@@ -1828,7 +1832,7 @@ export function ChatApp() {
         )}
       </div>
 
-      <div className="participants-bar" {...devRef('p1')}>
+      <div className="participants-bar" {...devRef()}>
         <span className="control-label">Participants:</span>
         {state.agents
           .filter((agent) => agent.active)
@@ -1837,7 +1841,7 @@ export function ChatApp() {
             return (
               <button
                 key={agent.id}
-                {...devRef(`p${agentIndex + 2}`)}
+                {...devRef()}
                 className={`participant-chip ${connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
                 style={{ borderColor: agent.color }}
                 onClick={() => {
@@ -1882,21 +1886,21 @@ export function ChatApp() {
         <div className="participants-menu-wrap">
           <button
             className="control-btn"
-            {...devRef('p1a')}
+            {...devRef()}
             onClick={() => setParticipantsMenuOpen((v) => !v)}
             title="Manage which agents are active in this session"
           >
             👥 Manage ({state.agents.filter((a) => a.active).length}/{state.agents.length}) ▾
           </button>
           {participantsMenuOpen && (
-            <div className="participants-menu" {...devRef('p1b')}>
+            <div className="participants-menu" {...devRef()}>
               <input
                 type="text"
                 className="control-input"
                 placeholder="Filter by name, role, category…"
                 value={participantFilter}
                 onChange={(e) => setParticipantFilter(e.target.value)}
-                {...devRef('p1c')}
+                {...devRef()}
               />
               {(() => {
                 const q = participantFilter.trim().toLowerCase();
@@ -1913,7 +1917,7 @@ export function ChatApp() {
                     <div className="participants-menu-actions">
                       <button
                         className="control-btn"
-                        {...devRef('p1d')}
+                        {...devRef()}
                         onClick={() =>
                           setState((prev) => ({
                             ...prev,
@@ -1927,7 +1931,7 @@ export function ChatApp() {
                       </button>
                       <button
                         className="control-btn"
-                        {...devRef('p1e')}
+                        {...devRef()}
                         onClick={() =>
                           setState((prev) => ({
                             ...prev,
@@ -1967,12 +1971,12 @@ export function ChatApp() {
         </div>
       </div>
 
-      <div className="controls-panel" {...devRef('sec-controls-panel')}>
+      <div className="controls-panel" {...devRef()}>
         <div className="control-group">
           <span className="control-label">Response Style:</span>
           <select
             className="control-input"
-            {...devRef('c1')}
+            {...devRef()}
             style={{ width: 'auto' }}
             value={state.settings.responseStyle}
             onChange={(e) => updateSettings({ responseStyle: e.target.value as ResponseStyle })}
@@ -1987,7 +1991,7 @@ export function ChatApp() {
           <span className="control-label">Interaction:</span>
           <select
             className="control-input"
-            {...devRef('c1b')}
+            {...devRef()}
             style={{ width: 'auto' }}
             value={state.settings.interactionStyle}
             onChange={(e) => updateSettings({ interactionStyle: e.target.value as InteractionStyle })}
@@ -2003,7 +2007,7 @@ export function ChatApp() {
             <input
               type="number"
               className="control-input"
-              {...devRef('c2')}
+              {...devRef()}
               min={1}
               max={10}
               value={state.settings.maxSentences}
@@ -2017,13 +2021,13 @@ export function ChatApp() {
             type="text"
             inputMode="numeric"
             className="control-input"
-            {...devRef('c3')}
+            {...devRef()}
             {...exchangesField}
           />
           {state.settings.maxExchanges != null && (
             <button
               className="control-btn"
-              {...devRef('c4')}
+              {...devRef()}
               title="Extend the exchange limit by 10, even mid-conversation"
               onClick={() => extendExchanges(10)}
             >
@@ -2037,7 +2041,7 @@ export function ChatApp() {
             type="text"
             inputMode="numeric"
             className="control-input"
-            {...devRef('c5')}
+            {...devRef()}
             {...tokensField}
           />
         </div>
@@ -2045,7 +2049,7 @@ export function ChatApp() {
           <input
             type="checkbox"
             id="orchestrator"
-            {...devRef('c8')}
+            {...devRef()}
             checked={state.settings.orchestratorEnabled}
             onChange={(e) => updateSettings({ orchestratorEnabled: e.target.checked })}
           />
@@ -2055,18 +2059,18 @@ export function ChatApp() {
         </div>
         <div className="control-group">
           {state.status === 'running' ? (
-            <button className="control-btn" {...devRef('c9')} onClick={pauseConversation}>
+            <button className="control-btn" {...devRef()} onClick={pauseConversation}>
               ⏸️ Pause
             </button>
           ) : (
-            <button className="control-btn" {...devRef('c9')} onClick={playConversation}>
+            <button className="control-btn" {...devRef()} onClick={playConversation}>
               ▶️ Play
             </button>
           )}
-          <button className="control-btn" {...devRef('c11')} onClick={stopConversation}>
+          <button className="control-btn" {...devRef()} onClick={stopConversation}>
             ⏹️ Stop
           </button>
-          <button className="control-btn" {...devRef('c12')} onClick={resetConversation}>
+          <button className="control-btn" {...devRef()} onClick={resetConversation}>
             🔄 Reset
           </button>
           <button
@@ -2124,7 +2128,7 @@ export function ChatApp() {
       </button>
 
       {selectedMessageIds.length > 0 && (
-        <div className="selection-action-bar" {...devRef('sel1')}>
+        <div className="selection-action-bar" {...devRef()}>
           <span>{selectedMessageIds.length} selected</span>
           <button className="control-btn" onClick={copySelectedMessages}>
             📋 Copy
@@ -2138,7 +2142,7 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="conversation-body" {...devRef('sec-conversation-body')}>
+      <div className="conversation-body" {...devRef()}>
         {showAudioRail && (
           <>
             <div className="audio-rail-backdrop" onClick={() => setShowAudioRail(false)} />
@@ -2151,7 +2155,7 @@ export function ChatApp() {
             />
           </>
         )}
-      <div className="conversation-area" ref={conversationAreaRef} {...devRef('sec-conversation-area')}>
+      <div className="conversation-area" ref={conversationAreaRef} {...devRef()}>
         {state.threads.length === 0 && (
           <div className="start-discussion">
             <button onClick={startDiscussion}>▶️ Start New Discussion</button>
@@ -2411,12 +2415,12 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="input-area" {...devRef('i1')}>
+      <div className="input-area" {...devRef()}>
         <textarea
           ref={messageInputRef}
           className="message-input"
           rows={1}
-          {...devRef('i2')}
+          {...devRef()}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyDown={(e) => {
@@ -2430,7 +2434,7 @@ export function ChatApp() {
         />
         <button
           className={`btn-icon mic-btn ${isListening ? 'listening' : ''}`}
-          {...devRef('i4')}
+          {...devRef()}
           onClick={toggleDictation}
           disabled={state.status === 'stopped'}
           title={
@@ -2441,7 +2445,7 @@ export function ChatApp() {
         >
           {isListening ? '🔴' : '🎤'}
         </button>
-        <button className="send-btn" {...devRef('i3')} onClick={() => sendMessage()} disabled={state.status === 'stopped'}>
+        <button className="send-btn" {...devRef()} onClick={() => sendMessage()} disabled={state.status === 'stopped'}>
           Send
         </button>
       </div>
