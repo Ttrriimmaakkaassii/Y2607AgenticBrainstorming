@@ -255,6 +255,65 @@ body {
   border-style: dashed;
 }
 
+.participants-menu-wrap {
+  position: relative;
+}
+
+.participants-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 280px;
+  max-width: 90vw;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.participants-menu-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.participants-menu-actions .control-btn {
+  flex: 1;
+  font-size: 11px;
+}
+
+.participants-menu-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.participants-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.participants-menu-row:hover {
+  background: var(--bg-input);
+}
+
+.participants-menu-empty {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 8px 4px;
+}
+
 .quoted-reply {
   display: flex;
   flex-direction: column;
@@ -489,6 +548,35 @@ body {
 
 .bubble-wrapper.speaker-shift {
   margin-left: 22px;
+}
+
+.bubble-wrapper.selected {
+  background: var(--bg-input);
+  border-radius: 8px;
+}
+
+.bubble-select-checkbox {
+  align-self: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.selection-action-bar {
+  position: fixed;
+  bottom: 150px;
+  right: 16px;
+  z-index: 26;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
 }
 
 .msg-number {

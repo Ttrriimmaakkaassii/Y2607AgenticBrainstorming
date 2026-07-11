@@ -174,6 +174,59 @@ function getOrCreateConversationId(): string {
   return id;
 }
 
+/**
+ * Text field for a "number or ∞" setting. A plain controlled input tied
+ * directly to `value ?? '∞'` snaps back to '∞' on every keystroke once the
+ * field is cleared, making it impossible to type a new number. This keeps
+ * a local text buffer and only commits (parses + calls onCommit) on
+ * blur/Enter, syncing back from the external value only while not focused.
+ */
+function useInfinityField(value: number | null, onCommit: (v: number | null) => void) {
+  const [text, setText] = useState(value == null ? '∞' : String(value));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setText(value == null ? '∞' : String(value));
+    }
+  }, [value]);
+
+  function commit() {
+    const trimmed = text.trim();
+    if (trimmed === '' || trimmed === '∞') {
+      onCommit(null);
+      setText('∞');
+      return;
+    }
+    const n = Number(trimmed);
+    if (Number.isFinite(n) && n >= 0) {
+      const rounded = Math.floor(n);
+      onCommit(rounded);
+      setText(String(rounded));
+    } else {
+      setText(value == null ? '∞' : String(value));
+    }
+  }
+
+  return {
+    value: text,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setText(e.target.value),
+    onFocus: () => {
+      focusedRef.current = true;
+    },
+    onBlur: () => {
+      focusedRef.current = false;
+      commit();
+    },
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        commit();
+        (e.target as HTMLInputElement).blur();
+      }
+    },
+  };
+}
+
 export function ChatApp() {
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
@@ -190,6 +243,9 @@ export function ChatApp() {
   // When opening the Library from inside Settings, remember to return there
   // on close instead of dropping the user out with no modal open at all.
   const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
+  const [participantsMenuOpen, setParticipantsMenuOpen] = useState(false);
+  const [participantFilter, setParticipantFilter] = useState('');
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
 
   function openLibraryFromSettings() {
     setModalReturnTo('settings');
@@ -480,6 +536,7 @@ export function ChatApp() {
     };
     let updatedThread = thread;
     let turn = 0;
+    let consecutiveFailures = 0;
 
     do {
       if (!withinLimits(updatedThread)) break;
@@ -492,8 +549,14 @@ export function ChatApp() {
       stopThinking(agent.id);
       if (!reply) {
         showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
-        break;
+        consecutiveFailures += 1;
+        // Only abort the whole round once every agent in rotation has failed
+        // back-to-back — one agent's bad key/CORS issue shouldn't silence
+        // the others.
+        if (consecutiveFailures >= connected.length) break;
+        continue;
       }
+      consecutiveFailures = 0;
       const message: Message = {
         id: generateId(),
         threadId: updatedThread.id,
@@ -685,6 +748,22 @@ export function ChatApp() {
     setSpeaking(null);
   }
 
+  /**
+   * Splits text into sentence-ish chunks with their offset in the original
+   * string. Android Chrome's Web Speech API truncates long utterances after
+   * a couple of seconds, so long messages must be spoken as a queue of short
+   * per-sentence utterances rather than one utterance for the whole message.
+   */
+  function splitIntoSentences(text: string): { text: string; offset: number }[] {
+    const re = /[^.!?\n]+[.!?]+(\s+|$)|[^.!?\n]+$|\n+/g;
+    const parts: { text: string; offset: number }[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      if (m[0].trim()) parts.push({ text: m[0], offset: m.index });
+    }
+    return parts.length > 0 ? parts : [{ text, offset: 0 }];
+  }
+
   function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
     const voices = window.speechSynthesis.getVoices();
     return (
@@ -719,25 +798,43 @@ export function ChatApp() {
         return;
       }
       const msg = allMessages[index];
-      const utterance = new SpeechSynthesisUtterance(msg.content);
-      utterance.rate = state.settings.ttsRate;
-      utterance.lang = state.settings.ttsLang;
-      const voice = pickVoice(state.settings.ttsLang);
-      if (voice) utterance.voice = voice;
-      utterance.onstart = () => setSpeaking({ messageId: msg.id, charIndex: 0, charLength: 0 });
-      utterance.onboundary = (e) => {
-        if (e.name && e.name !== 'word') return;
-        let charLength = (e as any).charLength;
-        if (!charLength) {
-          const rest = msg.content.slice(e.charIndex);
-          const match = /^\S+/.exec(rest);
-          charLength = match ? match[0].length : 1;
+      const sentences = splitIntoSentences(msg.content);
+      let sentenceIdx = 0;
+
+      function speakSentence() {
+        if (speakingCancelledRef.current) {
+          setSpeaking(null);
+          clearInterval(keepAlive);
+          return;
         }
-        setSpeaking({ messageId: msg.id, charIndex: e.charIndex, charLength });
-      };
-      utterance.onend = () => speakAt(index + 1);
-      utterance.onerror = () => speakAt(index + 1);
-      window.speechSynthesis.speak(utterance);
+        if (sentenceIdx >= sentences.length) {
+          speakAt(index + 1);
+          return;
+        }
+        const { text, offset } = sentences[sentenceIdx];
+        sentenceIdx += 1;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = state.settings.ttsRate;
+        utterance.lang = state.settings.ttsLang;
+        const voice = pickVoice(state.settings.ttsLang);
+        if (voice) utterance.voice = voice;
+        utterance.onstart = () => setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
+        utterance.onboundary = (e) => {
+          if (e.name && e.name !== 'word') return;
+          let charLength = (e as any).charLength;
+          if (!charLength) {
+            const rest = text.slice(e.charIndex);
+            const match = /^\S+/.exec(rest);
+            charLength = match ? match[0].length : 1;
+          }
+          setSpeaking({ messageId: msg.id, charIndex: offset + e.charIndex, charLength });
+        };
+        utterance.onend = () => speakSentence();
+        utterance.onerror = () => speakSentence();
+        window.speechSynthesis.speak(utterance);
+      }
+
+      speakSentence();
     }
 
     if (window.speechSynthesis.getVoices().length === 0) {
@@ -846,6 +943,38 @@ export function ChatApp() {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  function toggleMessageSelected(id: string) {
+    setSelectedMessageIds((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+    );
+  }
+
+  function selectedMessagesText(): string {
+    const chronological = allMessages
+      .filter((m) => selectedMessageIds.includes(m.id))
+      .sort((a, b) => a.timestamp - b.timestamp);
+    return chronological
+      .map((m) => `${authorLabel(m.agentId)}: ${m.content}`)
+      .join('\n\n');
+  }
+
+  async function copySelectedMessages() {
+    try {
+      await navigator.clipboard.writeText(selectedMessagesText());
+      showToast(`📋 Copied ${selectedMessageIds.length} messages`);
+    } catch {
+      showToast('Could not copy — try again.');
+    }
+  }
+
+  function shareSelectedToWhatsApp() {
+    const text = selectedMessagesText();
+    const digitsOnly = state.settings.whatsappNumber.replace(/\D/g, '');
+    const number = (digitsOnly || DEFAULT_WHATSAPP_NUMBER).replace(/^00/, '');
+    const url = `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   function pauseConversation() {
     statusRef.current = 'paused';
     setState((prev) => ({ ...prev, status: 'paused' }));
@@ -908,7 +1037,17 @@ export function ChatApp() {
   }
 
   function restoreArchive(archive: ArchivedConversation) {
-    setState(migrateState(archive.state));
+    const restored = migrateState(archive.state);
+    setState(restored);
+    // Point the "current conversation" pointer at the restored conversation's
+    // own id — otherwise a reload re-resolves the previous pointer and it
+    // looks like restoring silently created a separate instance.
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CONVERSATION_ID_KEY, restored.id);
+    }
+    if (userId) {
+      setCurrentConversationId(userId, restored.id);
+    }
     setActiveModal(null);
     showToast(`♻️ Restored "${archive.title}"`);
   }
@@ -928,6 +1067,13 @@ export function ChatApp() {
     logFieldChanges('settings', 'Conversation Settings', prevRest, nextRest);
     setState((prev) => ({ ...prev, settings: { ...prev.settings, ...updates } }));
   }
+
+  const exchangesField = useInfinityField(state.settings.maxExchanges, (v) =>
+    updateSettings({ maxExchanges: v })
+  );
+  const tokensField = useInfinityField(state.settings.maxTokens, (v) =>
+    updateSettings({ maxTokens: v })
+  );
 
   function saveAgent(id: string, updates: Partial<Agent>) {
     const before = state.agents.find((a) => a.id === id);
@@ -1179,34 +1325,120 @@ export function ChatApp() {
 
       <div className="participants-bar" {...devRef('p1')}>
         <span className="control-label">Participants:</span>
-        {state.agents.map((agent, agentIndex) => {
-          const connected = agentIsConnected(agent);
-          return (
-            <button
-              key={agent.id}
-              {...devRef(`p${agentIndex + 2}`)}
-              className={`participant-chip ${agent.active && connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
-              style={{ borderColor: agent.color }}
-              onClick={() => toggleAgentActive(agent.id)}
-              onDoubleClick={() => {
-                setCurrentAgentId(agent.id);
-                setModalReturnTo(null);
-                setActiveModal('settings');
-              }}
-              title={
-                !connected
-                  ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs (double-click to open Settings)`
-                  : agent.active
-                  ? 'Click to remove from discussion, double-click to open Settings'
-                  : 'Click to include in discussion, double-click to open Settings'
-              }
-            >
-              <span className="participant-dot" style={{ background: agent.color }} />
-              {agent.refNumber} {agent.name}
-              {!connected && ' ⚠'}
-            </button>
-          );
-        })}
+        {state.agents
+          .filter((agent) => agent.active)
+          .map((agent, agentIndex) => {
+            const connected = agentIsConnected(agent);
+            return (
+              <button
+                key={agent.id}
+                {...devRef(`p${agentIndex + 2}`)}
+                className={`participant-chip ${connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
+                style={{ borderColor: agent.color }}
+                onClick={() => toggleAgentActive(agent.id)}
+                onDoubleClick={() => {
+                  setCurrentAgentId(agent.id);
+                  setModalReturnTo(null);
+                  setActiveModal('settings');
+                }}
+                title={
+                  !connected
+                    ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs (double-click to open Settings)`
+                    : 'Click to deactivate, double-click to open Settings'
+                }
+              >
+                <span className="participant-dot" style={{ background: agent.color }} />
+                {agent.refNumber} {agent.name}
+                {!connected && ' ⚠'}
+              </button>
+            );
+          })}
+        <div className="participants-menu-wrap">
+          <button
+            className="control-btn"
+            {...devRef('p1a')}
+            onClick={() => setParticipantsMenuOpen((v) => !v)}
+            title="Manage which agents are active in this session"
+          >
+            👥 Manage ({state.agents.filter((a) => a.active).length}/{state.agents.length}) ▾
+          </button>
+          {participantsMenuOpen && (
+            <div className="participants-menu" {...devRef('p1b')}>
+              <input
+                type="text"
+                className="control-input"
+                placeholder="Filter by name, role, category…"
+                value={participantFilter}
+                onChange={(e) => setParticipantFilter(e.target.value)}
+                {...devRef('p1c')}
+              />
+              {(() => {
+                const q = participantFilter.trim().toLowerCase();
+                const filtered = state.agents.filter((a) => {
+                  if (!q) return true;
+                  return (
+                    a.name.toLowerCase().includes(q) ||
+                    a.role.toLowerCase().includes(q) ||
+                    a.refNumber.toLowerCase().includes(q)
+                  );
+                });
+                return (
+                  <>
+                    <div className="participants-menu-actions">
+                      <button
+                        className="control-btn"
+                        {...devRef('p1d')}
+                        onClick={() =>
+                          setState((prev) => ({
+                            ...prev,
+                            agents: prev.agents.map((a) =>
+                              filtered.some((f) => f.id === a.id) ? { ...a, active: true } : a
+                            ),
+                          }))
+                        }
+                      >
+                        Activate all filtered
+                      </button>
+                      <button
+                        className="control-btn"
+                        {...devRef('p1e')}
+                        onClick={() =>
+                          setState((prev) => ({
+                            ...prev,
+                            agents: prev.agents.map((a) =>
+                              filtered.some((f) => f.id === a.id) ? { ...a, active: false } : a
+                            ),
+                          }))
+                        }
+                      >
+                        Deactivate all filtered
+                      </button>
+                    </div>
+                    <div className="participants-menu-list">
+                      {filtered.map((agent) => (
+                        <label key={agent.id} className="participants-menu-row">
+                          <input
+                            type="checkbox"
+                            checked={agent.active}
+                            onChange={() => toggleAgentActive(agent.id)}
+                          />
+                          <span className="participant-dot" style={{ background: agent.color }} />
+                          <span>
+                            {agent.refNumber} {agent.name}
+                            {!agentIsConnected(agent) && ' ⚠'}
+                          </span>
+                        </label>
+                      ))}
+                      {filtered.length === 0 && (
+                        <div className="participants-menu-empty">No agents match that filter.</div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="controls-panel">
@@ -1243,13 +1475,10 @@ export function ChatApp() {
           <span className="control-label">Exchanges:</span>
           <input
             type="text"
+            inputMode="numeric"
             className="control-input"
             {...devRef('c3')}
-            value={state.settings.maxExchanges ?? '∞'}
-            onChange={(e) => {
-              const v = e.target.value.trim();
-              updateSettings({ maxExchanges: v === '' || v === '∞' ? null : Number(v) || null });
-            }}
+            {...exchangesField}
           />
           {state.settings.maxExchanges != null && (
             <button
@@ -1266,13 +1495,10 @@ export function ChatApp() {
           <span className="control-label">Tokens:</span>
           <input
             type="text"
+            inputMode="numeric"
             className="control-input"
             {...devRef('c5')}
-            value={state.settings.maxTokens ?? '∞'}
-            onChange={(e) => {
-              const v = e.target.value.trim();
-              updateSettings({ maxTokens: v === '' || v === '∞' ? null : Number(v) || null });
-            }}
+            {...tokensField}
           />
         </div>
         <div className="control-group">
@@ -1284,7 +1510,7 @@ export function ChatApp() {
             onChange={(e) => updateSettings({ orchestratorEnabled: e.target.checked })}
           />
           <label htmlFor="orchestrator" className="control-label">
-            Orchestrator
+            🔁 Auto Mode
           </label>
         </div>
         <div className="control-group">
@@ -1330,6 +1556,21 @@ export function ChatApp() {
       >
         {state.status === 'running' ? '⏸️' : '▶️'}
       </button>
+
+      {selectedMessageIds.length > 0 && (
+        <div className="selection-action-bar" {...devRef('sel1')}>
+          <span>{selectedMessageIds.length} selected</span>
+          <button className="control-btn" onClick={copySelectedMessages}>
+            📋 Copy
+          </button>
+          <button className="control-btn" onClick={shareSelectedToWhatsApp}>
+            💬 Share to WhatsApp
+          </button>
+          <button className="control-btn" onClick={() => setSelectedMessageIds([])}>
+            ✕ Clear
+          </button>
+        </div>
+      )}
 
       <div className="conversation-body">
         {showAudioRail && (
@@ -1411,9 +1652,16 @@ export function ChatApp() {
                   const bubbleColor = isUser ? '#95ec69' : author?.color ?? '#999';
                   return (
                 <div
-                  className={`bubble-wrapper ${isUser ? 'user' : ''} ${shiftToggle ? 'speaker-shift' : ''}`}
+                  className={`bubble-wrapper ${isUser ? 'user' : ''} ${shiftToggle ? 'speaker-shift' : ''} ${selectedMessageIds.includes(msg.id) ? 'selected' : ''}`}
                   key={msg.id}
                 >
+                    <input
+                      type="checkbox"
+                      className="bubble-select-checkbox"
+                      title="Select for bulk copy/share"
+                      checked={selectedMessageIds.includes(msg.id)}
+                      onChange={() => toggleMessageSelected(msg.id)}
+                    />
                     <div
                       className="avatar"
                       style={{ background: bubbleColor }}
@@ -1645,7 +1893,11 @@ export function ChatApp() {
       )}
       {activeModal === 'export' && (
         <ExportModal
-          state={state}
+          state={
+            searchQuery || filterStarredOnly || filterCategory
+              ? { ...state, threads: visibleThreads }
+              : state
+          }
           onClose={() => setActiveModal(null)}
           onToast={showToast}
           onOpenMindmap={(markdown, title) => {

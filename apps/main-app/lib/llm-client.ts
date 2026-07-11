@@ -48,7 +48,10 @@ function buildUserPrompt(
   extraInstruction?: string
 ): string {
   const transcript = history
-    .slice(-8)
+    // Full conversation context, bounded generously rather than unbounded —
+    // truly unlimited history risks blowing past provider context windows
+    // on very long conversations.
+    .slice(-40)
     .map((m) => {
       const author =
         m.agentId === 'user' ? 'User' : agents.find((a) => a.id === m.agentId)?.name ?? 'Agent';
