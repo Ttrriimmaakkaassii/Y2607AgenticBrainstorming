@@ -1007,6 +1007,39 @@ export function ChatApp() {
     return words;
   }
 
+  /**
+   * Gemini TTS doesn't return per-word timestamps, so audio-progress-based
+   * highlighting can only ever be an estimate — but naively dividing
+   * progress evenly across word COUNT is a poor one, since real speech
+   * spends more time on long words and pauses after punctuation. Weighting
+   * by character length (plus an extra pause allowance after clause/
+   * sentence-ending punctuation) tracks natural speaking rhythm much more
+   * closely, without needing timestamps the API doesn't provide.
+   */
+  function buildWeightedWordCumulative(
+    text: string,
+    words: { start: number; length: number }[]
+  ): number[] {
+    let cumulative = 0;
+    return words.map((w) => {
+      const wordText = text.slice(w.start, w.start + w.length);
+      let weight = w.length;
+      if (/[.!?]$/.test(wordText)) weight += 6;
+      else if (/[,;:]$/.test(wordText)) weight += 3;
+      cumulative += weight;
+      return cumulative;
+    });
+  }
+
+  function wordIndexAtFraction(cumulativeEnds: number[], frac: number): number {
+    const total = cumulativeEnds[cumulativeEnds.length - 1] || 1;
+    const target = frac * total;
+    for (let i = 0; i < cumulativeEnds.length; i++) {
+      if (target <= cumulativeEnds[i]) return i;
+    }
+    return cumulativeEnds.length - 1;
+  }
+
   function splitIntoSentences(text: string): { text: string; offset: number }[] {
     const re = /[^.!?\n]+[.!?]+(\s+|$)|[^.!?\n]+$|\n+/g;
     const parts: { text: string; offset: number }[] = [];
@@ -1082,15 +1115,16 @@ export function ChatApp() {
       const audio = new Audio(audioUrl);
       googleAudioRef.current = audio;
       const words = splitIntoWords(msg.content);
+      const cumulativeEnds = buildWeightedWordCumulative(msg.content, words);
       let progressTimer: ReturnType<typeof setInterval> | null = null;
       audio.onloadedmetadata = () => {
         setSpeaking({ messageId: msg.id, charIndex: 0, charLength: 0 });
         progressTimer = setInterval(() => {
           if (!audio.duration || words.length === 0) return;
           const frac = Math.min(audio.currentTime / audio.duration, 1);
-          const w = words[Math.min(Math.floor(frac * words.length), words.length - 1)];
+          const w = words[wordIndexAtFraction(cumulativeEnds, frac)];
           setSpeaking({ messageId: msg.id, charIndex: w.start, charLength: w.length });
-        }, 120);
+        }, 80);
       };
       audio.onended = () => {
         if (progressTimer) clearInterval(progressTimer);
