@@ -62,7 +62,7 @@ function buildReport(state: ConversationState): string {
     `- Total messages: ${allMessages.length}`,
     `- Likes: ${likes}`,
     `- Dislikes: ${dislikes}`,
-    `- Mood: ${state.settings.mood}`,
+    `- Moods: ${state.settings.moods.join(', ')}`,
     '',
     `## Transcript`,
     '',

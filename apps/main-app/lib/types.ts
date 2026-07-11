@@ -39,6 +39,8 @@ export interface Agent {
   active: boolean;
   /** Explicit TTS voice override (SpeechSynthesisVoice.voiceURI). Null = auto-assigned. */
   voiceURI: string | null;
+  /** TraitDef.id -> 0-100. Missing key = unset, treated as 50 (neutral midpoint) at read time. */
+  traits: Record<string, number>;
 }
 
 /**
@@ -82,7 +84,8 @@ export interface ConversationSettings {
   maxExchanges: number | null;
   maxTokens: number | null;
   orchestratorEnabled: boolean;
-  mood: Mood;
+  /** All selected moods are blended simultaneously. */
+  moods: Mood[];
   responseStyle: ResponseStyle;
   interactionStyle: InteractionStyle;
   ttsRate: number;

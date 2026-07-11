@@ -49,14 +49,34 @@ function interactionInstruction(style: InteractionStyle): string {
   return "Actively engage with the other participants: address them by name where natural, ask them questions, and directly react to, challenge, or build on the specific points they made earlier in the conversation.";
 }
 
+function moodInstruction(moods: Mood[]): string {
+  if (moods.length === 0) return '';
+  if (moods.length === 1) {
+    return ` The discussion mood is "${moods[0]}" — your tone, word choice, and energy must clearly reflect that mood throughout your reply.`;
+  }
+  return ` The discussion moods are ${moods.map((m) => `"${m}"`).join(' and ')} — blend all of them in tone throughout your reply.`;
+}
+
+function guidelinesInstruction(guidelines: string[]): string {
+  if (guidelines.length === 0) return '';
+  return ` Every participant in this discussion must follow these guidelines: ${guidelines.map((g) => `"${g}"`).join('; ')}.`;
+}
+
+function traitsInstruction(traits: { name: string; value: number }[]): string {
+  if (traits.length === 0) return '';
+  return ` Your character traits (0-100 scale, purely descriptive, no direction is inherently better) are: ${traits.map((t) => `${t.name} ${t.value}/100`).join(', ')} — let these visibly shape your personality and word choice.`;
+}
+
 function buildSystemPrompt(
   agent: Agent,
-  mood: Mood,
+  moods: Mood[],
   style: ResponseStyle,
   maxSentences: number,
-  interactionStyle: InteractionStyle
+  interactionStyle: InteractionStyle,
+  guidelines: string[],
+  traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions} The discussion mood is "${mood}" — your tone, word choice, and energy must clearly reflect that mood throughout your reply. ${interactionInstruction(interactionStyle)} ${styleInstruction(style, maxSentences)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)} ${styleInstruction(style, maxSentences)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(
@@ -215,13 +235,15 @@ async function callDirect(
 export async function fetchAgentReply(
   agent: Agent,
   connections: LLMConnection[],
-  mood: Mood,
+  moods: Mood[],
   topic: string,
   history: Message[],
   agents: Agent[],
   responseStyle: ResponseStyle,
   maxSentences: number,
   interactionStyle: InteractionStyle,
+  guidelines: string[],
+  traits: { name: string; value: number }[],
   extraInstruction?: string
 ): Promise<string | null> {
   const connection = agent.connectionId
@@ -229,7 +251,15 @@ export async function fetchAgentReply(
     : undefined;
   if (!connection) return null;
 
-  const systemPrompt = buildSystemPrompt(agent, mood, responseStyle, maxSentences, interactionStyle);
+  const systemPrompt = buildSystemPrompt(
+    agent,
+    moods,
+    responseStyle,
+    maxSentences,
+    interactionStyle,
+    guidelines,
+    traits
+  );
   const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction);
   return callDirect(connection, systemPrompt, userPrompt);
 }

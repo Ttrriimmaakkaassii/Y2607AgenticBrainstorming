@@ -6,6 +6,20 @@ import { Agent, ArchivedConversation, LLMConnection, Thread } from '@/lib/types'
 import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { loadCustomAgents, upsertCustomAgent } from '@/lib/custom-agents';
 import { CustomCategory, loadCustomCategories } from '@/lib/categories';
+import {
+  Guideline,
+  addGuideline,
+  deleteGuideline,
+  loadGuidelineCategories,
+  toggleGuideline,
+  updateGuideline,
+} from '@/lib/guidelines';
+import {
+  TraitDef,
+  addTraitDef,
+  deleteTraitDef,
+  loadTraitCategories,
+} from '@/lib/traits';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
@@ -35,6 +49,11 @@ interface SettingsModalProps {
   onDeleteArchive: (id: string) => void;
   whatsappNumber: string;
   onUpdateWhatsappNumber: (number: string) => void;
+  guidelines: Guideline[];
+  onGuidelinesChange: (guidelines: Guideline[]) => void;
+  traitDefs: TraitDef[];
+  onTraitDefsChange: (traitDefs: TraitDef[]) => void;
+  onUpdateAgentTraits: (agentId: string, traits: Record<string, number>) => void;
 }
 
 export function SettingsModal({
@@ -59,6 +78,11 @@ export function SettingsModal({
   onDeleteArchive,
   whatsappNumber,
   onUpdateWhatsappNumber,
+  guidelines,
+  onGuidelinesChange,
+  traitDefs,
+  onTraitDefsChange,
+  onUpdateAgentTraits,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
@@ -74,6 +98,10 @@ export function SettingsModal({
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [newGuidelineText, setNewGuidelineText] = useState('');
+  const [newGuidelineCategory, setNewGuidelineCategory] = useState('');
+  const [newTraitName, setNewTraitName] = useState('');
+  const [newTraitCategory, setNewTraitCategory] = useState('');
 
   useEffect(() => {
     setCustomAgents(loadCustomAgents());
@@ -116,6 +144,21 @@ export function SettingsModal({
       }
       return [...prev, updated];
     });
+  }
+
+  function updateAgentTrait(traitId: string, value: number) {
+    if (!currentAgent) return;
+    onUpdateAgentTraits(currentAgent.id, { ...currentAgent.traits, [traitId]: value });
+  }
+
+  function traitsByCategory(): [string, TraitDef[]][] {
+    const groups = new Map<string, TraitDef[]>();
+    for (const def of traitDefs) {
+      const list = groups.get(def.category) ?? [];
+      list.push(def);
+      groups.set(def.category, list);
+    }
+    return Array.from(groups.entries());
   }
 
   function selectAgent(id: string) {
@@ -189,6 +232,76 @@ export function SettingsModal({
               </div>
 
               <div className="modal-section">
+                <div className="modal-section-title">General Guidelines (applies to all agents)</div>
+                {guidelines.map((g) => (
+                  <div key={g.id} className="guideline-row">
+                    <input
+                      type="checkbox"
+                      checked={g.enabled}
+                      title={g.enabled ? 'Disable (recall it later without losing it)' : 'Re-enable'}
+                      onChange={() => onGuidelinesChange(toggleGuideline(g.id))}
+                    />
+                    <input
+                      type="text"
+                      style={{ flex: 1 }}
+                      value={g.text}
+                      onChange={(e) => onGuidelinesChange(updateGuideline(g.id, { text: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      style={{ width: 120 }}
+                      placeholder="category"
+                      list="guideline-category-suggestions"
+                      value={g.category}
+                      onChange={(e) =>
+                        onGuidelinesChange(updateGuideline(g.id, { category: e.target.value }))
+                      }
+                    />
+                    <button
+                      className="btn-icon delete"
+                      title="Delete permanently"
+                      onClick={() => onGuidelinesChange(deleteGuideline(g.id))}
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+                <datalist id="guideline-category-suggestions">
+                  {loadGuidelineCategories().map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+                <div className="guideline-row">
+                  <input
+                    type="text"
+                    style={{ flex: 1 }}
+                    placeholder="New guideline all agents must follow…"
+                    value={newGuidelineText}
+                    onChange={(e) => setNewGuidelineText(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    style={{ width: 120 }}
+                    placeholder="category"
+                    list="guideline-category-suggestions"
+                    value={newGuidelineCategory}
+                    onChange={(e) => setNewGuidelineCategory(e.target.value)}
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={() => {
+                      if (!newGuidelineText.trim()) return;
+                      onGuidelinesChange(addGuideline(newGuidelineText, newGuidelineCategory));
+                      setNewGuidelineText('');
+                      setNewGuidelineCategory('');
+                    }}
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="modal-section">
                 <div className="modal-section-title">Configure Agent</div>
                 <div className="form-group">
                   <label>Agent Name</label>
@@ -249,6 +362,73 @@ export function SettingsModal({
                         {name}
                       </label>
                     ))}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>
+                    Traits &amp; Character (0-100 scale, purely descriptive — neither end is
+                    &quot;better&quot;)
+                  </label>
+                  {traitsByCategory().map(([category, defs]) => (
+                    <div key={category} className="trait-category-group">
+                      <div className="trait-category-title">{category}</div>
+                      {defs.map((def) => {
+                        const value = currentAgent?.traits?.[def.id] ?? 50;
+                        return (
+                          <div key={def.id} className="trait-slider-row">
+                            <span className="trait-slider-label">{def.name}</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={value}
+                              onChange={(e) => updateAgentTrait(def.id, Number(e.target.value))}
+                            />
+                            <span className="trait-slider-value">{value}</span>
+                            <button
+                              className="btn-icon delete"
+                              title="Delete this trait definition (for all agents)"
+                              onClick={() => onTraitDefsChange(deleteTraitDef(def.id))}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                  <div className="trait-slider-row">
+                    <input
+                      type="text"
+                      style={{ flex: 1 }}
+                      placeholder="New trait name (e.g. Aggressiveness)"
+                      value={newTraitName}
+                      onChange={(e) => setNewTraitName(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      style={{ width: 120 }}
+                      placeholder="category"
+                      list="trait-category-suggestions"
+                      value={newTraitCategory}
+                      onChange={(e) => setNewTraitCategory(e.target.value)}
+                    />
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        if (!newTraitName.trim()) return;
+                        onTraitDefsChange(addTraitDef(newTraitName, newTraitCategory));
+                        setNewTraitName('');
+                        setNewTraitCategory('');
+                      }}
+                    >
+                      + Add
+                    </button>
+                    <datalist id="trait-category-suggestions">
+                      {loadTraitCategories().map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
                   </div>
                 </div>
                 <button className="btn-primary" onClick={save}>

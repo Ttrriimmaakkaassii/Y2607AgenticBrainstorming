@@ -30,7 +30,16 @@ import { loadConversation, saveConversation } from '@/lib/storage';
 import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { Theme, applyTheme, loadTheme } from '@/lib/theme';
-import { addCustomMood, loadCustomMoods } from '@/lib/moods';
+import {
+  BUILTIN_MOODS,
+  CustomMood,
+  addCustomMood,
+  deleteCustomMood,
+  loadCustomMoods,
+  renameCustomMood,
+} from '@/lib/moods';
+import { Guideline, loadGuidelines } from '@/lib/guidelines';
+import { TraitDef, loadTraitDefs } from '@/lib/traits';
 import { getCurrentConversationId, setCurrentConversationId } from '@/lib/admin';
 import { logFieldChanges } from '@/lib/changelog';
 import { SettingsModal } from './SettingsModal';
@@ -83,6 +92,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     voiceURI: null,
+    traits: {},
   },
   {
     id: generateId(),
@@ -95,6 +105,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     voiceURI: null,
+    traits: {},
   },
   {
     id: generateId(),
@@ -107,6 +118,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     voiceURI: null,
+    traits: {},
   },
 ];
 
@@ -121,7 +133,7 @@ function defaultState(): ConversationState {
       maxExchanges: null,
       maxTokens: null,
       orchestratorEnabled: true,
-      mood: 'debate',
+      moods: ['debate'],
       responseStyle: 'sentences',
       interactionStyle: 'dialogue',
       ttsRate: 1,
@@ -145,7 +157,7 @@ function migrateState(state: ConversationState): ConversationState {
     }
     const match = /Agt(\d+)/.exec(refNumber);
     if (match) maxSeen = Math.max(maxSeen, Number(match[1]));
-    return { ...agent, refNumber, active, voiceURI: agent.voiceURI ?? null };
+    return { ...agent, refNumber, active, voiceURI: agent.voiceURI ?? null, traits: agent.traits ?? {} };
   });
   const threads = state.threads.map((t) => ({
     ...t,
@@ -162,6 +174,9 @@ function migrateState(state: ConversationState): ConversationState {
     threads,
     settings: {
       ...state.settings,
+      moods:
+        state.settings.moods ??
+        ((state.settings as any).mood ? [(state.settings as any).mood as string] : ['debate']),
       responseStyle: state.settings.responseStyle ?? 'sentences',
       interactionStyle: state.settings.interactionStyle ?? 'dialogue',
       ttsRate: state.settings.ttsRate ?? 1,
@@ -295,11 +310,30 @@ export function ChatApp() {
   }, [state.settings]);
   const [showAudioRail, setShowAudioRail] = useState(true);
   const [theme, setTheme] = useState<Theme>('light');
-  const [customMoods, setCustomMoods] = useState<string[]>([]);
+  const [customMoods, setCustomMoods] = useState<CustomMood[]>([]);
+  const [moodsMenuOpen, setMoodsMenuOpen] = useState(false);
+  const [moodFilter, setMoodFilter] = useState('');
+  const [guidelines, setGuidelines] = useState<Guideline[]>([]);
+  const [traitDefs, setTraitDefs] = useState<TraitDef[]>([]);
 
   useEffect(() => {
     setCustomMoods(loadCustomMoods());
+    setGuidelines(loadGuidelines());
+    setTraitDefs(loadTraitDefs());
   }, []);
+
+  // Guidelines/traitDefs live outside ConversationState, but getReply() is
+  // called repeatedly inside a long-running async auto-loop — read from
+  // refs (not the closured state) so edits made mid-conversation apply
+  // immediately, matching the settingsRef/statusRef pattern above.
+  const guidelinesRef = useRef(guidelines);
+  useEffect(() => {
+    guidelinesRef.current = guidelines;
+  }, [guidelines]);
+  const traitDefsRef = useRef(traitDefs);
+  useEffect(() => {
+    traitDefsRef.current = traitDefs;
+  }, [traitDefs]);
   const [devMode, setDevMode] = useState(false);
   /** agentId -> threadId, for every agent currently awaiting an LLM reply. */
   const [thinking, setThinking] = useState<Map<string, string>>(new Map());
@@ -513,16 +547,23 @@ export function ChatApp() {
     // like mood/topic made mid-conversation apply immediately, even while
     // a long auto-loop round is already in flight.
     const live = settingsRef.current;
+    const enabledGuidelines = guidelinesRef.current.filter((g) => g.enabled).map((g) => g.text);
+    const resolvedTraits = traitDefsRef.current.map((def) => ({
+      name: def.name,
+      value: agent.traits?.[def.id] ?? 50,
+    }));
     const reply = await fetchAgentReply(
       agent,
       connections,
-      live.mood,
+      live.moods,
       live.topic,
       precedingMessages,
       state.agents,
       live.responseStyle,
       live.maxSentences,
       live.interactionStyle,
+      enabledGuidelines,
+      resolvedTraits,
       extraInstruction
     );
     if (reply) {
@@ -1132,6 +1173,7 @@ export function ChatApp() {
       connectionId: null,
       active: true,
       voiceURI: null,
+      traits: {},
     };
     setState((prev) => ({
       ...prev,
@@ -1161,6 +1203,7 @@ export function ChatApp() {
       connectionId: null,
       active: true,
       voiceURI: null,
+      traits: {},
     };
     setState((prev) => ({
       ...prev,
@@ -1245,32 +1288,113 @@ export function ChatApp() {
               </option>
             ))}
           </select>
-          <select
-            className="select-input"
-            value={state.settings.mood}
-            onChange={(e) => updateSettings({ mood: e.target.value })}
-          >
-            <option value="debate">🗣️ Debate</option>
-            <option value="complementary">💡 Complementary</option>
-            <option value="research">🔍 Research</option>
-            {customMoods.map((m) => (
-              <option key={m} value={m}>
-                🎭 {m}
-              </option>
-            ))}
-          </select>
-          <button
-            className="icon-btn"
-            title="Add a custom discussion mood"
-            onClick={() => {
-              const mood = window.prompt('Name a new discussion mood (e.g. "brainstorm", "socratic"):', '');
-              if (!mood?.trim()) return;
-              setCustomMoods(addCustomMood(mood));
-              updateSettings({ mood: mood.trim() });
-            }}
-          >
-            +
-          </button>
+          <div className="moods-menu-wrap">
+            <button
+              className="control-btn"
+              onClick={() => setMoodsMenuOpen((v) => !v)}
+              title="Select one or more discussion moods to blend"
+            >
+              🎭 Moods ({state.settings.moods.length}) ▾
+            </button>
+            {moodsMenuOpen && (
+              <div className="moods-menu">
+                <input
+                  type="text"
+                  className="control-input"
+                  placeholder="Filter or add a new mood…"
+                  value={moodFilter}
+                  onChange={(e) => setMoodFilter(e.target.value)}
+                />
+                {(() => {
+                  const allMoods: { key: string; name: string; custom: CustomMood | null }[] = [
+                    ...BUILTIN_MOODS.map((name) => ({ key: name, name, custom: null })),
+                    ...customMoods.map((m) => ({ key: m.id, name: m.name, custom: m })),
+                  ];
+                  const q = moodFilter.trim().toLowerCase();
+                  const filtered = allMoods.filter((m) => !q || m.name.toLowerCase().includes(q));
+                  const exactMatch = allMoods.some((m) => m.name.toLowerCase() === q);
+                  return (
+                    <>
+                      <div className="moods-menu-list">
+                        {filtered.map((m) => (
+                          <div key={m.key} className="moods-menu-row">
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={state.settings.moods.includes(m.name)}
+                                onChange={() => {
+                                  const has = state.settings.moods.includes(m.name);
+                                  updateSettings({
+                                    moods: has
+                                      ? state.settings.moods.filter((x) => x !== m.name)
+                                      : [...state.settings.moods, m.name],
+                                  });
+                                }}
+                              />
+                              {m.name}
+                            </label>
+                            {m.custom && (
+                              <span className="moods-menu-actions">
+                                <button
+                                  className="btn-icon"
+                                  title="Rename"
+                                  onClick={() => {
+                                    const next = window.prompt('Rename mood:', m.name);
+                                    if (!next?.trim() || next.trim() === m.name) return;
+                                    const oldName = m.name;
+                                    const trimmedNext = next.trim();
+                                    setCustomMoods(renameCustomMood(m.custom!.id, trimmedNext));
+                                    if (state.settings.moods.includes(oldName)) {
+                                      updateSettings({
+                                        moods: state.settings.moods.map((x) =>
+                                          x === oldName ? trimmedNext : x
+                                        ),
+                                      });
+                                    }
+                                  }}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  className="btn-icon delete"
+                                  title="Delete"
+                                  onClick={() => {
+                                    setCustomMoods(deleteCustomMood(m.custom!.id));
+                                    if (state.settings.moods.includes(m.name)) {
+                                      updateSettings({
+                                        moods: state.settings.moods.filter((x) => x !== m.name),
+                                      });
+                                    }
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {filtered.length === 0 && (
+                          <div className="moods-menu-empty">No moods match.</div>
+                        )}
+                      </div>
+                      {q && !exactMatch && (
+                        <button
+                          className="control-btn"
+                          onClick={() => {
+                            setCustomMoods(addCustomMood(q));
+                            updateSettings({ moods: [...state.settings.moods, moodFilter.trim()] });
+                            setMoodFilter('');
+                          }}
+                        >
+                          + Add "{moodFilter.trim()}" as a new mood
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
         </div>
         <div className="header-right">
           <button className="icon-btn" {...devRef('a1')} onClick={() => setShowAudioRail((v) => !v)}>
@@ -1928,6 +2052,16 @@ export function ChatApp() {
           onDeleteArchive={deleteArchive}
           whatsappNumber={state.settings.whatsappNumber}
           onUpdateWhatsappNumber={(number) => updateSettings({ whatsappNumber: number })}
+          guidelines={guidelines}
+          onGuidelinesChange={setGuidelines}
+          traitDefs={traitDefs}
+          onTraitDefsChange={setTraitDefs}
+          onUpdateAgentTraits={(id, traits) =>
+            setState((prev) => ({
+              ...prev,
+              agents: prev.agents.map((a) => (a.id === id ? { ...a, traits } : a)),
+            }))
+          }
         />
       )}
       {activeModal === 'library' && (
