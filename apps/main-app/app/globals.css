@@ -246,8 +246,15 @@ body {
 }
 
 .top-panel-inner {
-  overflow: hidden;
+  overflow: visible;
   min-height: 0;
+}
+
+/* Only clip during the collapsed state (needed for the grid-row shrink
+   animation) — while open, overflow must stay visible so popovers like the
+   participants "Manage" dropdown aren't cut off by this wrapper. */
+.top-panel-collapsible.closed .top-panel-inner {
+  overflow: hidden;
 }
 
 .participants-bar {

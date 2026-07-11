@@ -1199,6 +1199,31 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
+      <button
+        className="settings-gear-btn"
+        {...devRef('a8')}
+        onClick={() => {
+          setModalReturnTo(null);
+          setActiveModal('settings');
+        }}
+        title="Settings (Agents, LLMs, Audio, Archives)"
+      >
+        ⚙️
+      </button>
+
+      <div className="top-panel-toggle-row">
+        <button
+          className="control-btn top-panel-toggle-btn"
+          {...devRef('tp1')}
+          onClick={() => setTopPanelOpen((v) => !v)}
+          title={topPanelOpen ? 'Collapse header/search/participants/controls' : 'Show header/search/participants/controls'}
+        >
+          {topPanelOpen ? '▲ Hide parameters' : '▼ Show parameters'}
+        </button>
+      </div>
+
+      <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
+      <div className="top-panel-inner">
       <div className="header">
         <div className="header-left">
           <input
@@ -1287,31 +1312,6 @@ export function ChatApp() {
         </div>
       </div>
 
-      <button
-        className="settings-gear-btn"
-        {...devRef('a8')}
-        onClick={() => {
-          setModalReturnTo(null);
-          setActiveModal('settings');
-        }}
-        title="Settings (Agents, LLMs, Audio, Archives)"
-      >
-        ⚙️
-      </button>
-
-      <div className="top-panel-toggle-row">
-        <button
-          className="control-btn top-panel-toggle-btn"
-          {...devRef('tp1')}
-          onClick={() => setTopPanelOpen((v) => !v)}
-          title={topPanelOpen ? 'Collapse search/participants/controls' : 'Show search/participants/controls'}
-        >
-          {topPanelOpen ? '▲ Hide parameters' : '▼ Show parameters'}
-        </button>
-      </div>
-
-      <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
-      <div className="top-panel-inner">
       <div className="search-bar">
         <input
           type="text"
