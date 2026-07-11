@@ -19,6 +19,8 @@ import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/cu
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
+import { fetchGoogleVoices, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
+import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
   loadConnections,
   loadConnectionsFromSupabase,
@@ -92,6 +94,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     voiceURI: null,
+    googleVoiceName: null,
     traits: {},
   },
   {
@@ -105,6 +108,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     voiceURI: null,
+    googleVoiceName: null,
     traits: {},
   },
   {
@@ -118,6 +122,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     voiceURI: null,
+    googleVoiceName: null,
     traits: {},
   },
 ];
@@ -138,6 +143,7 @@ function defaultState(): ConversationState {
       interactionStyle: 'dialogue',
       ttsRate: 1,
       ttsLang: 'en-US',
+      ttsProvider: 'browser',
       whatsappNumber: '',
     },
     status: 'idle',
@@ -157,7 +163,14 @@ function migrateState(state: ConversationState): ConversationState {
     }
     const match = /Agt(\d+)/.exec(refNumber);
     if (match) maxSeen = Math.max(maxSeen, Number(match[1]));
-    return { ...agent, refNumber, active, voiceURI: agent.voiceURI ?? null, traits: agent.traits ?? {} };
+    return {
+      ...agent,
+      refNumber,
+      active,
+      voiceURI: agent.voiceURI ?? null,
+      googleVoiceName: agent.googleVoiceName ?? null,
+      traits: agent.traits ?? {},
+    };
   });
   const threads = state.threads.map((t) => ({
     ...t,
@@ -181,6 +194,7 @@ function migrateState(state: ConversationState): ConversationState {
       interactionStyle: state.settings.interactionStyle ?? 'dialogue',
       ttsRate: state.settings.ttsRate ?? 1,
       ttsLang: state.settings.ttsLang ?? 'en-US',
+      ttsProvider: state.settings.ttsProvider ?? 'browser',
       whatsappNumber: state.settings.whatsappNumber ?? '',
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
@@ -302,6 +316,7 @@ export function ChatApp() {
     charLength: number;
   } | null>(null);
   const speakingCancelledRef = useRef(false);
+  const googleAudioRef = useRef<HTMLAudioElement | null>(null);
   const statusRef = useRef(state.status);
   useEffect(() => {
     statusRef.current = state.status;
@@ -820,6 +835,10 @@ export function ChatApp() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    if (googleAudioRef.current) {
+      googleAudioRef.current.pause();
+      googleAudioRef.current = null;
+    }
     setSpeaking(null);
   }
 
@@ -868,18 +887,7 @@ export function ChatApp() {
       const sentences = splitIntoSentences(msg.content);
       let sentenceIdx = 0;
 
-      function speakSentence() {
-        if (speakingCancelledRef.current) {
-          setSpeaking(null);
-          clearInterval(keepAlive);
-          return;
-        }
-        if (sentenceIdx >= sentences.length) {
-          speakAt(index + 1);
-          return;
-        }
-        const { text, offset } = sentences[sentenceIdx];
-        sentenceIdx += 1;
+      function speakSentenceBrowser(text: string, offset: number) {
         const utterance = new SpeechSynthesisUtterance(text);
         const author = agentById(msg.agentId);
         const { voice, pitch, rate } = pickVoiceForAgent(
@@ -935,6 +943,65 @@ export function ChatApp() {
           speakSentence();
         };
         window.speechSynthesis.speak(utterance);
+      }
+
+      async function speakSentenceGoogle(apiKey: string, text: string, offset: number) {
+        const author = agentById(msg.agentId);
+        const voices = await fetchGoogleVoices(apiKey, state.settings.ttsLang);
+        const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName, voices);
+        const audioUrl = voiceName
+          ? await synthesizeGoogleAudio(apiKey, text, state.settings.ttsLang, voiceName, state.settings.ttsRate)
+          : null;
+        if (speakingCancelledRef.current) return;
+        if (!audioUrl) {
+          showToast('⚠️ Google TTS failed — falling back to the browser voice.');
+          speakSentenceBrowser(text, offset);
+          return;
+        }
+        const audio = new Audio(audioUrl);
+        googleAudioRef.current = audio;
+        let progressTimer: ReturnType<typeof setInterval> | null = null;
+        audio.onloadedmetadata = () => {
+          setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
+          progressTimer = setInterval(() => {
+            if (!audio.duration) return;
+            const frac = Math.min(audio.currentTime / audio.duration, 1);
+            const charIndex = offset + Math.floor(frac * Math.max(text.length - 1, 0));
+            setSpeaking({ messageId: msg.id, charIndex, charLength: 1 });
+          }, 120);
+        };
+        audio.onended = () => {
+          if (progressTimer) clearInterval(progressTimer);
+          googleAudioRef.current = null;
+          speakSentence();
+        };
+        audio.onerror = () => {
+          if (progressTimer) clearInterval(progressTimer);
+          googleAudioRef.current = null;
+          speakSentence();
+        };
+        audio.play();
+      }
+
+      function speakSentence() {
+        if (speakingCancelledRef.current) {
+          setSpeaking(null);
+          clearInterval(keepAlive);
+          return;
+        }
+        if (sentenceIdx >= sentences.length) {
+          speakAt(index + 1);
+          return;
+        }
+        const { text, offset } = sentences[sentenceIdx];
+        sentenceIdx += 1;
+
+        const apiKey = loadTtsApiKey();
+        if (state.settings.ttsProvider === 'google' && apiKey) {
+          speakSentenceGoogle(apiKey, text, offset);
+          return;
+        }
+        speakSentenceBrowser(text, offset);
       }
 
       speakSentence();
@@ -1245,6 +1312,7 @@ export function ChatApp() {
       connectionId: null,
       active: true,
       voiceURI: null,
+      googleVoiceName: null,
       traits: {},
     };
     setState((prev) => ({
@@ -1275,6 +1343,7 @@ export function ChatApp() {
       connectionId: null,
       active: true,
       voiceURI: null,
+      googleVoiceName: null,
       traits: {},
     };
     setState((prev) => ({
@@ -2158,6 +2227,7 @@ export function ChatApp() {
           threads={state.threads}
           ttsRate={state.settings.ttsRate}
           ttsLang={state.settings.ttsLang}
+          ttsProvider={state.settings.ttsProvider}
           onUpdateTts={(updates) => updateSettings(updates)}
           archives={archives}
           onRestoreArchive={restoreArchive}

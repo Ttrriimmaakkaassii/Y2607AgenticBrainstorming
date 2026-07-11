@@ -3,13 +3,16 @@
 import { useRef, useState } from 'react';
 import { Agent, Message, Thread } from '@/lib/types';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
+import { fetchGoogleVoices, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
+import { loadTtsApiKey } from '@/lib/tts-connection';
 
 interface AudioModalProps {
   agents: Agent[];
   threads: Thread[];
   ttsRate: number;
   ttsLang: string;
-  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string }) => void;
+  ttsProvider: 'browser' | 'google';
+  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string; ttsProvider?: 'browser' | 'google' }) => void;
   onClose: () => void;
   onToast: (message: string) => void;
   embedded?: boolean;
@@ -20,6 +23,7 @@ export function AudioModal({
   threads,
   ttsRate,
   ttsLang,
+  ttsProvider,
   onUpdateTts,
   onClose,
   onToast,
@@ -28,6 +32,7 @@ export function AudioModal({
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const messages = threads.flatMap((t) => t.messages);
   const cancelledRef = useRef(false);
+  const googleAudioRef = useRef<HTMLAudioElement | null>(null);
 
   function authorName(msg: Message): string {
     if (msg.agentId === 'user') return 'You';
@@ -45,14 +50,13 @@ export function AudioModal({
       return;
     }
     window.speechSynthesis.cancel();
+    if (googleAudioRef.current) {
+      googleAudioRef.current.pause();
+      googleAudioRef.current = null;
+    }
     cancelledRef.current = false;
 
-    function speakAt(index: number) {
-      if (cancelledRef.current || index >= messages.length) {
-        setPlayingIndex(null);
-        return;
-      }
-      const msg = messages[index];
+    function speakAtBrowser(index: number, msg: Message) {
       const agent = agents.find((a) => a.id === msg.agentId);
       const utterance = new SpeechSynthesisUtterance(`${authorName(msg)} says: ${msg.content}`);
       const { voice, pitch, rate } = pickVoiceForAgent(msg.agentId, agent?.voiceURI, ttsLang, ttsRate);
@@ -66,6 +70,47 @@ export function AudioModal({
       window.speechSynthesis.speak(utterance);
     }
 
+    async function speakAtGoogle(index: number, msg: Message, apiKey: string) {
+      const agent = agents.find((a) => a.id === msg.agentId);
+      const voices = await fetchGoogleVoices(apiKey, ttsLang);
+      const voiceName = pickGoogleVoiceForAgent(msg.agentId, agent?.googleVoiceName, voices);
+      const audioUrl = voiceName
+        ? await synthesizeGoogleAudio(apiKey, `${authorName(msg)} says: ${msg.content}`, ttsLang, voiceName, ttsRate)
+        : null;
+      if (cancelledRef.current) return;
+      if (!audioUrl) {
+        onToast('⚠️ Google TTS failed — falling back to the browser voice.');
+        speakAtBrowser(index, msg);
+        return;
+      }
+      const audio = new Audio(audioUrl);
+      googleAudioRef.current = audio;
+      setPlayingIndex(index);
+      audio.onended = () => {
+        googleAudioRef.current = null;
+        speakAt(index + 1);
+      };
+      audio.onerror = () => {
+        googleAudioRef.current = null;
+        speakAt(index + 1);
+      };
+      audio.play();
+    }
+
+    function speakAt(index: number) {
+      if (cancelledRef.current || index >= messages.length) {
+        setPlayingIndex(null);
+        return;
+      }
+      const msg = messages[index];
+      const apiKey = loadTtsApiKey();
+      if (ttsProvider === 'google' && apiKey) {
+        speakAtGoogle(index, msg, apiKey);
+        return;
+      }
+      speakAtBrowser(index, msg);
+    }
+
     speakAt(startIndex);
     onToast('▶️ Playing from selected message');
   }
@@ -74,6 +119,10 @@ export function AudioModal({
     cancelledRef.current = true;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
+    }
+    if (googleAudioRef.current) {
+      googleAudioRef.current.pause();
+      googleAudioRef.current = null;
     }
     setPlayingIndex(null);
     onToast('⏹️ Playback stopped');
@@ -100,6 +149,16 @@ export function AudioModal({
       </div>
 
       <div className="modal-section">
+        <div className="form-group">
+          <label>TTS Engine</label>
+          <select
+            value={ttsProvider}
+            onChange={(e) => onUpdateTts({ ttsProvider: e.target.value as 'browser' | 'google' })}
+          >
+            <option value="browser">🔊 Browser (free, built-in)</option>
+            <option value="google">☁️ Google Cloud (higher quality — needs an API key in 🔌 LLM)</option>
+          </select>
+        </div>
         <div className="form-group">
           <label>Voice Speed</label>
           <input
@@ -146,9 +205,9 @@ export function AudioModal({
       <div className="modal-section">
         <div className="modal-section-title">Note</div>
         <div style={{ fontSize: 12, color: '#667781' }}>
-          Playback uses your browser&apos;s built-in text-to-speech engine, so no audio file can be
-          downloaded from here — MP3 export would require a server-side TTS provider (e.g.
-          ElevenLabs) that isn&apos;t configured for this deployment yet.
+          By default, playback uses your browser&apos;s built-in text-to-speech engine — free, but
+          voice quality depends on your device. Add your own Google Cloud TTS API key in 🔌 LLM → TTS
+          API and switch the TTS Engine above to Google Cloud for more natural, realistic voices.
         </div>
       </div>
     </>

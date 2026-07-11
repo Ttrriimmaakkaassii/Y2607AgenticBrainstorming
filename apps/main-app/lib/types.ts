@@ -39,6 +39,8 @@ export interface Agent {
   active: boolean;
   /** Explicit TTS voice override (SpeechSynthesisVoice.voiceURI). Null = auto-assigned. */
   voiceURI: string | null;
+  /** Explicit Google Cloud TTS voice override (e.g. "en-US-Neural2-A"). Null = auto-assigned. */
+  googleVoiceName: string | null;
   /** TraitDef.id -> 0-100. Missing key = unset, treated as 50 (neutral midpoint) at read time. */
   traits: Record<string, number>;
 }
@@ -90,6 +92,8 @@ export interface ConversationSettings {
   interactionStyle: InteractionStyle;
   ttsRate: number;
   ttsLang: string;
+  /** 'google' requires a saved Google Cloud TTS API key; falls back to 'browser' when absent. */
+  ttsProvider: 'browser' | 'google';
   /** Digits only, international format without leading 00/+ (e.g. "212661320000"). */
   whatsappNumber: string;
 }

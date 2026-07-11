@@ -20,6 +20,8 @@ import {
   deleteTraitDef,
   loadTraitCategories,
 } from '@/lib/traits';
+import { GoogleVoice, fetchGoogleVoices } from '@/lib/google-tts';
+import { loadTtsApiKey } from '@/lib/tts-connection';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
@@ -78,7 +80,8 @@ interface SettingsModalProps {
   threads: Thread[];
   ttsRate: number;
   ttsLang: string;
-  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string }) => void;
+  ttsProvider: 'browser' | 'google';
+  onUpdateTts: (updates: { ttsRate?: number; ttsLang?: string; ttsProvider?: 'browser' | 'google' }) => void;
   archives: ArchivedConversation[];
   onRestoreArchive: (archive: ArchivedConversation) => void;
   onDeleteArchive: (id: string) => void;
@@ -108,6 +111,7 @@ export function SettingsModal({
   threads,
   ttsRate,
   ttsLang,
+  ttsProvider,
   onUpdateTts,
   archives,
   onRestoreArchive,
@@ -131,9 +135,13 @@ export function SettingsModal({
     currentAgent?.connectionId ?? null
   );
   const [voiceURI, setVoiceURI] = useState<string | null>(currentAgent?.voiceURI ?? null);
+  const [googleVoiceName, setGoogleVoiceName] = useState<string | null>(
+    currentAgent?.googleVoiceName ?? null
+  );
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [googleVoices, setGoogleVoices] = useState<GoogleVoice[]>([]);
   const [newGuidelineText, setNewGuidelineText] = useState('');
   const [newGuidelineCategory, setNewGuidelineCategory] = useState('');
   const [newTraitName, setNewTraitName] = useState('');
@@ -164,6 +172,15 @@ export function SettingsModal({
     window.speechSynthesis.addEventListener('voiceschanged', load);
     return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
   }, []);
+
+  useEffect(() => {
+    const apiKey = loadTtsApiKey();
+    if (!apiKey) {
+      setGoogleVoices([]);
+      return;
+    }
+    fetchGoogleVoices(apiKey, ttsLang).then(setGoogleVoices);
+  }, [ttsLang]);
 
   const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
   const currentAgentCategories =
@@ -229,6 +246,7 @@ export function SettingsModal({
     setColor(agent.color);
     setConnectionId(agent.connectionId);
     setVoiceURI(agent.voiceURI ?? null);
+    setGoogleVoiceName(agent.googleVoiceName ?? null);
   }
 
   function save() {
@@ -241,6 +259,7 @@ export function SettingsModal({
       color,
       connectionId,
       voiceURI,
+      googleVoiceName,
       llmProvider: connection?.provider ?? currentAgent.llmProvider,
     });
   }
@@ -423,6 +442,26 @@ export function SettingsModal({
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="form-group">
+                  <label>Google Cloud Voice (used when TTS Engine is set to Google Cloud)</label>
+                  <select
+                    value={googleVoiceName ?? ''}
+                    onChange={(e) => setGoogleVoiceName(e.target.value || null)}
+                  >
+                    <option value="">Auto (assigned automatically, distinct per agent)</option>
+                    {googleVoices.map((v) => (
+                      <option key={v.name} value={v.name}>
+                        {v.name} ({v.ssmlGender})
+                      </option>
+                    ))}
+                  </select>
+                  {googleVoices.length === 0 && (
+                    <div style={{ fontSize: 11, color: '#667781', marginTop: 4 }}>
+                      Add a TTS API key in 🔌 LLM to see available Google voices for the current
+                      language.
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Avatar Color</label>
@@ -621,6 +660,7 @@ export function SettingsModal({
               threads={threads}
               ttsRate={ttsRate}
               ttsLang={ttsLang}
+              ttsProvider={ttsProvider}
               onUpdateTts={onUpdateTts}
               onClose={() => {}}
               onToast={onToast}

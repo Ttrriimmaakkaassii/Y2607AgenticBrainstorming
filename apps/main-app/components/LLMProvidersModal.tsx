@@ -5,6 +5,7 @@ import { LLM_CATALOG, getProvider } from '@/lib/llm-catalog';
 import { Agent, Effort, LLMConnection, LLMProvider } from '@/lib/types';
 import { generateId } from '@/lib/id';
 import { renameCustomAgent } from '@/lib/custom-agents';
+import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 
 interface LLMProvidersModalProps {
   connections: LLMConnection[];
@@ -40,6 +41,12 @@ export function LLMProvidersModal({
   const [tableAgents, setTableAgents] = useState<Agent[]>(agents);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConnectionId, setBulkConnectionId] = useState('');
+  const [ttsApiKey, setTtsApiKey] = useState(() => loadTtsApiKey());
+
+  function saveTtsKey() {
+    saveTtsApiKey(ttsApiKey);
+    onToast(ttsApiKey.trim() ? '✅ TTS API key saved' : '🗑️ TTS API key cleared — using browser voices');
+  }
 
   const selectedProviderInfo = getProvider(provider);
   const selectedModelInfo = selectedProviderInfo?.models.find((m) => m.id === model);
@@ -238,6 +245,28 @@ export function LLMProvidersModal({
                 </button>
               </div>
             ))}
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">🔊 TTS API (optional)</div>
+            <div className="form-group">
+              <label>Google Cloud Text-to-Speech API Key</label>
+              <input
+                type="password"
+                value={ttsApiKey}
+                onChange={(e) => setTtsApiKey(e.target.value)}
+                placeholder="Leave blank to keep using the free built-in browser voices"
+              />
+            </div>
+            <button className="btn-secondary" onClick={saveTtsKey}>
+              💾 Save TTS Key
+            </button>
+            <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
+              Optional. Adding a Google Cloud TTS key unlocks more natural, realistic voices (enable it
+              in Settings → 🎧 Audio → TTS Engine). Stored only in this browser, same as your LLM keys
+              above — never synced anywhere. Without a key, read-aloud keeps using your browser's free
+              built-in voices.
+            </div>
           </div>
 
           <div className="modal-section">
