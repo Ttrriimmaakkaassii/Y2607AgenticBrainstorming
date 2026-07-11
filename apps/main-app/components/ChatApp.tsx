@@ -683,7 +683,11 @@ export function ChatApp() {
         threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
         updatedAt: Date.now(),
       }));
-    } while (hasLimit() && withinLimits(updatedThread) && isRunnable());
+      // With no exchange limit set, keep going until every agent in this
+      // round has had a turn (so all active agents respond to the user's
+      // message, not just the first one in rotation) — only an explicit
+      // limit extends this into an indefinite auto-discussion loop.
+    } while ((hasLimit() ? withinLimits(updatedThread) : turn < connected.length) && isRunnable());
   }
 
   async function startDiscussion() {
@@ -831,7 +835,7 @@ export function ChatApp() {
     // having caught up yet (it's set from a SpeechRecognition callback that
     // may fire across several re-renders after this function was captured).
     const content = (overrideText ?? inputMessage).trim();
-    if (!content || state.status === 'stopped') return;
+    if (!content) return;
 
     let targetThread = state.threads[state.threads.length - 1];
     if (!targetThread) {
@@ -854,6 +858,17 @@ export function ChatApp() {
     setInputMessage('');
     setReplyingTo(null);
 
+    // Sending a message always resumes/continues the conversation — no
+    // separate trip to Play is needed after a pause or a stop.
+    statusRef.current = 'running';
+    setState((prev) => ({ ...prev, status: 'running' }));
+
+    // If the exchange limit was already reached, extend it automatically
+    // rather than silently going quiet right after the user's message.
+    if (settingsRef.current.maxExchanges != null && !withinLimits(targetThread)) {
+      extendExchanges(10);
+    }
+
     const mentionMatch = /@(Agt\d+)/i.exec(content);
     const mentionedAgent = mentionMatch
       ? state.agents.find((a) => a.refNumber.toLowerCase() === mentionMatch[1].toLowerCase())
@@ -873,10 +888,11 @@ export function ChatApp() {
       return;
     }
 
-    if (state.settings.orchestratorEnabled && state.status !== 'paused') {
-      const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
-      runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.active));
-    }
+    // Every active, connected agent responds to the user's message by
+    // default — not just the first one in rotation — unless @mentioning a
+    // specific agent (handled above) says otherwise.
+    const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
+    runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.active));
   }
 
   async function handleReaction(threadId: string, message: Message, type: ReactionType) {
@@ -1627,20 +1643,10 @@ export function ChatApp() {
               {topicExpanded ? '🗕' : '🗖'}
             </button>
           </div>
-          <select
-            className="select-input"
-            value={currentAgentId}
-            onChange={(e) => setCurrentAgentId(e.target.value)}
-          >
-            {state.agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.refNumber} · {agent.name} ({agent.role})
-              </option>
-            ))}
-          </select>
           <div className="moods-menu-wrap">
             <button
               className="control-btn"
+              {...devRef('h3')}
               onClick={() => setMoodsMenuOpen((v) => !v)}
               title="Select one or more discussion moods to blend"
             >
@@ -1651,6 +1657,7 @@ export function ChatApp() {
                 <input
                   type="text"
                   className="control-input"
+                  {...devRef('h4')}
                   placeholder="Filter or add a new mood…"
                   value={moodFilter}
                   onChange={(e) => setMoodFilter(e.target.value)}
@@ -1671,6 +1678,7 @@ export function ChatApp() {
                             <label>
                               <input
                                 type="checkbox"
+                                {...devRef(`h5-${m.key}`)}
                                 checked={state.settings.moods.includes(m.name)}
                                 onChange={() => {
                                   const has = state.settings.moods.includes(m.name);
@@ -1687,6 +1695,7 @@ export function ChatApp() {
                               <span className="moods-menu-actions">
                                 <button
                                   className="btn-icon"
+                                  {...devRef(`h6-${m.key}`)}
                                   title="Rename"
                                   onClick={() => {
                                     const next = window.prompt('Rename mood:', m.name);
@@ -1707,6 +1716,7 @@ export function ChatApp() {
                                 </button>
                                 <button
                                   className="btn-icon delete"
+                                  {...devRef(`h7-${m.key}`)}
                                   title="Delete"
                                   onClick={() => {
                                     setCustomMoods(deleteCustomMood(m.custom!.id));
@@ -1730,6 +1740,7 @@ export function ChatApp() {
                       {q && !exactMatch && (
                         <button
                           className="control-btn"
+                          {...devRef('h8')}
                           onClick={() => {
                             setCustomMoods(addCustomMood(q));
                             updateSettings({ moods: [...state.settings.moods, moodFilter.trim()] });
@@ -1770,6 +1781,7 @@ export function ChatApp() {
         <input
           type="text"
           className="select-input"
+          {...devRef('s1')}
           style={{ flex: 1 }}
           placeholder="🔎 Search discussion... (filters live as you type)"
           value={searchQuery}
@@ -1778,6 +1790,7 @@ export function ChatApp() {
         <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <input
             type="checkbox"
+            {...devRef('s2')}
             checked={filterStarredOnly}
             onChange={(e) => setFilterStarredOnly(e.target.checked)}
           />
@@ -1785,6 +1798,7 @@ export function ChatApp() {
         </label>
         <select
           className="select-input"
+          {...devRef('s3')}
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
         >
@@ -1798,6 +1812,7 @@ export function ChatApp() {
         {(searchQuery || filterStarredOnly || filterCategory) && (
           <button
             className="btn-icon"
+            {...devRef('s4')}
             onClick={() => {
               setSearchQuery('');
               setFilterStarredOnly(false);
