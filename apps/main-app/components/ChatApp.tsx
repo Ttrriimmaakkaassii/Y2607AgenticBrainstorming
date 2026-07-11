@@ -1032,6 +1032,63 @@ export function ChatApp() {
         return;
       }
       const msg = allMessages[index];
+      const apiKey = loadTtsApiKey();
+      if (state.settings.ttsProvider === 'google' && apiKey) {
+        speakMessageGoogle(index, msg, apiKey);
+        return;
+      }
+      speakMessageBrowser(index, msg);
+    }
+
+    // Gemini TTS synthesizes the WHOLE message in a single request instead
+    // of per-sentence — sentence-splitting exists only to work around Web
+    // Speech API's Android Chrome long-utterance bug, which doesn't apply
+    // to pre-rendered audio playback. Splitting Gemini calls per sentence
+    // was previously causing an audible "stop and resume" gap between every
+    // sentence while the next one's network request was still in flight.
+    async function speakMessageGoogle(index: number, msg: Message, apiKey: string) {
+      const author = agentById(msg.agentId);
+      const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
+      const audioUrl = await synthesizeGoogleAudio(
+        apiKey,
+        msg.content,
+        voiceName,
+        state.settings.googleTtsModel,
+        state.settings.ttsRate
+      );
+      if (speakingCancelledRef.current) return;
+      if (!audioUrl) {
+        showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
+        speakMessageBrowser(index, msg);
+        return;
+      }
+      const audio = new Audio(audioUrl);
+      googleAudioRef.current = audio;
+      const words = splitIntoWords(msg.content);
+      let progressTimer: ReturnType<typeof setInterval> | null = null;
+      audio.onloadedmetadata = () => {
+        setSpeaking({ messageId: msg.id, charIndex: 0, charLength: 0 });
+        progressTimer = setInterval(() => {
+          if (!audio.duration || words.length === 0) return;
+          const frac = Math.min(audio.currentTime / audio.duration, 1);
+          const w = words[Math.min(Math.floor(frac * words.length), words.length - 1)];
+          setSpeaking({ messageId: msg.id, charIndex: w.start, charLength: w.length });
+        }, 120);
+      };
+      audio.onended = () => {
+        if (progressTimer) clearInterval(progressTimer);
+        googleAudioRef.current = null;
+        speakAt(index + 1);
+      };
+      audio.onerror = () => {
+        if (progressTimer) clearInterval(progressTimer);
+        googleAudioRef.current = null;
+        speakAt(index + 1);
+      };
+      audio.play();
+    }
+
+    function speakMessageBrowser(index: number, msg: Message) {
       const sentences = splitIntoSentences(msg.content);
       let sentenceIdx = 0;
 
@@ -1101,48 +1158,6 @@ export function ChatApp() {
         window.speechSynthesis.speak(utterance);
       }
 
-      async function speakSentenceGoogle(apiKey: string, text: string, offset: number) {
-        const author = agentById(msg.agentId);
-        const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
-        const audioUrl = await synthesizeGoogleAudio(
-          apiKey,
-          text,
-          voiceName,
-          state.settings.googleTtsModel,
-          state.settings.ttsRate
-        );
-        if (speakingCancelledRef.current) return;
-        if (!audioUrl) {
-          showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
-          speakSentenceBrowser(text, offset);
-          return;
-        }
-        const audio = new Audio(audioUrl);
-        googleAudioRef.current = audio;
-        const words = splitIntoWords(text);
-        let progressTimer: ReturnType<typeof setInterval> | null = null;
-        audio.onloadedmetadata = () => {
-          setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
-          progressTimer = setInterval(() => {
-            if (!audio.duration || words.length === 0) return;
-            const frac = Math.min(audio.currentTime / audio.duration, 1);
-            const w = words[Math.min(Math.floor(frac * words.length), words.length - 1)];
-            setSpeaking({ messageId: msg.id, charIndex: offset + w.start, charLength: w.length });
-          }, 120);
-        };
-        audio.onended = () => {
-          if (progressTimer) clearInterval(progressTimer);
-          googleAudioRef.current = null;
-          speakSentence();
-        };
-        audio.onerror = () => {
-          if (progressTimer) clearInterval(progressTimer);
-          googleAudioRef.current = null;
-          speakSentence();
-        };
-        audio.play();
-      }
-
       function speakSentence() {
         if (speakingCancelledRef.current) {
           setSpeaking(null);
@@ -1155,12 +1170,6 @@ export function ChatApp() {
         }
         const { text, offset } = sentences[sentenceIdx];
         sentenceIdx += 1;
-
-        const apiKey = loadTtsApiKey();
-        if (state.settings.ttsProvider === 'google' && apiKey) {
-          speakSentenceGoogle(apiKey, text, offset);
-          return;
-        }
         speakSentenceBrowser(text, offset);
       }
 
