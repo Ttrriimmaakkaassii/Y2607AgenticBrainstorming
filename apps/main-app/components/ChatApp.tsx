@@ -267,6 +267,9 @@ export function ChatApp() {
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
   const [inputMessage, setInputMessage] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const dictationFinalTextRef = useRef('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStarredOnly, setFilterStarredOnly] = useState(false);
@@ -718,8 +721,66 @@ export function ChatApp() {
     showToast(`🧵 New thread started with ${agent.name}`);
   }
 
-  async function sendMessage() {
-    const content = inputMessage.trim();
+  /**
+   * One button, two actions: first click starts listening and live-fills
+   * the composer as you speak; clicking the SAME button again stops
+   * listening and immediately sends whatever was transcribed. The browser's
+   * SpeechRecognition API only supports one fixed language per session —
+   * there's no standard way to auto-detect/mix languages mid-utterance —
+   * so this uses the conversation's configured TTS language as a
+   * best-effort single-language recognition target.
+   */
+  function toggleDictation() {
+    const SpeechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      showToast('Voice input is not supported in this browser.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = state.settings.ttsLang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    dictationFinalTextRef.current = inputMessage ? `${inputMessage} ` : '';
+
+    recognition.onresult = (e: any) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          dictationFinalTextRef.current += `${transcript} `;
+        } else {
+          interim += transcript;
+        }
+      }
+      setInputMessage(`${dictationFinalTextRef.current}${interim}`.trim());
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      const text = dictationFinalTextRef.current.trim();
+      if (text) sendMessage(text);
+    };
+    recognition.onerror = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+    recognition.start();
+  }
+
+  async function sendMessage(overrideText?: string) {
+    // Accepts an explicit override so voice dictation can push the freshly
+    // transcribed text directly, without depending on inputMessage state
+    // having caught up yet (it's set from a SpeechRecognition callback that
+    // may fire across several re-renders after this function was captured).
+    const content = (overrideText ?? inputMessage).trim();
     if (!content || state.status === 'stopped') return;
 
     let targetThread = state.threads[state.threads.length - 1];
@@ -2202,7 +2263,20 @@ export function ChatApp() {
           placeholder="Type message... (@Agt2 to ask only that agent)"
           disabled={state.status === 'stopped'}
         />
-        <button className="send-btn" {...devRef('i3')} onClick={sendMessage} disabled={state.status === 'stopped'}>
+        <button
+          className={`btn-icon mic-btn ${isListening ? 'listening' : ''}`}
+          {...devRef('i4')}
+          onClick={toggleDictation}
+          disabled={state.status === 'stopped'}
+          title={
+            isListening
+              ? 'Stop listening and send the transcribed message'
+              : `Speak to dictate (recognized as ${state.settings.ttsLang}) — click again to stop and send`
+          }
+        >
+          {isListening ? '🔴' : '🎤'}
+        </button>
+        <button className="send-btn" {...devRef('i3')} onClick={() => sendMessage()} disabled={state.status === 'stopped'}>
           Send
         </button>
       </div>

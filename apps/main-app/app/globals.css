@@ -907,6 +907,18 @@ body.dev-mode [data-devref]::after {
   font-size: 13px;
 }
 
+.mic-btn.listening {
+  background: #ff4d4f;
+  border-color: #ff4d4f;
+  color: white;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 .send-btn:hover {
   background: #2a80e8;
 }
