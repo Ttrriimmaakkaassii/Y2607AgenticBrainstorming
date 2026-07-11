@@ -19,6 +19,7 @@ import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/cu
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
+import { devRef } from '@/lib/devref';
 import { fetchGoogleVoices, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
@@ -396,9 +397,6 @@ export function ChatApp() {
   }, [devMode]);
 
   /** In Dev Mode, every tagged element shows this code as a small badge (CSS ::after). */
-  function devRef(code: string): { 'data-devref'?: string } {
-    return devMode ? { 'data-devref': code } : {};
-  }
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {

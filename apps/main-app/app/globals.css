@@ -1174,6 +1174,15 @@ body.dev-mode [data-devref]::after {
   margin-bottom: 8px;
 }
 
+.agent-list-item.drag-over {
+  border-color: var(--accent);
+  background: var(--bg-input);
+}
+
+.agent-list-item:active {
+  cursor: grabbing;
+}
+
 .agent-reorder-btns {
   display: flex;
   flex-direction: column;
