@@ -139,6 +139,7 @@ export function SettingsModal({
   const [newTraitName, setNewTraitName] = useState('');
   const [newTraitCategory, setNewTraitCategory] = useState('');
   const [expandedGuidelineIds, setExpandedGuidelineIds] = useState<Set<string>>(new Set());
+  const [newGuidelineExpanded, setNewGuidelineExpanded] = useState(false);
   const [categoriesMenuOpen, setCategoriesMenuOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('');
 
@@ -341,13 +342,29 @@ export function SettingsModal({
                   );
                 })}
                 <div className="guideline-row">
-                  <input
-                    type="text"
-                    style={{ flex: 1 }}
-                    placeholder="New guideline all agents must follow…"
-                    value={newGuidelineText}
-                    onChange={(e) => setNewGuidelineText(e.target.value)}
-                  />
+                  {newGuidelineExpanded ? (
+                    <textarea
+                      className="guideline-textarea"
+                      placeholder="New guideline all agents must follow…"
+                      value={newGuidelineText}
+                      onChange={(e) => setNewGuidelineText(e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      style={{ flex: 1 }}
+                      placeholder="New guideline all agents must follow…"
+                      value={newGuidelineText}
+                      onChange={(e) => setNewGuidelineText(e.target.value)}
+                    />
+                  )}
+                  <button
+                    className="btn-icon"
+                    title={newGuidelineExpanded ? 'Collapse' : 'Expand to full text'}
+                    onClick={() => setNewGuidelineExpanded((v) => !v)}
+                  >
+                    {newGuidelineExpanded ? '🗕' : '🗖'}
+                  </button>
                   <CategorySelect
                     value={newGuidelineCategory}
                     options={loadGuidelineCategories()}
@@ -360,6 +377,7 @@ export function SettingsModal({
                       onGuidelinesChange(addGuideline(newGuidelineText, newGuidelineCategory));
                       setNewGuidelineText('');
                       setNewGuidelineCategory('');
+                      setNewGuidelineExpanded(false);
                     }}
                   >
                     + Add

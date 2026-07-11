@@ -386,11 +386,14 @@ body {
 .moods-menu-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 6px 4px;
+  padding: 8px 6px;
   border-radius: 4px;
   font-size: 13px;
+}
+
+.moods-menu-row:not(:last-child) {
+  border-bottom: 1px solid var(--border-color);
 }
 
 .moods-menu-row:hover {
@@ -402,11 +405,15 @@ body {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  flex: 1;
+  min-width: 0;
 }
 
 .moods-menu-actions {
   display: flex;
   gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .moods-menu-empty {
@@ -1177,13 +1184,22 @@ body.dev-mode [data-devref]::after {
   margin-top: 8px;
 }
 
+.guideline-row input[type='text'],
+.guideline-row select,
+.guideline-textarea {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
 .guideline-textarea {
   flex: 1;
   min-height: 90px;
   resize: vertical;
-  font-family: inherit;
-  font-size: 13px;
-  padding: 6px 8px;
 }
 
 .trait-category-group {
