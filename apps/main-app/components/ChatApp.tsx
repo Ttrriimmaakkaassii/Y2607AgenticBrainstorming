@@ -1957,11 +1957,19 @@ export function ChatApp() {
       </div>
 
       <button
-        className="floating-play-btn"
+        className={`floating-play-btn ${state.status === 'paused' ? 'paused' : ''}`}
         onClick={state.status === 'running' ? pauseConversation : playConversation}
         title={state.status === 'running' ? 'Pause conversation' : 'Play/resume conversation'}
       >
         {state.status === 'running' ? '⏸️' : '▶️'}
+      </button>
+      <button
+        className="floating-stop-btn"
+        onClick={stopConversation}
+        disabled={state.status === 'stopped' || state.status === 'idle'}
+        title="End conversation"
+      >
+        ⏹️
       </button>
 
       {selectedMessageIds.length > 0 && (
