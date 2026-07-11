@@ -7,7 +7,7 @@ import { generateId } from '@/lib/id';
 import { renameCustomAgent } from '@/lib/custom-agents';
 import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
-import { describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
+import { GEMINI_TTS_MODELS, describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
 import { testConnection } from '@/lib/llm-client';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail';
@@ -19,6 +19,8 @@ interface LLMProvidersModalProps {
   onUpdateAgents: (agents: Agent[]) => void;
   onClose: () => void;
   onToast: (message: string) => void;
+  googleTtsModel: string;
+  onUpdateTtsModel: (model: string) => void;
   /** When true, renders just the panel content (no overlay/modal chrome) for embedding in a tab. */
   embedded?: boolean;
 }
@@ -61,6 +63,8 @@ export function LLMProvidersModal({
   onUpdateAgents,
   onClose,
   onToast,
+  googleTtsModel,
+  onUpdateTtsModel,
   embedded,
 }: LLMProvidersModalProps) {
   const [provider, setProvider] = useState<LLMProvider>('openai');
@@ -351,6 +355,20 @@ export function LLMProvidersModal({
                 onChange={(e) => setTtsApiKey(e.target.value)}
                 placeholder="Leave blank to keep using the free built-in browser voices"
               />
+            </div>
+            <div className="form-group">
+              <label>Gemini TTS Model</label>
+              <select
+                {...devRef('l21')}
+                value={googleTtsModel}
+                onChange={(e) => onUpdateTtsModel(e.target.value)}
+              >
+                {GEMINI_TTS_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button className="btn-secondary" {...devRef('l9')} onClick={saveTtsKey}>

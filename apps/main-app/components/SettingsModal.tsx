@@ -703,6 +703,8 @@ export function SettingsModal({
               onUpdateAgents={onUpdateAgentsBulk}
               onClose={() => {}}
               onToast={onToast}
+              googleTtsModel={googleTtsModel}
+              onUpdateTtsModel={(model) => onUpdateTts({ googleTtsModel: model })}
             />
           )}
 

@@ -126,19 +126,13 @@ function paceTag(rate: number): string {
   return '';
 }
 
-/**
- * Synthesizes `text` and returns a data: URL playable via `new Audio(url)`,
- * or null on any failure (bad key, quota exceeded, network error) — callers
- * must treat null as "fall back to the free browser voice for this line."
- */
-export async function synthesizeGoogleAudio(
+async function synthesizeGoogleAudioOnce(
   apiKey: string,
   text: string,
   voiceName: string,
   model: string,
   rate: number
-): Promise<string | null> {
-  if (!apiKey) return null;
+): Promise<{ audioUrl: string | null; status: number | null }> {
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -154,20 +148,48 @@ export async function synthesizeGoogleAudio(
         }),
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) return { audioUrl: null, status: res.status };
     const data = await res.json();
     const part = data.candidates?.[0]?.content?.parts?.[0];
     const audioData: string | undefined = part?.inlineData?.data;
-    if (!audioData) return null;
+    if (!audioData) return { audioUrl: null, status: null };
     // Gemini returns raw 16-bit PCM at 24kHz (audio/L16;rate=24000), not a
     // ready-made container format, so it must be wrapped before <audio> can play it.
     const mimeType: string = part?.inlineData?.mimeType ?? 'audio/L16;rate=24000';
     const rateMatch = /rate=(\d+)/.exec(mimeType);
     const sampleRate = rateMatch ? Number(rateMatch[1]) : 24000;
-    return pcmToWavDataUrl(audioData, sampleRate);
+    return { audioUrl: pcmToWavDataUrl(audioData, sampleRate), status: null };
   } catch {
-    return null;
+    return { audioUrl: null, status: null };
   }
+}
+
+/**
+ * Synthesizes `text` and returns a data: URL playable via `new Audio(url)`,
+ * or null on any failure (bad key, quota exceeded, network error) — callers
+ * must treat null as "fall back to the free browser voice for this line."
+ *
+ * Retries on HTTP 500: Google's own docs note the preview TTS models
+ * "occasionally return text tokens instead of audio tokens, causing the
+ * server to fail the request with a 500 error... in a very small
+ * percentage of requests" and explicitly recommend automated retries.
+ */
+export async function synthesizeGoogleAudio(
+  apiKey: string,
+  text: string,
+  voiceName: string,
+  model: string,
+  rate: number,
+  maxRetries = 2
+): Promise<string | null> {
+  if (!apiKey) return null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const { audioUrl, status } = await synthesizeGoogleAudioOnce(apiKey, text, voiceName, model, rate);
+    if (audioUrl) return audioUrl;
+    if (status !== 500 || attempt === maxRetries) return null;
+    await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+  }
+  return null;
 }
 
 function hashString(s: string): number {
