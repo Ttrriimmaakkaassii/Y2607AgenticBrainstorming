@@ -174,40 +174,16 @@ body {
   transition: background 0.15s ease;
 }
 
-.floating-play-btn.paused {
+.floating-play-btn.pause-state {
   background: #f39c12;
+}
+
+.floating-play-btn.stop-state {
+  background: #e74c3c;
 }
 
 .floating-play-btn:hover {
   filter: brightness(1.1);
-}
-
-.floating-stop-btn {
-  position: fixed;
-  bottom: 90px;
-  right: 76px;
-  z-index: 25;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: #e74c3c;
-  color: white;
-  cursor: pointer;
-  font-size: 18px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.floating-stop-btn:hover {
-  filter: brightness(1.1);
-}
-
-.floating-stop-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .settings-gear-btn:hover {

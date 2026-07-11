@@ -1956,20 +1956,25 @@ export function ChatApp() {
       </div>
       </div>
 
+      {/* One button, three states: idle/stopped -> Play (green), running -> Pause (amber), paused -> Stop (red). Each click advances to the next state. */}
       <button
-        className={`floating-play-btn ${state.status === 'paused' ? 'paused' : ''}`}
-        onClick={state.status === 'running' ? pauseConversation : playConversation}
-        title={state.status === 'running' ? 'Pause conversation' : 'Play/resume conversation'}
+        className={`floating-play-btn ${state.status === 'paused' ? 'stop-state' : state.status === 'running' ? 'pause-state' : ''}`}
+        onClick={
+          state.status === 'running'
+            ? pauseConversation
+            : state.status === 'paused'
+            ? stopConversation
+            : playConversation
+        }
+        title={
+          state.status === 'running'
+            ? 'Pause conversation'
+            : state.status === 'paused'
+            ? 'End conversation'
+            : 'Play/resume conversation'
+        }
       >
-        {state.status === 'running' ? '⏸️' : '▶️'}
-      </button>
-      <button
-        className="floating-stop-btn"
-        onClick={stopConversation}
-        disabled={state.status === 'stopped' || state.status === 'idle'}
-        title="End conversation"
-      >
-        ⏹️
+        {state.status === 'running' ? '⏸️' : state.status === 'paused' ? '⏹️' : '▶️'}
       </button>
 
       {selectedMessageIds.length > 0 && (
