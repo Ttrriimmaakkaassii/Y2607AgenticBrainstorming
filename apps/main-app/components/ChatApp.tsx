@@ -1562,7 +1562,7 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
-      <div className="fixed-top-icons">
+      <div className="fixed-top-icons" {...devRef('sec-top-icons')}>
         <button
           className="icon-btn"
           {...devRef('a1')}
@@ -1601,7 +1601,7 @@ export function ChatApp() {
         ⚙️
       </button>
 
-      <div className="top-panel-toggle-row">
+      <div className="top-panel-toggle-row" {...devRef('sec-top-panel-toggle')}>
         <button
           className="control-btn top-panel-toggle-btn"
           {...devRef('tp1')}
@@ -1614,7 +1614,7 @@ export function ChatApp() {
 
       <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
       <div className="top-panel-inner">
-      <div className="header">
+      <div className="header" {...devRef('sec-header')}>
         <div className="header-left">
           <div className="topic-field-wrap">
             {topicExpanded ? (
@@ -1780,7 +1780,7 @@ export function ChatApp() {
         </div>
       </div>
 
-      <div className="search-bar">
+      <div className="search-bar" {...devRef('sec-search-bar')}>
         <input
           type="text"
           className="select-input"
@@ -1967,7 +1967,7 @@ export function ChatApp() {
         </div>
       </div>
 
-      <div className="controls-panel">
+      <div className="controls-panel" {...devRef('sec-controls-panel')}>
         <div className="control-group">
           <span className="control-label">Response Style:</span>
           <select
@@ -2138,7 +2138,7 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="conversation-body">
+      <div className="conversation-body" {...devRef('sec-conversation-body')}>
         {showAudioRail && (
           <>
             <div className="audio-rail-backdrop" onClick={() => setShowAudioRail(false)} />
@@ -2151,7 +2151,7 @@ export function ChatApp() {
             />
           </>
         )}
-      <div className="conversation-area" ref={conversationAreaRef}>
+      <div className="conversation-area" ref={conversationAreaRef} {...devRef('sec-conversation-area')}>
         {state.threads.length === 0 && (
           <div className="start-discussion">
             <button onClick={startDiscussion}>▶️ Start New Discussion</button>

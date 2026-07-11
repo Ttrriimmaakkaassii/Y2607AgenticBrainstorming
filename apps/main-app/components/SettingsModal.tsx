@@ -284,7 +284,7 @@ export function SettingsModal({
             ×
           </button>
         </div>
-        <div className="settings-tabs">
+        <div className="settings-tabs" {...devRef('sec-tabs')}>
           {TABS.map((t, i) => (
             <button
               key={t.id}
@@ -296,10 +296,10 @@ export function SettingsModal({
             </button>
           ))}
         </div>
-        <div className="modal-body">
+        <div className="modal-body" {...devRef('sec-modal-body')}>
           {tab === 'agent' && (
             <>
-              <div className="modal-section">
+              <div className="modal-section" {...devRef('sec-sharing')}>
                 <div className="modal-section-title">Sharing</div>
                 <div className="form-group">
                   <label>My WhatsApp Number (digits only, international format)</label>
@@ -313,7 +313,7 @@ export function SettingsModal({
                 </div>
               </div>
 
-              <div className="modal-section">
+              <div className="modal-section" {...devRef('sec-guidelines')}>
                 <div className="modal-section-title">General Guidelines (applies to all agents)</div>
                 {guidelines.map((g, gi) => {
                   const expanded = expandedGuidelineIds.has(g.id);
@@ -418,7 +418,7 @@ export function SettingsModal({
                 </div>
               </div>
 
-              <div className="modal-section">
+              <div className="modal-section" {...devRef('sec-configure-agent')}>
                 <div className="modal-section-title">Configure Agent</div>
                 <div className="form-group">
                   <label>Agent Name</label>
@@ -605,7 +605,7 @@ export function SettingsModal({
                 </button>
               </div>
 
-              <div className="modal-section">
+              <div className="modal-section" {...devRef('sec-available-agents')}>
                 <div className="modal-section-title">Available Agents (drag to reorder)</div>
                 {agents.map((agent, index) => (
                   <div
@@ -695,47 +695,61 @@ export function SettingsModal({
           )}
 
           {tab === 'llm' && (
-            <LLMProvidersModal
-              embedded
-              connections={connections}
-              onChange={onChangeConnections}
-              agents={agents}
-              onUpdateAgents={onUpdateAgentsBulk}
-              onClose={() => {}}
-              onToast={onToast}
-              googleTtsModel={googleTtsModel}
-              onUpdateTtsModel={(model) => onUpdateTts({ googleTtsModel: model })}
-            />
+            <div {...devRef('sec-llm-tab')}>
+              <LLMProvidersModal
+                embedded
+                connections={connections}
+                onChange={onChangeConnections}
+                agents={agents}
+                onUpdateAgents={onUpdateAgentsBulk}
+                onClose={() => {}}
+                onToast={onToast}
+                googleTtsModel={googleTtsModel}
+                onUpdateTtsModel={(model) => onUpdateTts({ googleTtsModel: model })}
+              />
+            </div>
           )}
 
           {tab === 'audio' && (
-            <AudioModal
-              embedded
-              agents={agents}
-              threads={threads}
-              ttsRate={ttsRate}
-              ttsLang={ttsLang}
-              ttsProvider={ttsProvider}
-              googleTtsModel={googleTtsModel}
-              onUpdateTts={onUpdateTts}
-              onClose={() => {}}
-              onToast={onToast}
-            />
+            <div {...devRef('sec-audio-tab')}>
+              <AudioModal
+                embedded
+                agents={agents}
+                threads={threads}
+                ttsRate={ttsRate}
+                ttsLang={ttsLang}
+                ttsProvider={ttsProvider}
+                googleTtsModel={googleTtsModel}
+                onUpdateTts={onUpdateTts}
+                onClose={() => {}}
+                onToast={onToast}
+              />
+            </div>
           )}
 
           {tab === 'archives' && (
-            <ArchivesModal
-              embedded
-              archives={archives}
-              onRestore={onRestoreArchive}
-              onDelete={onDeleteArchive}
-              onClose={() => {}}
-            />
+            <div {...devRef('sec-archives-tab')}>
+              <ArchivesModal
+                embedded
+                archives={archives}
+                onRestore={onRestoreArchive}
+                onDelete={onDeleteArchive}
+                onClose={() => {}}
+              />
+            </div>
           )}
 
-          {tab === 'log' && <ChangeLogPanel />}
+          {tab === 'log' && (
+            <div {...devRef('sec-log-tab')}>
+              <ChangeLogPanel />
+            </div>
+          )}
 
-          {tab === 'account' && <AccountSettingsPanel />}
+          {tab === 'account' && (
+            <div {...devRef('sec-account-tab')}>
+              <AccountSettingsPanel />
+            </div>
+          )}
         </div>
       </div>
     </div>
