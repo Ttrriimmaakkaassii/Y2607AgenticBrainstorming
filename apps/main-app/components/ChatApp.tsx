@@ -18,6 +18,7 @@ import { AgentPreset } from '@/lib/agent-library';
 import { upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
+import { pickVoiceForAgent } from '@/lib/voice-picker';
 import {
   loadConnections,
   loadConnectionsFromSupabase,
@@ -81,6 +82,7 @@ const DEFAULT_AGENTS: Agent[] = [
     llmProvider: 'openai',
     connectionId: null,
     active: true,
+    voiceURI: null,
   },
   {
     id: generateId(),
@@ -92,6 +94,7 @@ const DEFAULT_AGENTS: Agent[] = [
     llmProvider: 'anthropic',
     connectionId: null,
     active: true,
+    voiceURI: null,
   },
   {
     id: generateId(),
@@ -103,6 +106,7 @@ const DEFAULT_AGENTS: Agent[] = [
     llmProvider: 'google',
     connectionId: null,
     active: true,
+    voiceURI: null,
   },
 ];
 
@@ -141,7 +145,7 @@ function migrateState(state: ConversationState): ConversationState {
     }
     const match = /Agt(\d+)/.exec(refNumber);
     if (match) maxSeen = Math.max(maxSeen, Number(match[1]));
-    return { ...agent, refNumber, active };
+    return { ...agent, refNumber, active, voiceURI: agent.voiceURI ?? null };
   });
   const threads = state.threads.map((t) => ({
     ...t,
@@ -779,14 +783,6 @@ export function ChatApp() {
     return parts.length > 0 ? parts : [{ text, offset: 0 }];
   }
 
-  function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
-    const voices = window.speechSynthesis.getVoices();
-    return (
-      voices.find((v) => v.lang === lang) ||
-      voices.find((v) => v.lang.startsWith(lang.split('-')[0]))
-    );
-  }
-
   function playFromMessage(startIndex: number) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       showToast('Speech synthesis is not supported in this browser.');
@@ -829,9 +825,16 @@ export function ChatApp() {
         const { text, offset } = sentences[sentenceIdx];
         sentenceIdx += 1;
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = state.settings.ttsRate;
+        const author = agentById(msg.agentId);
+        const { voice, pitch, rate } = pickVoiceForAgent(
+          msg.agentId,
+          author?.voiceURI,
+          state.settings.ttsLang,
+          state.settings.ttsRate
+        );
+        utterance.rate = rate;
+        utterance.pitch = pitch;
         utterance.lang = state.settings.ttsLang;
-        const voice = pickVoice(state.settings.ttsLang);
         if (voice) utterance.voice = voice;
         utterance.onstart = () => setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
         utterance.onboundary = (e) => {
@@ -1128,6 +1131,7 @@ export function ChatApp() {
       llmProvider: 'openai',
       connectionId: null,
       active: true,
+      voiceURI: null,
     };
     setState((prev) => ({
       ...prev,
@@ -1156,6 +1160,7 @@ export function ChatApp() {
       llmProvider: 'openai',
       connectionId: null,
       active: true,
+      voiceURI: null,
     };
     setState((prev) => ({
       ...prev,

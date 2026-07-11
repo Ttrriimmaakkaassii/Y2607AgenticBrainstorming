@@ -37,6 +37,8 @@ export interface Agent {
   connectionId: string | null;
   /** Whether this agent participates in new discussion rounds. */
   active: boolean;
+  /** Explicit TTS voice override (SpeechSynthesisVoice.voiceURI). Null = auto-assigned. */
+  voiceURI: string | null;
 }
 
 /**

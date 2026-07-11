@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { Agent, Message, Thread } from '@/lib/types';
+import { pickVoiceForAgent } from '@/lib/voice-picker';
 
 interface AudioModalProps {
   agents: Agent[];
@@ -52,9 +53,13 @@ export function AudioModal({
         return;
       }
       const msg = messages[index];
+      const agent = agents.find((a) => a.id === msg.agentId);
       const utterance = new SpeechSynthesisUtterance(`${authorName(msg)} says: ${msg.content}`);
-      utterance.rate = ttsRate;
+      const { voice, pitch, rate } = pickVoiceForAgent(msg.agentId, agent?.voiceURI, ttsLang, ttsRate);
+      utterance.rate = rate;
+      utterance.pitch = pitch;
       utterance.lang = ttsLang;
+      if (voice) utterance.voice = voice;
       utterance.onstart = () => setPlayingIndex(index);
       utterance.onend = () => speakAt(index + 1);
       utterance.onerror = () => speakAt(index + 1);

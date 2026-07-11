@@ -70,12 +70,22 @@ export function SettingsModal({
   const [connectionId, setConnectionId] = useState<string | null>(
     currentAgent?.connectionId ?? null
   );
+  const [voiceURI, setVoiceURI] = useState<string | null>(currentAgent?.voiceURI ?? null);
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
     setCustomAgents(loadCustomAgents());
     setCustomCategories(loadCustomCategories());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    const load = () => setAvailableVoices(window.speechSynthesis.getVoices());
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
   }, []);
 
   const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
@@ -117,6 +127,7 @@ export function SettingsModal({
     setInstructions(agent.instructions);
     setColor(agent.color);
     setConnectionId(agent.connectionId);
+    setVoiceURI(agent.voiceURI ?? null);
   }
 
   function save() {
@@ -128,6 +139,7 @@ export function SettingsModal({
       instructions,
       color,
       connectionId,
+      voiceURI,
       llmProvider: connection?.provider ?? currentAgent.llmProvider,
     });
   }
@@ -200,6 +212,17 @@ export function SettingsModal({
                     {connections.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.label} ({getProvider(c.provider)?.name} · {c.model} · {c.effort})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Read-Aloud Voice</label>
+                  <select value={voiceURI ?? ''} onChange={(e) => setVoiceURI(e.target.value || null)}>
+                    <option value="">Auto (assigned automatically, distinct per agent)</option>
+                    {availableVoices.map((v) => (
+                      <option key={v.voiceURI} value={v.voiceURI}>
+                        {v.name} ({v.lang})
                       </option>
                     ))}
                   </select>
