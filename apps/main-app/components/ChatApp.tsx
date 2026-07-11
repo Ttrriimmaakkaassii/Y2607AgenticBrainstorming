@@ -268,6 +268,7 @@ export function ChatApp() {
   const [participantsMenuOpen, setParticipantsMenuOpen] = useState(false);
   const [participantFilter, setParticipantFilter] = useState('');
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const chipClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [topPanelOpen, setTopPanelOpen] = useState(true);
   const autoCollapsedRef = useRef(false);
   useEffect(() => {
@@ -1492,8 +1493,29 @@ export function ChatApp() {
                 {...devRef(`p${agentIndex + 2}`)}
                 className={`participant-chip ${connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
                 style={{ borderColor: agent.color }}
-                onClick={() => toggleAgentActive(agent.id)}
+                onClick={() => {
+                  // A single click deactivates this chip, which removes it
+                  // from the DOM (the list is filtered to active agents) —
+                  // if that happened immediately, the second click of a
+                  // double-click would land on nothing (or the wrong chip
+                  // that shifted into its place) and never register as a
+                  // dblclick. Delay the toggle briefly so a following
+                  // dblclick can cancel it first.
+                  if (chipClickTimeoutRef.current) {
+                    clearTimeout(chipClickTimeoutRef.current);
+                    chipClickTimeoutRef.current = null;
+                    return;
+                  }
+                  chipClickTimeoutRef.current = setTimeout(() => {
+                    toggleAgentActive(agent.id);
+                    chipClickTimeoutRef.current = null;
+                  }, 250);
+                }}
                 onDoubleClick={() => {
+                  if (chipClickTimeoutRef.current) {
+                    clearTimeout(chipClickTimeoutRef.current);
+                    chipClickTimeoutRef.current = null;
+                  }
                   setCurrentAgentId(agent.id);
                   setModalReturnTo(null);
                   setActiveModal('settings');
