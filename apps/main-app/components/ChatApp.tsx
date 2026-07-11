@@ -909,6 +909,23 @@ export function ChatApp() {
    * a couple of seconds, so long messages must be spoken as a queue of short
    * per-sentence utterances rather than one utterance for the whole message.
    */
+  /**
+   * Finds every whitespace-delimited word in `text` with its offset/length.
+   * Used to normalize word-highlighting: some voices/browsers (mainly
+   * non-Microsoft ones) fire 'word' onboundary events once per CHARACTER
+   * instead of once per word, which made the highlight look like it was
+   * creeping one letter at a time instead of lighting up a whole word.
+   */
+  function splitIntoWords(text: string): { start: number; length: number }[] {
+    const words: { start: number; length: number }[] = [];
+    const re = /\S+/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      words.push({ start: m.index, length: m[0].length });
+    }
+    return words;
+  }
+
   function splitIntoSentences(text: string): { text: string; offset: number }[] {
     const re = /[^.!?\n]+[.!?]+(\s+|$)|[^.!?\n]+$|\n+/g;
     const parts: { text: string; offset: number }[] = [];
@@ -963,12 +980,19 @@ export function ChatApp() {
         if (voice) utterance.voice = voice;
         // Some voices/platforms never fire onboundary events at all, which
         // silently breaks the word-highlight ("I don't see the words being
-        // read"). Detect that case and fall back to a timer-driven estimate
-        // of reading progress so highlighting still moves, even if it's not
-        // perfectly in sync with the audio.
+        // read"). Others (mainly non-Microsoft voices) fire 'word' boundary
+        // events once per CHARACTER instead of once per word, making the
+        // highlight creep one letter at a time. Both are worked around by
+        // always resolving to a whole word from `words`, either from the
+        // boundary event's position or from a timer-driven step through the
+        // word list when no boundary events arrive at all.
+        const words = splitIntoWords(text);
         let receivedBoundary = false;
         let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+        let fallbackWordIdx = 0;
         const estimatedMsPerChar = 55 / Math.max(rate, 0.25);
+        const estimatedMsPerWord =
+          words.length > 0 ? (estimatedMsPerChar * text.length) / words.length : 300;
 
         utterance.onstart = () => {
           setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
@@ -977,23 +1001,24 @@ export function ChatApp() {
               if (fallbackTimer) clearInterval(fallbackTimer);
               return;
             }
-            setSpeaking((prev) => {
-              if (!prev || prev.messageId !== msg.id) return prev;
-              const nextIndex = Math.min(prev.charIndex + 2, offset + Math.max(text.length - 1, 0));
-              return { messageId: msg.id, charIndex: nextIndex, charLength: 1 };
-            });
-          }, estimatedMsPerChar * 2);
+            if (fallbackWordIdx >= words.length) return;
+            const w = words[fallbackWordIdx];
+            fallbackWordIdx += 1;
+            setSpeaking({ messageId: msg.id, charIndex: offset + w.start, charLength: w.length });
+          }, estimatedMsPerWord);
         };
         utterance.onboundary = (e) => {
           if (e.name && e.name !== 'word') return;
           receivedBoundary = true;
-          let charLength = (e as any).charLength;
-          if (!charLength) {
-            const rest = text.slice(e.charIndex);
-            const match = /^\S+/.exec(rest);
-            charLength = match ? match[0].length : 1;
+          // Expand to the full word containing e.charIndex, regardless of
+          // whether this event landed at the word's start (normal case) or
+          // somewhere mid-word (the per-character-event browser quirk).
+          const word = words.find((w) => e.charIndex >= w.start && e.charIndex < w.start + w.length);
+          if (word) {
+            setSpeaking({ messageId: msg.id, charIndex: offset + word.start, charLength: word.length });
+          } else {
+            setSpeaking({ messageId: msg.id, charIndex: offset + e.charIndex, charLength: 1 });
           }
-          setSpeaking({ messageId: msg.id, charIndex: offset + e.charIndex, charLength });
         };
         utterance.onend = () => {
           if (fallbackTimer) clearInterval(fallbackTimer);
@@ -1021,14 +1046,15 @@ export function ChatApp() {
         }
         const audio = new Audio(audioUrl);
         googleAudioRef.current = audio;
+        const words = splitIntoWords(text);
         let progressTimer: ReturnType<typeof setInterval> | null = null;
         audio.onloadedmetadata = () => {
           setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
           progressTimer = setInterval(() => {
-            if (!audio.duration) return;
+            if (!audio.duration || words.length === 0) return;
             const frac = Math.min(audio.currentTime / audio.duration, 1);
-            const charIndex = offset + Math.floor(frac * Math.max(text.length - 1, 0));
-            setSpeaking({ messageId: msg.id, charIndex, charLength: 1 });
+            const w = words[Math.min(Math.floor(frac * words.length), words.length - 1)];
+            setSpeaking({ messageId: msg.id, charIndex: offset + w.start, charLength: w.length });
           }, 120);
         };
         audio.onended = () => {
