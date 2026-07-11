@@ -270,6 +270,7 @@ export function ChatApp() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const chipClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [topPanelOpen, setTopPanelOpen] = useState(true);
+  const [freezeScroll, setFreezeScroll] = useState(false);
   const autoCollapsedRef = useRef(false);
   useEffect(() => {
     // Collapse the search/participants/controls panel upward the first time
@@ -448,11 +449,24 @@ export function ChatApp() {
   }, [state, hydrated]);
 
   useEffect(() => {
+    if (freezeScroll) return;
     conversationAreaRef.current?.scrollTo({
       top: conversationAreaRef.current.scrollHeight,
       behavior: 'smooth',
     });
-  }, [state.threads]);
+  }, [state.threads, freezeScroll]);
+
+  // Reading mode should always keep the message currently being spoken in
+  // view and visually prominent, regardless of the freeze-scroll toggle —
+  // that toggle is about not being yanked around by new incoming messages,
+  // not about the explicit read-aloud the user started.
+  useEffect(() => {
+    if (!speaking) return;
+    const el = conversationAreaRef.current?.querySelector(
+      `[data-message-id="${speaking.messageId}"]`
+    );
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [speaking?.messageId]);
 
   function showToast(message: string) {
     setToast(message);
@@ -878,9 +892,32 @@ export function ChatApp() {
         utterance.pitch = pitch;
         utterance.lang = state.settings.ttsLang;
         if (voice) utterance.voice = voice;
-        utterance.onstart = () => setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
+        // Some voices/platforms never fire onboundary events at all, which
+        // silently breaks the word-highlight ("I don't see the words being
+        // read"). Detect that case and fall back to a timer-driven estimate
+        // of reading progress so highlighting still moves, even if it's not
+        // perfectly in sync with the audio.
+        let receivedBoundary = false;
+        let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+        const estimatedMsPerChar = 55 / Math.max(rate, 0.25);
+
+        utterance.onstart = () => {
+          setSpeaking({ messageId: msg.id, charIndex: offset, charLength: 0 });
+          fallbackTimer = setInterval(() => {
+            if (receivedBoundary) {
+              if (fallbackTimer) clearInterval(fallbackTimer);
+              return;
+            }
+            setSpeaking((prev) => {
+              if (!prev || prev.messageId !== msg.id) return prev;
+              const nextIndex = Math.min(prev.charIndex + 2, offset + Math.max(text.length - 1, 0));
+              return { messageId: msg.id, charIndex: nextIndex, charLength: 1 };
+            });
+          }, estimatedMsPerChar * 2);
+        };
         utterance.onboundary = (e) => {
           if (e.name && e.name !== 'word') return;
+          receivedBoundary = true;
           let charLength = (e as any).charLength;
           if (!charLength) {
             const rest = text.slice(e.charIndex);
@@ -889,8 +926,14 @@ export function ChatApp() {
           }
           setSpeaking({ messageId: msg.id, charIndex: offset + e.charIndex, charLength });
         };
-        utterance.onend = () => speakSentence();
-        utterance.onerror = () => speakSentence();
+        utterance.onend = () => {
+          if (fallbackTimer) clearInterval(fallbackTimer);
+          speakSentence();
+        };
+        utterance.onerror = () => {
+          if (fallbackTimer) clearInterval(fallbackTimer);
+          speakSentence();
+        };
         window.speechSynthesis.speak(utterance);
       }
 
@@ -1080,20 +1123,32 @@ export function ChatApp() {
       showToast('🔄 Conversation reset');
       return;
     }
-    const userTitle = window.prompt('Give this conversation a title before archiving it:', '');
-    if (userTitle === null) return;
-    const title = buildArchiveTitle(userTitle.trim(), state);
-    const archive: ArchivedConversation = {
-      id: generateId(),
-      title,
-      archivedAt: Date.now(),
-      state,
-    };
-    const nextArchives = [...archives, archive];
-    setArchives(nextArchives);
-    saveArchives(nextArchives);
+    const shouldArchive = window.confirm(
+      'Archive this conversation before resetting?\n\nOK = Archive & Reset\nCancel = choose to reset without saving, or back out entirely'
+    );
+    if (shouldArchive) {
+      const userTitle = window.prompt('Give this conversation a title before archiving it:', '');
+      if (userTitle === null) return; // cancelled the title prompt — stays on the current conversation
+      const title = buildArchiveTitle(userTitle.trim(), state);
+      const archive: ArchivedConversation = {
+        id: generateId(),
+        title,
+        archivedAt: Date.now(),
+        state,
+      };
+      const nextArchives = [...archives, archive];
+      setArchives(nextArchives);
+      saveArchives(nextArchives);
+      setState((prev) => ({ ...prev, threads: [], status: 'idle' }));
+      showToast(`🗄️ Archived as "${title}" and reset`);
+      return;
+    }
+    const discardWithoutSaving = window.confirm(
+      'Reset WITHOUT saving? This conversation will be permanently lost.\n\nOK = Reset without saving\nCancel = go back, keep the current conversation'
+    );
+    if (!discardWithoutSaving) return; // stays on the current conversation
     setState((prev) => ({ ...prev, threads: [], status: 'idle' }));
-    showToast(`🗄️ Archived as "${title}" and reset`);
+    showToast('🔄 Conversation reset (not saved)');
   }
 
   function restoreArchive(archive: ArchivedConversation) {
@@ -1738,6 +1793,17 @@ export function ChatApp() {
           <button className="control-btn" {...devRef('c12')} onClick={resetConversation}>
             🔄 Reset
           </button>
+          <button
+            className={`control-btn ${freezeScroll ? 'active' : ''}`}
+            onClick={() => setFreezeScroll((v) => !v)}
+            title={
+              freezeScroll
+                ? 'Scroll is frozen — new messages will not pull the view down'
+                : 'Freeze scroll position so new incoming messages do not auto-scroll the view'
+            }
+          >
+            {freezeScroll ? '🧊 Scroll Frozen' : '❄️ Freeze Scroll'}
+          </button>
         </div>
         <div className="control-group">
           <span className="stats-badge">{allMessages.length} messages</span>
@@ -1863,7 +1929,8 @@ export function ChatApp() {
                   const bubbleColor = isUser ? '#95ec69' : author?.color ?? '#999';
                   return (
                 <div
-                  className={`bubble-wrapper ${isUser ? 'user' : ''} ${shiftToggle ? 'speaker-shift' : ''} ${selectedMessageIds.includes(msg.id) ? 'selected' : ''}`}
+                  className={`bubble-wrapper ${isUser ? 'user' : ''} ${shiftToggle ? 'speaker-shift' : ''} ${selectedMessageIds.includes(msg.id) ? 'selected' : ''} ${speaking?.messageId === msg.id ? 'speaking' : ''}`}
+                  data-message-id={msg.id}
                   key={msg.id}
                 >
                     <input

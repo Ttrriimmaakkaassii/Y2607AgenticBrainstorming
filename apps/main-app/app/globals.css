@@ -513,6 +513,12 @@ body {
   background: var(--bg-input);
 }
 
+.control-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
 .stats-badge {
   padding: 4px 8px;
   background: var(--bg-input);
@@ -654,6 +660,22 @@ body {
 .bubble-wrapper.selected {
   background: var(--bg-input);
   border-radius: 8px;
+}
+
+.bubble-wrapper.speaking {
+  transform: scale(1.04);
+  transform-origin: left center;
+  z-index: 5;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.bubble-wrapper.speaking .bubble-text {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.bubble-wrapper.speaking.user {
+  transform-origin: right center;
 }
 
 .bubble-select-checkbox {
