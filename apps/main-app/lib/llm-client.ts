@@ -267,3 +267,13 @@ export async function fetchAgentReply(
 export function reactionInstruction(type: ReactionType): string {
   return REACTION_INSTRUCTIONS[type];
 }
+
+/**
+ * Minimal connectivity check for a saved LLM connection — used by the
+ * "Test" button next to each connection in Settings, not by the actual
+ * discussion flow. Returns true only if the provider returned real content.
+ */
+export async function testConnection(connection: LLMConnection): Promise<boolean> {
+  const reply = await callDirect(connection, 'You are a connectivity test. Reply with exactly: OK', 'Test');
+  return reply !== null;
+}

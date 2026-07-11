@@ -8,6 +8,9 @@ import { renameCustomAgent } from '@/lib/custom-agents';
 import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 import { describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
+import { testConnection } from '@/lib/llm-client';
+
+type TestStatus = 'idle' | 'testing' | 'ok' | 'fail';
 
 interface LLMProvidersModalProps {
   connections: LLMConnection[];
@@ -23,6 +26,32 @@ interface LLMProvidersModalProps {
 function maskKey(key: string): string {
   if (key.length <= 4) return '••••';
   return `••••${key.slice(-4)}`;
+}
+
+function StatusDot({ status }: { status: TestStatus }) {
+  const color =
+    status === 'ok' ? '#2ecc71' : status === 'fail' ? '#e74c3c' : status === 'testing' ? '#f39c12' : '#999';
+  const title =
+    status === 'ok'
+      ? 'Working'
+      : status === 'fail'
+      ? 'Failed — see the toast for details'
+      : status === 'testing'
+      ? 'Testing…'
+      : 'Not tested yet';
+  return (
+    <span
+      title={title}
+      style={{
+        display: 'inline-block',
+        width: 10,
+        height: 10,
+        borderRadius: '50%',
+        background: color,
+        flexShrink: 0,
+      }}
+    />
+  );
 }
 
 export function LLMProvidersModal({
@@ -44,16 +73,46 @@ export function LLMProvidersModal({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConnectionId, setBulkConnectionId] = useState('');
   const [ttsApiKey, setTtsApiKey] = useState(() => loadTtsApiKey());
+  const [connectionTestStatus, setConnectionTestStatus] = useState<Record<string, TestStatus>>({});
+  const [ttsTestStatus, setTtsTestStatus] = useState<TestStatus>('idle');
+
+  async function testLlmConnection(connection: LLMConnection) {
+    setConnectionTestStatus((prev) => ({ ...prev, [connection.id]: 'testing' }));
+    const ok = await testConnection(connection);
+    setConnectionTestStatus((prev) => ({ ...prev, [connection.id]: ok ? 'ok' : 'fail' }));
+    onToast(ok ? `✅ ${connection.label} is working` : `❌ ${connection.label} failed — check the key/model`);
+  }
+
+  async function testTtsKey() {
+    const trimmed = ttsApiKey.trim();
+    if (!trimmed) {
+      onToast('Enter a Gemini API key first.');
+      return;
+    }
+    setTtsTestStatus('testing');
+    const { ok, errorStatus } = await validateGeminiKey(trimmed);
+    setTtsTestStatus(ok ? 'ok' : 'fail');
+    if (ok) {
+      onToast('✅ Gemini API key is working');
+    } else if (errorStatus != null) {
+      onToast(`❌ ${describeGoogleTtsError(errorStatus)}`);
+    } else {
+      onToast('❌ Verification request failed — check your connection and try again.');
+    }
+  }
 
   async function saveTtsKey() {
     const trimmed = ttsApiKey.trim();
     saveTtsApiKey(trimmed);
     if (!trimmed) {
+      setTtsTestStatus('idle');
       onToast('🗑️ TTS API key cleared — using browser voices');
       return;
     }
+    setTtsTestStatus('testing');
     onToast('🔄 Verifying key…');
     const { ok, errorStatus } = await validateGeminiKey(trimmed);
+    setTtsTestStatus(ok ? 'ok' : 'fail');
     if (ok) {
       onToast('✅ Gemini API key saved and verified');
     } else if (errorStatus != null) {
@@ -255,12 +314,21 @@ export function LLMProvidersModal({
             )}
             {connections.map((c, ci) => (
               <div className="agent-list-item" key={c.id}>
+                <StatusDot status={connectionTestStatus[c.id] ?? 'idle'} />
                 <div className="agent-info">
                   <div className="agent-name">{c.label}</div>
                   <div className="agent-instructions">
                     {getProvider(c.provider)?.name} · {c.model} · effort: {c.effort} · key {maskKey(c.apiKey)}
                   </div>
                 </div>
+                <button
+                  className="btn-secondary"
+                  {...devRef(`l19-${ci}`)}
+                  onClick={() => testLlmConnection(c)}
+                  disabled={connectionTestStatus[c.id] === 'testing'}
+                >
+                  {connectionTestStatus[c.id] === 'testing' ? 'Testing…' : 'Test'}
+                </button>
                 <button
                   className="btn-icon delete"
                   {...devRef(`l7-${ci}`)}
@@ -284,9 +352,20 @@ export function LLMProvidersModal({
                 placeholder="Leave blank to keep using the free built-in browser voices"
               />
             </div>
-            <button className="btn-secondary" {...devRef('l9')} onClick={saveTtsKey}>
-              💾 Save TTS Key
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn-secondary" {...devRef('l9')} onClick={saveTtsKey}>
+                💾 Save TTS Key
+              </button>
+              <button
+                className="btn-secondary"
+                {...devRef('l20')}
+                onClick={testTtsKey}
+                disabled={ttsTestStatus === 'testing'}
+              >
+                {ttsTestStatus === 'testing' ? 'Testing…' : 'Test'}
+              </button>
+              <StatusDot status={ttsTestStatus} />
+            </div>
             <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
               Optional. Adding a Gemini API key (get one free from Google AI Studio) unlocks more
               natural, realistic voices via Gemini TTS (enable it in Settings → 🎧 Audio → TTS Engine
