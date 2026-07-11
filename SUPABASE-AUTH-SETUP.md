@@ -11,7 +11,7 @@ no longer used by the app). If that table doesn't exist yet, conversations
 silently fall back to localStorage-only — run this once to fix it:
 
 ```sql
-create table conversations (
+create table if not exists conversations (
   id text primary key,
   agents jsonb not null,
   threads jsonb not null,
@@ -23,26 +23,32 @@ create table conversations (
   updated_at timestamptz default now()
 );
 
-create index idx_conversations_updated_at on conversations(updated_at desc);
+create index if not exists idx_conversations_updated_at on conversations(updated_at desc);
 
 alter table conversations enable row level security;
 
+drop policy if exists "Public read access for conversations" on conversations;
 create policy "Public read access for conversations"
   on conversations for select
   using (true);
 
+drop policy if exists "Public write access for conversations" on conversations;
 create policy "Public write access for conversations"
   on conversations for insert
   with check (true);
 
+drop policy if exists "Public update access for conversations" on conversations;
 create policy "Public update access for conversations"
   on conversations for update
   using (true);
 
+drop policy if exists "Public delete access for conversations" on conversations;
 create policy "Public delete access for conversations"
   on conversations for delete
   using (true);
 ```
+
+Safe to re-run any time — `if not exists`/`drop policy if exists` make it idempotent.
 
 Note `id` is `text`, not `uuid` — `lib/id.ts` generates ids via
 `crypto.randomUUID()` where available but falls back to a non-UUID string
