@@ -270,6 +270,7 @@ export function ChatApp() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
   const dictationFinalTextRef = useRef('');
+  const lastContextMenuRef = useRef<{ time: number } | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStarredOnly, setFilterStarredOnly] = useState(false);
@@ -399,6 +400,13 @@ export function ChatApp() {
     return devMode ? { 'data-devref': code } : {};
   }
   const conversationAreaRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = messageInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [inputMessage]);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -782,6 +790,40 @@ export function ChatApp() {
     setIsListening(true);
     recognition.start();
   }
+
+  // Double-tap Ctrl (press it twice quickly, alone — not as part of a
+  // combo like Ctrl+C) toggles voice dictation. Reads toggleDictation via a
+  // ref since this effect only registers its listeners once, and a plain
+  // closure over toggleDictation would otherwise call a stale version that
+  // still sees an old isListening/inputMessage.
+  const toggleDictationRef = useRef(toggleDictation);
+  useEffect(() => {
+    toggleDictationRef.current = toggleDictation;
+  });
+  useEffect(() => {
+    let lastCtrlTapTime = 0;
+    let comboUsedSinceCtrlDown = false;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Control' && e.ctrlKey) comboUsedSinceCtrlDown = true;
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key !== 'Control') return;
+      const now = Date.now();
+      if (!comboUsedSinceCtrlDown && now - lastCtrlTapTime < 500) {
+        toggleDictationRef.current();
+        lastCtrlTapTime = 0;
+      } else {
+        lastCtrlTapTime = now;
+      }
+      comboUsedSinceCtrlDown = false;
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   async function sendMessage(overrideText?: string) {
     // Accepts an explicit override so voice dictation can push the freshly
@@ -1198,6 +1240,29 @@ export function ChatApp() {
     } catch {
       showToast('Could not copy — try selecting the text manually.');
     }
+  }
+
+  /**
+   * Right-click a message to copy it directly (no browser context menu);
+   * right-click the SAME message again within the window to paste the
+   * clipboard into the composer instead.
+   */
+  function handleMessageContextMenu(e: React.MouseEvent, content: string) {
+    e.preventDefault();
+    const now = Date.now();
+    const last = lastContextMenuRef.current;
+    if (last && now - last.time < 500) {
+      lastContextMenuRef.current = null;
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text) setInputMessage((prev) => `${prev}${text}`);
+        })
+        .catch(() => showToast('Could not read clipboard — check browser permissions.'));
+      return;
+    }
+    lastContextMenuRef.current = { time: now };
+    copyMessageText(content);
   }
 
   function shareToWhatsApp(content: string) {
@@ -2172,6 +2237,8 @@ export function ChatApp() {
                       <div
                         className="bubble-text"
                         style={{ borderLeft: `4px solid ${bubbleColor}` }}
+                        onContextMenu={(e) => handleMessageContextMenu(e, msg.content)}
+                        title="Right-click to copy, right-click again to paste"
                       >
                         <button
                           className="bubble-copy-btn"
@@ -2327,16 +2394,20 @@ export function ChatApp() {
       )}
 
       <div className="input-area" {...devRef('i1')}>
-        <input
-          type="text"
+        <textarea
+          ref={messageInputRef}
           className="message-input"
+          rows={1}
           {...devRef('i2')}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') sendMessage();
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
           }}
-          placeholder="Type message... (@Agt2 to ask only that agent)"
+          placeholder="Type message... (@Agt2 to ask only that agent — Shift+Enter for a new line)"
           disabled={state.status === 'stopped'}
         />
         <button

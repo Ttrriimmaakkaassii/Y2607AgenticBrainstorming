@@ -922,17 +922,25 @@ body.dev-mode [data-devref]::after {
   background: var(--bg-panel);
   border-top: 1px solid var(--border-color);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
 }
 
 .message-input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 13px;
+  font-family: inherit;
   outline: none;
+  resize: none;
+  min-height: 40px;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.4;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .message-input {
