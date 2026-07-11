@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { LLM_CATALOG, getProvider } from '@/lib/llm-catalog';
 import { Agent, Effort, LLMConnection, LLMProvider } from '@/lib/types';
 import { generateId } from '@/lib/id';
+import { renameCustomAgent } from '@/lib/custom-agents';
 
 interface LLMProvidersModalProps {
   connections: LLMConnection[];
@@ -149,6 +150,15 @@ export function LLMProvidersModal({
   }
 
   function saveTable() {
+    // The Alias/Name column edits an agent's actual name, not a separate
+    // display-only alias — keep the Agent Library entry (and its tagged
+    // categories) in sync rather than orphaning it under the old name.
+    tableAgents.forEach((agent) => {
+      const original = agents.find((a) => a.id === agent.id);
+      if (original && original.name !== agent.name) {
+        renameCustomAgent(original.name, agent.name);
+      }
+    });
     onUpdateAgents(tableAgents);
     onToast('✅ Agent LLM assignments saved');
   }

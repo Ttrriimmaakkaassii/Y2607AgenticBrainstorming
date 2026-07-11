@@ -116,15 +116,24 @@ export function AudioModal({
           <select value={ttsLang} onChange={(e) => onUpdateTts({ ttsLang: e.target.value })}>
             <option value="en-US">English (US)</option>
             <option value="en-GB">English (UK)</option>
+            <option value="en-AU">English (Australia)</option>
+            <option value="en-CA">English (Canada)</option>
+            <option value="en-IN">English (India)</option>
             <option value="es-ES">Spanish</option>
-            <option value="fr-FR">French</option>
+            <option value="fr-FR">French (France)</option>
+            <option value="fr-CA">French (Canada)</option>
+            <option value="fr-BE">French (Belgium)</option>
+            <option value="fr-CH">French (Switzerland)</option>
             <option value="de-DE">German</option>
             <option value="pt-BR">Portuguese (BR)</option>
             <option value="it-IT">Italian</option>
             <option value="zh-CN">Chinese (Mandarin)</option>
             <option value="ja-JP">Japanese</option>
             <option value="hi-IN">Hindi</option>
-            <option value="ar-SA">Arabic</option>
+            <option value="ar-SA">Arabic (Saudi Arabia)</option>
+            <option value="ar-EG">Arabic (Egypt)</option>
+            <option value="ar-AE">Arabic (UAE)</option>
+            <option value="ar-MA">Arabic (Morocco)</option>
           </select>
         </div>
         <button className="btn-primary" onClick={() => playFrom(0)}>

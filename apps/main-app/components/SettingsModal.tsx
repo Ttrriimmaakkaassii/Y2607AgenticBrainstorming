@@ -27,6 +27,40 @@ import { ChangeLogPanel } from './ChangeLogPanel';
 
 type SettingsTab = 'agent' | 'llm' | 'audio' | 'archives' | 'log';
 
+/** A real dropdown for freeform-tag category fields, with a "+ New category…" escape hatch. */
+function CategorySelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (next: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === '__new__') {
+          const name = window.prompt('New category name:', '');
+          if (name?.trim()) onChange(name.trim());
+          return;
+        }
+        onChange(e.target.value);
+      }}
+    >
+      <option value="">Uncategorized</option>
+      {value && !options.includes(value) && <option value={value}>{value}</option>}
+      {options.map((c) => (
+        <option key={c} value={c}>
+          {c}
+        </option>
+      ))}
+      <option value="__new__">+ New category…</option>
+    </select>
+  );
+}
+
 interface SettingsModalProps {
   agents: Agent[];
   currentAgentId: string;
@@ -40,6 +74,7 @@ interface SettingsModalProps {
   onToast: (message: string) => void;
   onChangeConnections: (connections: LLMConnection[]) => void;
   onUpdateAgentsBulk: (agents: Agent[]) => void;
+  onReorderAgents: (agents: Agent[]) => void;
   threads: Thread[];
   ttsRate: number;
   ttsLang: string;
@@ -69,6 +104,7 @@ export function SettingsModal({
   onToast,
   onChangeConnections,
   onUpdateAgentsBulk,
+  onReorderAgents,
   threads,
   ttsRate,
   ttsLang,
@@ -102,6 +138,18 @@ export function SettingsModal({
   const [newGuidelineCategory, setNewGuidelineCategory] = useState('');
   const [newTraitName, setNewTraitName] = useState('');
   const [newTraitCategory, setNewTraitCategory] = useState('');
+  const [expandedGuidelineIds, setExpandedGuidelineIds] = useState<Set<string>>(new Set());
+  const [categoriesMenuOpen, setCategoriesMenuOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  function toggleGuidelineExpanded(id: string) {
+    setExpandedGuidelineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   useEffect(() => {
     setCustomAgents(loadCustomAgents());
@@ -161,6 +209,15 @@ export function SettingsModal({
     return Array.from(groups.entries());
   }
 
+  function moveAgent(id: string, direction: -1 | 1) {
+    const idx = agents.findIndex((a) => a.id === id);
+    const newIdx = idx + direction;
+    if (idx < 0 || newIdx < 0 || newIdx >= agents.length) return;
+    const next = [...agents];
+    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+    onReorderAgents(next);
+  }
+
   function selectAgent(id: string) {
     const agent = agents.find((a) => a.id === id);
     if (!agent) return;
@@ -197,7 +254,7 @@ export function SettingsModal({
 
   return (
     <div className="modal-overlay active" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
+      <div className="modal modal-fullscreen" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">⚙️ Settings</span>
           <button className="modal-close" onClick={onClose}>
@@ -233,44 +290,56 @@ export function SettingsModal({
 
               <div className="modal-section">
                 <div className="modal-section-title">General Guidelines (applies to all agents)</div>
-                {guidelines.map((g) => (
-                  <div key={g.id} className="guideline-row">
-                    <input
-                      type="checkbox"
-                      checked={g.enabled}
-                      title={g.enabled ? 'Disable (recall it later without losing it)' : 'Re-enable'}
-                      onChange={() => onGuidelinesChange(toggleGuideline(g.id))}
-                    />
-                    <input
-                      type="text"
-                      style={{ flex: 1 }}
-                      value={g.text}
-                      onChange={(e) => onGuidelinesChange(updateGuideline(g.id, { text: e.target.value }))}
-                    />
-                    <input
-                      type="text"
-                      style={{ width: 120 }}
-                      placeholder="category"
-                      list="guideline-category-suggestions"
-                      value={g.category}
-                      onChange={(e) =>
-                        onGuidelinesChange(updateGuideline(g.id, { category: e.target.value }))
-                      }
-                    />
-                    <button
-                      className="btn-icon delete"
-                      title="Delete permanently"
-                      onClick={() => onGuidelinesChange(deleteGuideline(g.id))}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                ))}
-                <datalist id="guideline-category-suggestions">
-                  {loadGuidelineCategories().map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
+                {guidelines.map((g) => {
+                  const expanded = expandedGuidelineIds.has(g.id);
+                  return (
+                    <div key={g.id} className="guideline-row">
+                      <input
+                        type="checkbox"
+                        checked={g.enabled}
+                        title={g.enabled ? 'Disable (recall it later without losing it)' : 'Re-enable'}
+                        onChange={() => onGuidelinesChange(toggleGuideline(g.id))}
+                      />
+                      {expanded ? (
+                        <textarea
+                          className="guideline-textarea"
+                          value={g.text}
+                          onChange={(e) =>
+                            onGuidelinesChange(updateGuideline(g.id, { text: e.target.value }))
+                          }
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          style={{ flex: 1 }}
+                          value={g.text}
+                          onChange={(e) =>
+                            onGuidelinesChange(updateGuideline(g.id, { text: e.target.value }))
+                          }
+                        />
+                      )}
+                      <button
+                        className="btn-icon"
+                        title={expanded ? 'Collapse' : 'Expand to full text'}
+                        onClick={() => toggleGuidelineExpanded(g.id)}
+                      >
+                        {expanded ? '🗕' : '🗖'}
+                      </button>
+                      <CategorySelect
+                        value={g.category}
+                        options={loadGuidelineCategories()}
+                        onChange={(next) => onGuidelinesChange(updateGuideline(g.id, { category: next }))}
+                      />
+                      <button
+                        className="btn-icon delete"
+                        title="Delete permanently"
+                        onClick={() => onGuidelinesChange(deleteGuideline(g.id))}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  );
+                })}
                 <div className="guideline-row">
                   <input
                     type="text"
@@ -279,13 +348,10 @@ export function SettingsModal({
                     value={newGuidelineText}
                     onChange={(e) => setNewGuidelineText(e.target.value)}
                   />
-                  <input
-                    type="text"
-                    style={{ width: 120 }}
-                    placeholder="category"
-                    list="guideline-category-suggestions"
+                  <CategorySelect
                     value={newGuidelineCategory}
-                    onChange={(e) => setNewGuidelineCategory(e.target.value)}
+                    options={loadGuidelineCategories()}
+                    onChange={setNewGuidelineCategory}
                   />
                   <button
                     className="btn-secondary"
@@ -351,17 +417,46 @@ export function SettingsModal({
                 </div>
                 <div className="form-group">
                   <label>Skill Categories (assign as many as you like)</label>
-                  <div className="category-checklist">
-                    {allCategoryNames.map((name) => (
-                      <label key={name} className="category-checkbox">
+                  <div className="moods-menu-wrap">
+                    <button
+                      type="button"
+                      className="control-btn"
+                      onClick={() => setCategoriesMenuOpen((v) => !v)}
+                    >
+                      🏷️ Categories ({currentAgentCategories.length}) ▾
+                    </button>
+                    {categoriesMenuOpen && (
+                      <div className="moods-menu">
                         <input
-                          type="checkbox"
-                          checked={currentAgentCategories.includes(name)}
-                          onChange={() => toggleCurrentAgentCategory(name)}
+                          type="text"
+                          className="control-input"
+                          placeholder="Filter categories…"
+                          value={categoryFilter}
+                          onChange={(e) => setCategoryFilter(e.target.value)}
                         />
-                        {name}
-                      </label>
-                    ))}
+                        <div className="moods-menu-list">
+                          {allCategoryNames
+                            .filter((name) =>
+                              name.toLowerCase().includes(categoryFilter.trim().toLowerCase())
+                            )
+                            .map((name) => (
+                              <div key={name} className="moods-menu-row">
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={currentAgentCategories.includes(name)}
+                                    onChange={() => toggleCurrentAgentCategory(name)}
+                                  />
+                                  {name}
+                                </label>
+                              </div>
+                            ))}
+                          {allCategoryNames.filter((name) =>
+                            name.toLowerCase().includes(categoryFilter.trim().toLowerCase())
+                          ).length === 0 && <div className="moods-menu-empty">No categories match.</div>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="form-group">
@@ -405,13 +500,10 @@ export function SettingsModal({
                       value={newTraitName}
                       onChange={(e) => setNewTraitName(e.target.value)}
                     />
-                    <input
-                      type="text"
-                      style={{ width: 120 }}
-                      placeholder="category"
-                      list="trait-category-suggestions"
+                    <CategorySelect
                       value={newTraitCategory}
-                      onChange={(e) => setNewTraitCategory(e.target.value)}
+                      options={loadTraitCategories()}
+                      onChange={setNewTraitCategory}
                     />
                     <button
                       className="btn-secondary"
@@ -424,11 +516,6 @@ export function SettingsModal({
                     >
                       + Add
                     </button>
-                    <datalist id="trait-category-suggestions">
-                      {loadTraitCategories().map((c) => (
-                        <option key={c} value={c} />
-                      ))}
-                    </datalist>
                   </div>
                 </div>
                 <button className="btn-primary" onClick={save}>
@@ -438,7 +525,7 @@ export function SettingsModal({
 
               <div className="modal-section">
                 <div className="modal-section-title">Available Agents</div>
-                {agents.map((agent) => (
+                {agents.map((agent, index) => (
                   <div
                     className="agent-list-item"
                     key={agent.id}
@@ -453,8 +540,26 @@ export function SettingsModal({
                     </div>
                     <div className="agent-info">
                       <div className="agent-name">
-                        {agent.name} ({agent.role})
+                        {agent.refNumber} · {agent.name} ({agent.role})
                       </div>
+                    </div>
+                    <div className="agent-reorder-btns" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="btn-icon"
+                        onClick={() => moveAgent(agent.id, -1)}
+                        disabled={index === 0}
+                        title="Move up (renumbers Agt##)"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        className="btn-icon"
+                        onClick={() => moveAgent(agent.id, 1)}
+                        disabled={index === agents.length - 1}
+                        title="Move down (renumbers Agt##)"
+                      >
+                        ▼
+                      </button>
                     </div>
                     <button
                       className="btn-icon delete"

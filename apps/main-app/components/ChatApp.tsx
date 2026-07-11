@@ -15,7 +15,7 @@ import {
   Thread,
 } from '@/lib/types';
 import { AgentPreset } from '@/lib/agent-library';
-import { upsertCustomAgent } from '@/lib/custom-agents';
+import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
@@ -1148,17 +1148,33 @@ export function ChatApp() {
       agents: prev.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     }));
     const updated = { ...state.agents.find((a) => a.id === id), ...updates } as Agent;
+    // Renaming must update the existing library entry in place — upserting
+    // straight under the new name would create a fresh entry and silently
+    // orphan the old one along with its assigned categories.
+    if (before && updates.name && updates.name !== before.name) {
+      renameCustomAgent(before.name, updated.name);
+    }
+    const existingCategories =
+      loadCustomAgents().find((p) => p.name.trim().toLowerCase() === updated.name.trim().toLowerCase())
+        ?.categories ?? [];
     upsertCustomAgent({
       name: updated.name,
       role: updated.role,
       instructions: updated.instructions,
       color: updated.color,
+      categories: existingCategories,
     });
     showToast('✅ Agent settings saved!');
   }
 
   function updateAgentsBulk(nextAgents: Agent[]) {
     setState((prev) => ({ ...prev, agents: nextAgents }));
+  }
+
+  /** Reorders agents and renumbers Agt## sequentially to match the new order. */
+  function reorderAgents(nextAgents: Agent[]) {
+    const renumbered = nextAgents.map((a, i) => ({ ...a, refNumber: `Agt${i + 1}` }));
+    setState((prev) => ({ ...prev, agents: renumbered }));
   }
 
   function addAgent() {
@@ -1867,6 +1883,12 @@ export function ChatApp() {
                       <div className="bubble-name">
                         {isUser ? 'You' : author ? `${author.refNumber} · ${author.name}` : 'Unknown'}
                         <span className="msg-number">{msgNumber}</span>
+                        <span className="msg-timestamp">
+                          {new Date(msg.timestamp).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
                       </div>
                       {quoted && (
                         <div className="quoted-reply">
@@ -2065,6 +2087,7 @@ export function ChatApp() {
           onToast={showToast}
           onChangeConnections={updateConnections}
           onUpdateAgentsBulk={updateAgentsBulk}
+          onReorderAgents={reorderAgents}
           threads={state.threads}
           ttsRate={state.settings.ttsRate}
           ttsLang={state.settings.ttsLang}

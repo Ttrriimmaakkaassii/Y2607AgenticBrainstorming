@@ -42,6 +42,25 @@ export function upsertCustomAgent(preset: AgentPreset): void {
   saveCustomAgents(list);
 }
 
+/**
+ * Renames a saved agent in place, preserving its categories and other
+ * fields. Presets are keyed by name, so a plain upsertCustomAgent() call
+ * under the new name would silently orphan the old entry (and its
+ * categories) instead of updating it — callers renaming an agent must use
+ * this first.
+ */
+export function renameCustomAgent(oldName: string, newName: string): void {
+  const trimmedNew = newName.trim();
+  const oldKey = oldName.trim().toLowerCase();
+  if (!trimmedNew || oldKey === trimmedNew.toLowerCase()) return;
+  const list = loadCustomAgents();
+  const index = list.findIndex((p) => p.name.trim().toLowerCase() === oldKey);
+  if (index >= 0) {
+    list[index] = { ...list[index], name: trimmedNew };
+    saveCustomAgents(list);
+  }
+}
+
 /** Permanently erases a saved agent from the library (not just from a conversation). */
 export function removeCustomAgent(name: string): void {
   const key = name.trim().toLowerCase();

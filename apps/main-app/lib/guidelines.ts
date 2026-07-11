@@ -11,6 +11,18 @@ export interface Guideline {
 
 const STORAGE_KEY = 'multi-agent-guidelines';
 
+/** Seeded once on first-ever load; the user can edit, disable, or delete it like any other guideline. */
+function defaultGuidelines(): Guideline[] {
+  return [
+    {
+      id: generateId(),
+      text: 'When more than one agent is participating, take turns speaking naturally: respond directly to the specific points other agents just made, stay consistent with the full conversation context rather than restarting the topic, and avoid repeating what has already been said.',
+      category: 'Conversation Flow',
+      enabled: true,
+    },
+  ];
+}
+
 function saveGuidelines(list: Guideline[]): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
@@ -20,7 +32,15 @@ export function loadGuidelines(): Guideline[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Guideline[]) : [];
+    // Seed the default guideline only on the very first load (no key at
+    // all yet) — once the user has an (even empty) saved list, respect
+    // their edits/deletions instead of re-adding it.
+    if (raw === null) {
+      const seeded = defaultGuidelines();
+      saveGuidelines(seeded);
+      return seeded;
+    }
+    return JSON.parse(raw) as Guideline[];
   } catch {
     return [];
   }
