@@ -1084,59 +1084,123 @@ export function ChatApp() {
       speakMessageBrowser(index, msg);
     }
 
-    // Gemini TTS synthesizes the WHOLE message in a single request instead
-    // of per-sentence — sentence-splitting exists only to work around Web
-    // Speech API's Android Chrome long-utterance bug, which doesn't apply
-    // to pre-rendered audio playback. Splitting Gemini calls per sentence
-    // was previously causing an audible "stop and resume" gap between every
-    // sentence while the next one's network request was still in flight.
-    async function speakMessageGoogle(index: number, msg: Message, apiKey: string) {
-      const author = agentById(msg.agentId);
-      const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
-      setTtsLoadingMessageId(msg.id);
-      const abortController = new AbortController();
-      ttsAbortControllerRef.current = abortController;
-      const audioUrl = await synthesizeGoogleAudio(
-        apiKey,
-        msg.content,
-        voiceName,
-        state.settings.googleTtsModel,
-        state.settings.ttsRate,
-        abortController.signal
-      );
-      if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
-      setTtsLoadingMessageId((prev) => (prev === msg.id ? null : prev));
-      if (speakingCancelledRef.current) return;
-      if (!audioUrl) {
-        showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
-        speakMessageBrowser(index, msg);
-        return;
+    // Splits a message into a short "fast start" chunk (first sentence, or
+    // first ~14 words if there's no early sentence break) plus the
+    // remainder, so the first chunk's short synthesis request comes back
+    // quickly and audio can start almost immediately, instead of waiting
+    // for the whole message to finish generating. Short messages that are
+    // already fast on their own aren't split. Returns null when splitting
+    // wouldn't help (short message, or nothing left after the first chunk).
+    function splitForFastStart(text: string): [string, string] | null {
+      const words = splitIntoWords(text);
+      if (words.length <= 14) return null;
+
+      const sentences = splitIntoSentences(text);
+      let cutIndex: number;
+      if (sentences.length > 1 && sentences[0].text.trim().split(/\s+/).length <= 25) {
+        cutIndex = sentences[0].offset + sentences[0].text.length;
+      } else {
+        const w = words[13];
+        cutIndex = w.start + w.length;
       }
+      const first = text.slice(0, cutIndex);
+      const rest = text.slice(cutIndex).trimStart();
+      if (!rest) return null;
+      return [first, rest];
+    }
+
+    /** Plays one already-synthesized chunk, driving word-highlight over its own text/offset, then calls onEnded. */
+    function playGoogleAudioChunk(
+      msg: Message,
+      audioUrl: string,
+      chunkText: string,
+      chunkOffset: number,
+      onEnded: () => void
+    ) {
       const audio = new Audio(audioUrl);
       googleAudioRef.current = audio;
-      const words = splitIntoWords(msg.content);
-      const cumulativeEnds = buildWeightedWordCumulative(msg.content, words);
+      const words = splitIntoWords(chunkText);
+      const cumulativeEnds = buildWeightedWordCumulative(chunkText, words);
       let progressTimer: ReturnType<typeof setInterval> | null = null;
       audio.onloadedmetadata = () => {
-        setSpeaking({ messageId: msg.id, charIndex: 0, charLength: 0 });
+        setSpeaking({ messageId: msg.id, charIndex: chunkOffset, charLength: 0 });
         progressTimer = setInterval(() => {
           if (!audio.duration || words.length === 0) return;
           const frac = Math.min(audio.currentTime / audio.duration, 1);
           const w = words[wordIndexAtFraction(cumulativeEnds, frac)];
-          setSpeaking({ messageId: msg.id, charIndex: w.start, charLength: w.length });
+          setSpeaking({ messageId: msg.id, charIndex: chunkOffset + w.start, charLength: w.length });
         }, 80);
       };
       audio.onended = () => {
         if (progressTimer) clearInterval(progressTimer);
         googleAudioRef.current = null;
-        speakAt(index + 1);
+        onEnded();
       };
       audio.onerror = () => {
         if (progressTimer) clearInterval(progressTimer);
         googleAudioRef.current = null;
-        speakAt(index + 1);
+        onEnded();
       };
       audio.play();
+    }
+
+    // Gemini TTS previously synthesized the WHOLE message in a single
+    // request, which reads naturally (no per-sentence "stop and resume"
+    // gaps) but means a visible wait before ANY audio starts on longer
+    // messages. Now the first short chunk is requested (and played) on its
+    // own so it comes back fast, while the remainder is requested
+    // concurrently in the background so it's normally ready by the time
+    // the first chunk finishes — best of both: fast start, no mid-message gap.
+    async function speakMessageGoogle(index: number, msg: Message, apiKey: string) {
+      const author = agentById(msg.agentId);
+      const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
+      const model = state.settings.googleTtsModel;
+      const rate = state.settings.ttsRate;
+      setTtsLoadingMessageId(msg.id);
+      const abortController = new AbortController();
+      ttsAbortControllerRef.current = abortController;
+
+      const split = splitForFastStart(msg.content);
+      const finishLoading = () => setTtsLoadingMessageId((prev) => (prev === msg.id ? null : prev));
+
+      if (!split) {
+        const audioUrl = await synthesizeGoogleAudio(apiKey, msg.content, voiceName, model, rate, abortController.signal);
+        if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
+        finishLoading();
+        if (speakingCancelledRef.current) return;
+        if (!audioUrl) {
+          showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
+          speakMessageBrowser(index, msg);
+          return;
+        }
+        playGoogleAudioChunk(msg, audioUrl, msg.content, 0, () => speakAt(index + 1));
+        return;
+      }
+
+      const [firstText, restText] = split;
+      const restOffset = msg.content.indexOf(restText, firstText.length);
+      const firstPromise = synthesizeGoogleAudio(apiKey, firstText, voiceName, model, rate, abortController.signal);
+      const restPromise = synthesizeGoogleAudio(apiKey, restText, voiceName, model, rate, abortController.signal);
+
+      const firstUrl = await firstPromise;
+      if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
+      finishLoading();
+      if (speakingCancelledRef.current) return;
+      if (!firstUrl) {
+        showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
+        speakMessageBrowser(index, msg);
+        return;
+      }
+      playGoogleAudioChunk(msg, firstUrl, firstText, 0, async () => {
+        if (speakingCancelledRef.current) return;
+        const restUrl = await restPromise;
+        if (speakingCancelledRef.current) return;
+        if (!restUrl) {
+          speakAt(index + 1);
+          return;
+        }
+        playGoogleAudioChunk(msg, restUrl, restText, restOffset, () => speakAt(index + 1));
+      });
     }
 
     function speakMessageBrowser(index: number, msg: Message) {
