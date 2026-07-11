@@ -249,6 +249,17 @@ export function ChatApp() {
   const [participantsMenuOpen, setParticipantsMenuOpen] = useState(false);
   const [participantFilter, setParticipantFilter] = useState('');
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [topPanelOpen, setTopPanelOpen] = useState(true);
+  const autoCollapsedRef = useRef(false);
+  useEffect(() => {
+    // Collapse the search/participants/controls panel upward the first time
+    // the conversation actually has messages, to get it out of the way —
+    // but only once, so it doesn't fight a user who reopens it manually.
+    if (state.threads.length > 0 && !autoCollapsedRef.current) {
+      autoCollapsedRef.current = true;
+      setTopPanelOpen(false);
+    }
+  }, [state.threads.length]);
 
   function openLibraryFromSettings() {
     setModalReturnTo('settings');
@@ -1283,6 +1294,19 @@ export function ChatApp() {
         ⚙️
       </button>
 
+      <div className="top-panel-toggle-row">
+        <button
+          className="control-btn top-panel-toggle-btn"
+          {...devRef('tp1')}
+          onClick={() => setTopPanelOpen((v) => !v)}
+          title={topPanelOpen ? 'Collapse search/participants/controls' : 'Show search/participants/controls'}
+        >
+          {topPanelOpen ? '▲ Hide parameters' : '▼ Show parameters'}
+        </button>
+      </div>
+
+      <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
+      <div className="top-panel-inner">
       <div className="search-bar">
         <input
           type="text"
@@ -1565,6 +1589,8 @@ export function ChatApp() {
               : '⚠️ No responses yet — connect an LLM'}
           </span>
         </div>
+      </div>
+      </div>
       </div>
 
       <button

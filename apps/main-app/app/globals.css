@@ -217,6 +217,39 @@ body {
   padding: 8px 12px 0;
 }
 
+.top-panel-toggle-row {
+  display: flex;
+  justify-content: center;
+  padding: 4px 12px 0;
+}
+
+.top-panel-toggle-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  opacity: 0.75;
+}
+
+.top-panel-toggle-btn:hover {
+  opacity: 1;
+}
+
+.top-panel-collapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease;
+  opacity: 1;
+}
+
+.top-panel-collapsible.closed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.top-panel-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
 .participants-bar {
   padding: 8px;
   background: var(--bg-panel);
