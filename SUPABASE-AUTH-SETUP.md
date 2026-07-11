@@ -3,6 +3,55 @@
 This adds real sign-in (Supabase Auth) so LLM API keys can safely follow you
 across devices, instead of only living in one browser's localStorage.
 
+## 0. Create the `conversations` table (if you see a 404 / "Could not find the table 'public.conversations'")
+
+`lib/storage.ts` only ever reads/writes a single `conversations` table (the
+separate `agents`/`messages` tables from an earlier draft of this schema are
+no longer used by the app). If that table doesn't exist yet, conversations
+silently fall back to localStorage-only — run this once to fix it:
+
+```sql
+create table conversations (
+  id text primary key,
+  agents jsonb not null,
+  threads jsonb not null,
+  messages jsonb not null,
+  settings jsonb not null,
+  flow text not null default 'FreeFlowing',
+  status text not null default 'idle',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index idx_conversations_updated_at on conversations(updated_at desc);
+
+alter table conversations enable row level security;
+
+create policy "Public read access for conversations"
+  on conversations for select
+  using (true);
+
+create policy "Public write access for conversations"
+  on conversations for insert
+  with check (true);
+
+create policy "Public update access for conversations"
+  on conversations for update
+  using (true);
+
+create policy "Public delete access for conversations"
+  on conversations for delete
+  using (true);
+```
+
+Note `id` is `text`, not `uuid` — `lib/id.ts` generates ids via
+`crypto.randomUUID()` where available but falls back to a non-UUID string
+format on older browsers, so a `uuid` column would reject those. This table
+still uses public `USING (true)` policies (see "What's still public" at the
+bottom of this file) — anyone with the anon key can read/write it, same as
+the original `DEPLOYMENT.md` design. Lock it down with `user_id` + RLS later
+if that becomes a concern.
+
 ## 1. Run this SQL in Supabase SQL Editor
 
 <https://supabase.com/dashboard/project/ivotsmwlsubvudlrylbf/sql/new>
