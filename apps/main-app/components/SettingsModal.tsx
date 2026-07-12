@@ -164,6 +164,14 @@ export function SettingsModal({
   type AgentSortColumn = 'ref' | 'name' | 'role' | 'category' | 'llm';
   const [agentSortColumn, setAgentSortColumn] = useState<AgentSortColumn | null>(null);
   const [agentSortDir, setAgentSortDir] = useState<'asc' | 'desc'>('asc');
+  const [categoryMenuAgentId, setCategoryMenuAgentId] = useState<string | null>(null);
+  const [tableCategoryFilter, setTableCategoryFilter] = useState('');
+  const [agentTableView, setAgentTableView] = useState<'overview' | 'traits'>('overview');
+  const [tableAgentsDraft, setTableAgentsDraft] = useState<Agent[]>(agents);
+
+  useEffect(() => {
+    setTableAgentsDraft(agents);
+  }, [agents]);
 
   function toggleGuidelineExpanded(id: string) {
     setExpandedGuidelineIds((prev) => {
@@ -191,18 +199,17 @@ export function SettingsModal({
   const currentAgentCategories =
     customAgents.find((a) => a.name === (currentAgent?.name ?? ''))?.categories ?? [];
 
-  function toggleCurrentAgentCategory(categoryName: string) {
-    if (!currentAgent) return;
-    const existing = customAgents.find((a) => a.name === currentAgent.name);
+  function toggleAgentCategory(agent: Agent, categoryName: string) {
+    const existing = customAgents.find((a) => a.name === agent.name);
     const current = existing?.categories ?? [];
     const nextCategories = current.includes(categoryName)
       ? current.filter((c) => c !== categoryName)
       : [...current, categoryName];
     const updated: AgentPreset = {
-      name: currentAgent.name,
-      role: currentAgent.role,
-      instructions: currentAgent.instructions,
-      color: currentAgent.color,
+      name: agent.name,
+      role: agent.role,
+      instructions: agent.instructions,
+      color: agent.color,
       categories: nextCategories,
     };
     upsertCustomAgent(updated);
@@ -217,9 +224,20 @@ export function SettingsModal({
     });
   }
 
+  function toggleCurrentAgentCategory(categoryName: string) {
+    if (!currentAgent) return;
+    toggleAgentCategory(currentAgent, categoryName);
+  }
+
   function updateAgentTrait(traitId: string, value: number) {
     if (!currentAgent) return;
     onUpdateAgentTraits(currentAgent.id, { ...currentAgent.traits, [traitId]: value });
+  }
+
+  function updateAgentTraitFor(agentId: string, traitId: string, value: number) {
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent) return;
+    onUpdateAgentTraits(agentId, { ...agent.traits, [traitId]: value });
   }
 
   function traitsByCategory(): [string, TraitDef[]][] {
@@ -245,6 +263,21 @@ export function SettingsModal({
     return customAgents.find((a) => a.name === name)?.categories ?? [];
   }
 
+  function updateDraftField(id: string, patch: Partial<Agent>) {
+    setTableAgentsDraft((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  }
+
+  function saveTableDraft() {
+    onUpdateAgentsBulk(tableAgentsDraft);
+    const current = tableAgentsDraft.find((a) => a.id === currentAgentId);
+    if (current) {
+      setName(current.name);
+      setRole(current.role);
+      setConnectionId(current.connectionId);
+    }
+    onToast('✅ Agent table changes saved');
+  }
+
   function toggleAgentSort(column: AgentSortColumn) {
     if (agentSortColumn === column) {
       if (agentSortDir === 'asc') {
@@ -260,7 +293,7 @@ export function SettingsModal({
   }
 
   const sortedAgents = (() => {
-    if (!agentSortColumn) return agents;
+    if (!agentSortColumn) return tableAgentsDraft;
     const dir = agentSortDir === 'asc' ? 1 : -1;
     const keyFor = (a: Agent) => {
       if (agentSortColumn === 'ref') return a.refNumber ?? '';
@@ -269,7 +302,7 @@ export function SettingsModal({
       if (agentSortColumn === 'llm') return connections.find((c) => c.id === a.connectionId)?.label ?? '';
       return categoriesForAgent(a.name).join(', ');
     };
-    return [...agents].sort((a, b) => keyFor(a).localeCompare(keyFor(b)) * dir);
+    return [...tableAgentsDraft].sort((a, b) => keyFor(a).localeCompare(keyFor(b)) * dir);
   })();
 
   function sortArrow(column: AgentSortColumn): string {
@@ -650,6 +683,89 @@ export function SettingsModal({
                 <div className="modal-section-title">
                   Available Agents {agentSortColumn ? '(sorted — drag reorder disabled)' : '(drag to reorder)'}
                 </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className={agentTableView === 'overview' ? 'btn-primary' : 'btn-secondary'}
+                    {...devRef('b49')}
+                    onClick={() => setAgentTableView('overview')}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    type="button"
+                    className={agentTableView === 'traits' ? 'btn-primary' : 'btn-secondary'}
+                    {...devRef('b50')}
+                    onClick={() => setAgentTableView('traits')}
+                  >
+                    🎚️ Traits &amp; Character
+                  </button>
+                </div>
+                {agentTableView === 'traits' ? (
+                  <div className="table-scroll">
+                    <table className="agent-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th>Ref</th>
+                          <th>Name</th>
+                          {traitDefs.map((def) => (
+                            <th key={def.id} title={def.category}>
+                              {def.name}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agents.map((agent) => (
+                          <tr key={agent.id} className={`agent-row ${agent.id === currentAgentId ? 'current' : ''}`}>
+                            <td>
+                              <div
+                                className="avatar"
+                                style={{ background: agent.color, width: 22, height: 22, fontSize: 11 }}
+                              >
+                                {agent.name.charAt(0).toUpperCase()}
+                              </div>
+                            </td>
+                            <td
+                              style={{ cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}
+                              title="Click to open in Configure Agent"
+                              onClick={() => selectAgent(agent.id)}
+                            >
+                              {agent.refNumber}
+                            </td>
+                            <td>{agent.name}</td>
+                            {traitDefs.map((def) => {
+                              const value = agent.traits?.[def.id] ?? 50;
+                              return (
+                                <td key={def.id}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <input
+                                      type="range"
+                                      min={0}
+                                      max={100}
+                                      value={value}
+                                      style={{ width: 70 }}
+                                      onChange={(e) => updateAgentTraitFor(agent.id, def.id, Number(e.target.value))}
+                                    />
+                                    <span style={{ fontSize: 11, minWidth: 20, textAlign: 'right' }}>{value}</span>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                        {traitDefs.length === 0 && (
+                          <tr>
+                            <td colSpan={3}>
+                              <div className="empty-state">No traits defined yet — add one in Traits &amp; Character above.</div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
                 <div className="table-scroll">
                   <table className="agent-table">
                     <thead>
@@ -677,8 +793,8 @@ export function SettingsModal({
                     <tbody>
                       {sortedAgents.map((agent) => {
                         const index = agents.findIndex((a) => a.id === agent.id);
-                        const connection = connections.find((c) => c.id === agent.connectionId);
-                        const cats = categoriesForAgent(agent.name);
+                        const savedAgent = agents.find((a) => a.id === agent.id) ?? agent;
+                        const cats = categoriesForAgent(savedAgent.name);
                         return (
                           <tr
                             className={`agent-row ${agent.id === currentAgentId ? 'current' : ''} ${
@@ -687,8 +803,7 @@ export function SettingsModal({
                             key={agent.id}
                             {...devRef('r2', index)}
                             draggable={agentSortColumn === null}
-                            style={{ cursor: agentSortColumn === null ? 'grab' : 'pointer' }}
-                            onClick={() => selectAgent(agent.id)}
+                            style={{ cursor: agentSortColumn === null ? 'grab' : 'default' }}
                             onDragStart={() => setDraggedAgentId(agent.id)}
                             onDragOver={(e) => {
                               if (agentSortColumn !== null) return;
@@ -720,19 +835,102 @@ export function SettingsModal({
                                 {agent.name.charAt(0).toUpperCase()}
                               </div>
                             </td>
-                            <td>{agent.refNumber}</td>
-                            <td>{agent.name}</td>
-                            <td>{agent.role}</td>
-                            <td>
-                              {cats.length === 0
-                                ? '—'
-                                : cats.map((c) => (
-                                    <span key={c} className="category-chip">
-                                      {c}
-                                    </span>
-                                  ))}
+                            <td
+                              style={{ cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}
+                              title="Click to open in Configure Agent"
+                              onClick={() => selectAgent(agent.id)}
+                            >
+                              {agent.refNumber}
                             </td>
-                            <td>{connection ? connection.label : '—'}</td>
+                            <td>
+                              <input
+                                type="text"
+                                {...devRef('i21', index)}
+                                value={agent.name}
+                                onChange={(e) => updateDraftField(agent.id, { name: e.target.value })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                {...devRef('i22', index)}
+                                value={agent.role}
+                                onChange={(e) => updateDraftField(agent.id, { role: e.target.value })}
+                              />
+                            </td>
+                            <td style={{ position: 'relative' }}>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                {...devRef('dr18', index)}
+                                style={{ fontSize: 11, padding: '3px 6px', width: '100%' }}
+                                onClick={() => {
+                                  setTableCategoryFilter('');
+                                  setCategoryMenuAgentId((prev) => (prev === agent.id ? null : agent.id));
+                                }}
+                              >
+                                {cats.length === 0 ? '🏷️ Categories ▾' : `🏷️ ${cats.length} category▾`}
+                              </button>
+                              {categoryMenuAgentId === agent.id && (
+                                <div className="moods-menu" style={{ zIndex: 60 }}>
+                                  <input
+                                    type="text"
+                                    className="control-input"
+                                    {...devRef('i23', index)}
+                                    placeholder="Filter categories…"
+                                    value={tableCategoryFilter}
+                                    onChange={(e) => setTableCategoryFilter(e.target.value)}
+                                  />
+                                  <div className="moods-menu-list">
+                                    {allCategoryNames
+                                      .filter((catName) =>
+                                        catName.toLowerCase().includes(tableCategoryFilter.trim().toLowerCase())
+                                      )
+                                      .map((catName) => (
+                                        <div key={catName} className="moods-menu-row">
+                                          <label>
+                                            <input
+                                              type="checkbox"
+                                              {...devRef('ck12', index)}
+                                              checked={cats.includes(catName)}
+                                              onChange={() => toggleAgentCategory(savedAgent, catName)}
+                                            />
+                                            {catName}
+                                          </label>
+                                        </div>
+                                      ))}
+                                    {allCategoryNames.filter((catName) =>
+                                      catName.toLowerCase().includes(tableCategoryFilter.trim().toLowerCase())
+                                    ).length === 0 && (
+                                      <div className="moods-menu-empty">No categories match.</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              <div style={{ marginTop: 2 }}>
+                                {cats.map((c) => (
+                                  <span key={c} className="category-chip">
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td>
+                              <select
+                                {...devRef('dr19', index)}
+                                value={agent.connectionId ?? ''}
+                                onChange={(e) =>
+                                  updateDraftField(agent.id, { connectionId: e.target.value || null })
+                                }
+                              >
+                                <option value="">No LLM connected</option>
+                                {connections.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.label} ({getProvider(c.provider)?.name} · {c.model} · {c.effort})
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
                             <td onClick={(e) => e.stopPropagation()}>
                               <div className="agent-reorder-btns">
                                 <button
@@ -772,7 +970,13 @@ export function SettingsModal({
                     </tbody>
                   </table>
                 </div>
-                <button className="btn-secondary" {...devRef('b37')} onClick={onAdd} style={{ marginTop: 8 }}>
+                )}
+                {agentTableView === 'overview' && (
+                  <button className="btn-primary" {...devRef('b48')} onClick={saveTableDraft} style={{ marginTop: 8 }}>
+                    💾 Save All Changes
+                  </button>
+                )}
+                <button className="btn-secondary" {...devRef('b37')} onClick={onAdd}>
                   + Add Blank Agent
                 </button>
                 <button className="btn-secondary" {...devRef('b38')} onClick={onOpenLibrary}>
