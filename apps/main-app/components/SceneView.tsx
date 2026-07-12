@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Agent, Feedback, Message, ReactionType } from '@/lib/types';
 import { TraitDef } from '@/lib/traits';
-import { SCENES, getScene, type SceneSeat } from '@/lib/scenes';
+import { SCENE_BACKGROUND, circleLayout, type SceneSeat } from '@/lib/scenes';
 import { PLAYBACK_SPEEDS, type PlaybackSpeed, buildSceneTimeline, messageDurationMs } from '@/lib/scene-timeline';
 import { SceneAvatar } from './SceneAvatar';
 import { SceneMarkdown } from './SceneMarkdown';
@@ -18,11 +18,11 @@ const DELAY_OPTIONS = [
   { label: '8s', value: 8000 },
 ];
 
-type TextSize = 'sm' | 'md' | 'lg';
-const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
-  { value: 'sm', label: 'A Small' },
-  { value: 'md', label: 'A Medium' },
-  { value: 'lg', label: 'A Large' },
+type BubbleSize = 'sm' | 'md' | 'lg';
+const BUBBLE_SIZE_OPTIONS: { value: BubbleSize; label: string }[] = [
+  { value: 'sm', label: '💬 Small' },
+  { value: 'md', label: '💬 Medium' },
+  { value: 'lg', label: '💬 Large' },
 ];
 
 const FEEDBACK_ICONS: { type: Feedback; icon: string }[] = [
@@ -30,6 +30,9 @@ const FEEDBACK_ICONS: { type: Feedback; icon: string }[] = [
   { type: 'dislike', icon: '👎' },
   { type: 'clarify', icon: '🤔' },
 ];
+
+/** How far a speaking avatar drifts toward the center bubble (0 = stays put, 1 = reaches dead center). */
+const SPEAKER_CENTER_PULL = 0.32;
 
 function angleBetween(from: SceneSeat, to: SceneSeat): number {
   return (Math.atan2(to.yPct - from.yPct, to.xPct - from.xPct) * 180) / Math.PI;
@@ -40,13 +43,15 @@ function clampPct(v: number): number {
   return Math.max(6, Math.min(94, v));
 }
 
+function moveTowardCenter(seat: SceneSeat, amount: number): SceneSeat {
+  return { ...seat, xPct: seat.xPct + (50 - seat.xPct) * amount, yPct: seat.yPct + (50 - seat.yPct) * amount };
+}
+
 interface SceneViewProps {
   agents: Agent[];
   traitDefs: TraitDef[];
   messages: Message[];
   thinking: Map<string, string>;
-  sceneId: string;
-  onChangeScene: (id: string) => void;
   postSpeechDelayMs: number;
   onChangePostSpeechDelay: (ms: number) => void;
   onFeedback: (message: Message, type: Feedback) => void;
@@ -60,8 +65,6 @@ export function SceneView({
   traitDefs,
   messages,
   thinking,
-  sceneId,
-  onChangeScene,
   postSpeechDelayMs,
   onChangePostSpeechDelay,
   onFeedback,
@@ -70,14 +73,13 @@ export function SceneView({
   onClose,
 }: SceneViewProps) {
   const activeAgents = useMemo(() => agents.filter((a) => a.active), [agents]);
-  const scene = getScene(sceneId);
-  const seats = useMemo(() => scene.layout(activeAgents.length), [scene, activeAgents.length]);
+  const seats = useMemo(() => circleLayout(activeAgents.length), [activeAgents.length]);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  // User-dragged overrides, kept per scenery so switching scenes doesn't
-  // carry a Round Table layout into the Boardroom. Component-local state,
-  // as requested — not persisted across reloads.
-  const [customSeats, setCustomSeats] = useState<Record<string, Record<string, { xPct: number; yPct: number }>>>({});
+  // User-dragged overrides — everyone starts on the default circle, but the
+  // user can always rearrange the seating; kept component-local, not
+  // persisted across reloads.
+  const [customSeats, setCustomSeats] = useState<Record<string, { xPct: number; yPct: number }>>({});
   const dragState = useRef<{ agentId: string; startX: number; startY: number; moved: boolean } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
@@ -85,19 +87,19 @@ export function SceneView({
     const map = new Map<string, SceneSeat>();
     activeAgents.forEach((a, i) => {
       const base = seats[i];
-      const override = customSeats[sceneId]?.[a.id];
+      const override = customSeats[a.id];
       map.set(a.id, override ? { ...base, xPct: override.xPct, yPct: override.yPct } : base);
     });
     return map;
-  }, [activeAgents, seats, customSeats, sceneId]);
+  }, [activeAgents, seats, customSeats]);
 
   const timeline = useMemo(() => buildSceneTimeline(messages), [messages]);
 
   const [manualFocusId, setManualFocusId] = useState<string | null>(null);
+  const [autoFocusId, setAutoFocusId] = useState<string | null>(null);
   const [userDismissed, setUserDismissed] = useState(false);
-  const prevThinkingCount = useRef(0);
 
-  const [textSize, setTextSize] = useState<TextSize>('md');
+  const [bubbleSize, setBubbleSize] = useState<BubbleSize>('md');
   const [playbackMode, setPlaybackMode] = useState<'live' | 'replay'>('live');
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -109,12 +111,16 @@ export function SceneView({
     [thinking, activeAgents]
   );
 
+  // Auto-focus follows whoever's currently composing a reply, and then
+  // *stays* on them (rather than snapping back to a wide shot) through the
+  // post-speech pause, so their message keeps showing in the center bubble
+  // until the next agent picks up.
   useEffect(() => {
-    if (thinkingIds.length > 0 && prevThinkingCount.current === 0) {
+    if (thinkingIds.length === 1) {
+      setAutoFocusId(thinkingIds[0]);
       setUserDismissed(false);
     }
-    prevThinkingCount.current = thinkingIds.length;
-  }, [thinkingIds.length]);
+  }, [thinkingIds]);
 
   // Auto-advance the replay cursor while playing.
   useEffect(() => {
@@ -185,10 +191,7 @@ export function SceneView({
     const box = rect.getBoundingClientRect();
     const xPct = clampPct(((e.clientX - box.left) / box.width) * 100);
     const yPct = clampPct(((e.clientY - box.top) / box.height) * 100);
-    setCustomSeats((prev) => ({
-      ...prev,
-      [sceneId]: { ...prev[sceneId], [drag.agentId]: { xPct, yPct } },
-    }));
+    setCustomSeats((prev) => ({ ...prev, [drag.agentId]: { xPct, yPct } }));
   }
 
   function handlePointerUp() {
@@ -238,54 +241,39 @@ export function SceneView({
     setUserDismissed(true);
   }
 
-  const autoFocusId = !userDismissed && thinkingIds.length === 1 ? thinkingIds[0] : null;
-  const focusId = replaying ? replayFocusAgentId : manualFocusId ?? autoFocusId;
+  const focusId = replaying ? replayFocusAgentId : userDismissed ? null : manualFocusId ?? autoFocusId;
   const focusAgent = focusId ? activeAgents.find((a) => a.id === focusId) ?? null : null;
   const focusSeat = focusId ? seatByAgentId.get(focusId) ?? null : null;
-  // Kept intentionally subtle: the "Always Visible" rule means the speaker
-  // is highlighted via the spotlight/dim treatment on each avatar, not by
-  // zooming far enough to crop other seats out of frame.
-  const zoom = focusSeat ? 1.08 : 1;
+  const zoom = focusSeat ? 1.06 : 1;
   const focusX = focusSeat?.xPct ?? 50;
   const focusY = focusSeat?.yPct ?? 50;
 
-  const theaterMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
+  const centralMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
+  const isLiveSpeaking = (agentId: string) => !replaying && thinkingIds.includes(agentId);
 
   return (
-    <div className={`scene-view scene-text-${textSize}`} {...devRef('s22')}>
+    <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
       <div className="scene-toolbar">
         <select
           {...devRef('dr23')}
-          value={textSize}
-          onChange={(e) => setTextSize(e.target.value as TextSize)}
-          title="Speech bubble text size"
+          value={bubbleSize}
+          onChange={(e) => setBubbleSize(e.target.value as BubbleSize)}
+          title="Speech bubble & text size"
         >
-          {TEXT_SIZE_OPTIONS.map((opt) => (
+          {BUBBLE_SIZE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
-            </option>
-          ))}
-        </select>
-        <select
-          {...devRef('dr20')}
-          value={sceneId}
-          onChange={(e) => onChangeScene(e.target.value)}
-          title="Choose the scenery"
-        >
-          {SCENES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.icon} {s.label}
             </option>
           ))}
         </select>
         <button className="control-btn" {...devRef('b51')} onClick={dismissToWideShot} title="Zoom out to the full scene">
           🔭 Wide Shot
         </button>
-        {Object.keys(customSeats[sceneId] ?? {}).length > 0 && (
+        {Object.keys(customSeats).length > 0 && (
           <button
             className="control-btn"
-            title="Reset dragged seats back to the scenery's default layout"
-            onClick={() => setCustomSeats((prev) => ({ ...prev, [sceneId]: {} }))}
+            title="Reset dragged seats back to the default circle"
+            onClick={() => setCustomSeats({})}
           >
             ↺ Reset Seats
           </button>
@@ -295,7 +283,7 @@ export function SceneView({
         </button>
       </div>
 
-      <div className="scene-stage" ref={stageRef} style={{ background: scene.background }} onClick={dismissToWideShot}>
+      <div className="scene-stage" ref={stageRef} style={{ background: SCENE_BACKGROUND }} onClick={dismissToWideShot}>
         <div
           className="scene-world"
           style={{
@@ -306,26 +294,22 @@ export function SceneView({
           }}
         >
           {activeAgents.map((agent) => {
-            const seat = seatByAgentId.get(agent.id)!;
-            const gazeAngleDeg = focusSeat && focusId !== agent.id ? angleBetween(seat, focusSeat) : 0;
+            const baseSeat = seatByAgentId.get(agent.id)!;
+            const speakingNow = isLiveSpeaking(agent.id) || replayFocusAgentId === agent.id;
+            const seat = speakingNow ? moveTowardCenter(baseSeat, SPEAKER_CENTER_PULL) : baseSeat;
+            const gazeAngleDeg = focusSeat && focusId !== agent.id ? angleBetween(baseSeat, focusSeat) : 0;
             return (
               <SceneAvatar
                 key={agent.id}
                 agent={agent}
                 seat={seat}
                 traitDefs={traitDefs}
-                isSpeaking={!replaying && thinkingIds.includes(agent.id)}
+                isSpeaking={speakingNow}
                 isFocused={focusId === agent.id}
                 isDimmed={focusId != null && focusId !== agent.id}
                 isDragging={draggingId === agent.id}
-                theaterMode={replaying}
                 gazeAngleDeg={gazeAngleDeg}
-                displayMessage={displayMessages.get(agent.id)}
-                liveTyping={replaying ? replayFocusAgentId === agent.id : !replaying}
                 onPointerDown={(e) => handleAvatarPointerDown(agent.id, e)}
-                onFeedback={onFeedback}
-                onReaction={onReaction}
-                onReply={onReply}
               />
             );
           })}
@@ -336,16 +320,13 @@ export function SceneView({
           )}
         </div>
 
-        {replaying && focusAgent && theaterMessage && focusSeat && (
-          <div
-            className={`scene-theater-anchor ${focusSeat.yPct < 38 ? 'below' : 'above'}`}
-            style={{ left: `${focusSeat.xPct}%`, top: `${focusSeat.yPct}%` }}
-          >
-            <TheaterBox
-              key={theaterMessage.id}
+        {focusAgent && centralMessage && (
+          <div className="scene-central-anchor">
+            <CentralBubble
+              key={centralMessage.id}
               agent={focusAgent}
-              message={theaterMessage}
-              typing={true}
+              message={centralMessage}
+              typing
               onFeedback={onFeedback}
               onReaction={onReaction}
               onReply={onReply}
@@ -414,7 +395,7 @@ export function SceneView({
   );
 }
 
-interface TheaterBoxProps {
+interface CentralBubbleProps {
   agent: Agent;
   message: Message;
   typing: boolean;
@@ -423,8 +404,10 @@ interface TheaterBoxProps {
   onReply: (message: Message) => void;
 }
 
-/** Theater Mode: a centered, teleprompter-style overlay for the active speaker's text during replay. */
-function TheaterBox({ agent, message, typing, onFeedback, onReaction, onReply }: TheaterBoxProps) {
+/** The one shared speech bubble, always centered on the stage and linked to
+ * whoever's currently speaking via the header + the speaker's own avatar
+ * drifting toward it. Used for both live conversation and replay. */
+function CentralBubble({ agent, message, typing, onFeedback, onReaction, onReply }: CentralBubbleProps) {
   const typed = useTypewriter(typing ? message.content : '');
   const text = typing ? typed : message.content;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -434,16 +417,15 @@ function TheaterBox({ agent, message, typing, onFeedback, onReaction, onReply }:
   }, [text]);
 
   return (
-    <div className="scene-theater-box" style={{ borderTopColor: agent.color }} onClick={(e) => e.stopPropagation()}>
-      <div className="scene-theater-tail" style={{ borderColor: agent.color }} />
-      <div className="scene-theater-speaker">
-        <span className="scene-theater-dot" style={{ background: agent.color }} />
+    <div className="scene-central-box" style={{ borderTopColor: agent.color }} onClick={(e) => e.stopPropagation()}>
+      <div className="scene-central-speaker">
+        <span className="scene-central-dot" style={{ background: agent.color }} />
         {agent.refNumber} {agent.name} is speaking
       </div>
-      <div className="scene-theater-text" ref={scrollRef}>
+      <div className="scene-central-text" ref={scrollRef}>
         <SceneMarkdown content={text} />
       </div>
-      <div className="scene-theater-actions">
+      <div className="scene-central-actions">
         {FEEDBACK_ICONS.map((f) => (
           <button
             key={f.type}
@@ -466,5 +448,3 @@ function TheaterBox({ agent, message, typing, onFeedback, onReaction, onReply }:
     </div>
   );
 }
-
-

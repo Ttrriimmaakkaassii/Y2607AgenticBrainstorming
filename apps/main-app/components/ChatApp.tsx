@@ -335,7 +335,6 @@ export function ChatApp() {
   }, [state.settings]);
   const [showAudioRail, setShowAudioRail] = useState(false);
   const [sceneViewOpen, setSceneViewOpen] = useState(false);
-  const [sceneId, setSceneId] = useState('roundtable');
   // How long the conversation engine pauses after an agent finishes replying
   // before the next agent's turn starts — gives Scene View's camera/reader
   // time to settle on the finished message. Read via a ref inside
@@ -2412,8 +2411,6 @@ export function ChatApp() {
           traitDefs={traitDefs}
           messages={allMessages}
           thinking={thinking}
-          sceneId={sceneId}
-          onChangeScene={setSceneId}
           postSpeechDelayMs={postSpeechDelayMs}
           onChangePostSpeechDelay={setPostSpeechDelayMs}
           onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}

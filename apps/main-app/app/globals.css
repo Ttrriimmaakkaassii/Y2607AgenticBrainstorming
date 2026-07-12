@@ -1974,7 +1974,8 @@ body.dev-mode [data-devref]::after {
   align-items: center;
   cursor: grab;
   touch-action: none;
-  transition: transform 0.4s ease, filter 0.5s ease, opacity 0.5s ease;
+  transition: left 0.6s cubic-bezier(0.22, 0.68, 0, 1.01), top 0.6s cubic-bezier(0.22, 0.68, 0, 1.01),
+    transform 0.4s ease, filter 0.5s ease, opacity 0.5s ease;
   z-index: 2;
 }
 
@@ -2007,17 +2008,6 @@ body.dev-mode [data-devref]::after {
   background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 70%);
   z-index: 0;
   pointer-events: none;
-}
-
-.scene-avatar-body {
-  position: absolute;
-  bottom: -2px;
-  width: 60px;
-  height: 46px;
-  overflow: visible;
-  z-index: 1;
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.3));
-  transition: transform 0.5s ease;
 }
 
 .scene-avatar-seat-shadow {
@@ -2124,54 +2114,6 @@ body.dev-mode [data-devref]::after {
   50% { opacity: 1; transform: translateY(-3px); }
 }
 
-/* Speech bubbles: solid, highly-opaque dark background with light text so
-   legibility never depends on the scenery behind them or the app theme.
-   The agent's color survives only as the tail/top-border accent. */
-.scene-speech-bubble {
-  position: absolute;
-  bottom: 100%;
-  margin-bottom: 14px;
-  border-radius: 14px;
-  border-top: 3px solid;
-  padding: 12px 16px;
-  min-width: 140px;
-  max-width: 240px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #f5f5f5;
-  background: rgba(10, 10, 12, 0.88);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.25);
-  transition: max-width 0.4s ease, font-size 0.4s ease;
-  z-index: 20;
-}
-
-.scene-speech-tail {
-  position: absolute;
-  bottom: -7px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-top: 8px solid;
-}
-
-.scene-speech-bubble.expanded {
-  max-width: 380px;
-  font-size: 15.5px;
-  z-index: 21;
-}
-
-.scene-speech-text {
-  max-height: 40vh;
-  overflow-y: auto;
-  word-break: break-word;
-  scroll-behavior: smooth;
-}
-
 .scene-paragraph {
   margin: 0 0 8px;
 }
@@ -2204,47 +2146,20 @@ body.dev-mode [data-devref]::after {
   line-height: 1.5;
 }
 
-.scene-speech-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  padding-top: 6px;
-}
-
-.scene-speech-actions .btn-icon {
-  font-size: 14px;
-  padding: 3px;
-  color: #f5f5f5;
-}
-
-.scene-speech-actions .btn-icon:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-/* Theater Mode: a large centered "teleprompter" overlay used during replay,
-   replacing the per-avatar bubbles so text stays readable regardless of
-   where its speaker happens to be seated/dragged. */
-/* Anchored to the speaking avatar's own seat coordinates (not a fixed
-   bottom-center box) so the bubble visibly "links" to whoever is talking,
-   even after they've been dragged. Sits in .scene-stage, outside the
-   zoomed .scene-world, so its size never scales with the camera. */
-.scene-theater-anchor {
+/* The single shared central bubble — always centered on the stage (both
+   live and replay), linked to the speaker via the header + the speaker's
+   own avatar drifting toward it. Sits in .scene-stage, outside the zoomed
+   .scene-world, so its size never scales with the camera. */
+.scene-central-anchor {
   position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 30;
   pointer-events: none;
 }
 
-.scene-theater-anchor.above {
-  transform: translate(-50%, calc(-100% - 46px));
-}
-
-.scene-theater-anchor.below {
-  transform: translate(-50%, 46px);
-}
-
-.scene-theater-box {
+.scene-central-box {
   position: relative;
   pointer-events: auto;
   width: min(90vw, 560px);
@@ -2252,42 +2167,21 @@ body.dev-mode [data-devref]::after {
   border-top: 4px solid;
   border-radius: 16px;
   padding: 18px 24px;
-  background: rgba(8, 8, 10, 0.9);
+  background: rgba(8, 8, 10, 0.92);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
   color: #f7f7f7;
-  animation: scene-theater-in 0.4s ease;
+  animation: scene-central-in 0.4s ease;
+  transition: width 0.3s ease;
 }
 
-.scene-theater-tail {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 14px;
-  height: 14px;
-  background: rgba(8, 8, 10, 0.9);
-  border-right: 4px solid;
-  border-bottom: 4px solid;
-  border-color: inherit;
-}
-
-.scene-theater-anchor.above .scene-theater-tail {
-  bottom: -7px;
-  transform: translateX(-50%) rotate(45deg);
-}
-
-.scene-theater-anchor.below .scene-theater-tail {
-  top: -7px;
-  transform: translateX(-50%) rotate(225deg);
-}
-
-@keyframes scene-theater-in {
+@keyframes scene-central-in {
   from { opacity: 0; transform: scale(0.94); }
   to { opacity: 1; transform: scale(1); }
 }
 
-.scene-theater-speaker {
+.scene-central-speaker {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2299,23 +2193,24 @@ body.dev-mode [data-devref]::after {
   margin-bottom: 10px;
 }
 
-.scene-theater-dot {
+.scene-central-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.scene-theater-text {
+.scene-central-text {
   font-size: 20px;
   line-height: 1.6;
   max-height: 40vh;
   overflow-y: auto;
   scroll-behavior: smooth;
   word-break: break-word;
+  transition: font-size 0.3s ease;
 }
 
-.scene-theater-actions {
+.scene-central-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -2324,27 +2219,22 @@ body.dev-mode [data-devref]::after {
   padding-top: 10px;
 }
 
-.scene-theater-actions .btn-icon {
+.scene-central-actions .btn-icon {
   font-size: 16px;
   padding: 4px 6px;
   color: #f5f5f5;
 }
 
-.scene-theater-actions .btn-icon:hover {
+.scene-central-actions .btn-icon:hover {
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* User-adjustable text size — scales both the floating live bubbles and the
-   Theater Mode overlay together. */
-.scene-text-sm .scene-speech-bubble { font-size: 12px; max-width: 200px; }
-.scene-text-sm .scene-speech-bubble.expanded { font-size: 13px; max-width: 320px; }
-.scene-text-sm .scene-theater-text { font-size: 16px; }
-.scene-text-sm .scene-theater-box { width: min(90vw, 440px); }
+/* User-adjustable bubble size — scales both the box and the text inside it. */
+.scene-bubble-sm .scene-central-box { width: min(80vw, 380px); }
+.scene-bubble-sm .scene-central-text { font-size: 15px; }
 
-.scene-text-lg .scene-speech-bubble { font-size: 17px; max-width: 300px; }
-.scene-text-lg .scene-speech-bubble.expanded { font-size: 19px; max-width: 440px; }
-.scene-text-lg .scene-theater-text { font-size: 26px; }
-.scene-text-lg .scene-theater-box { width: min(94vw, 680px); }
+.scene-bubble-lg .scene-central-box { width: min(96vw, 760px); }
+.scene-bubble-lg .scene-central-text { font-size: 26px; }
 
 /* Indeterminate progress bar for the podcastize request — the service
    gives no real progress events, so this just signals "still working". */
