@@ -161,6 +161,9 @@ export function SettingsModal({
   const [categoryFilter, setCategoryFilter] = useState('');
   const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
   const [dragOverAgentId, setDragOverAgentId] = useState<string | null>(null);
+  type AgentSortColumn = 'ref' | 'name' | 'role' | 'category' | 'llm';
+  const [agentSortColumn, setAgentSortColumn] = useState<AgentSortColumn | null>(null);
+  const [agentSortDir, setAgentSortDir] = useState<'asc' | 'desc'>('asc');
 
   function toggleGuidelineExpanded(id: string) {
     setExpandedGuidelineIds((prev) => {
@@ -236,6 +239,42 @@ export function SettingsModal({
     const next = [...agents];
     [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
     onReorderAgents(next);
+  }
+
+  function categoriesForAgent(name: string): string[] {
+    return customAgents.find((a) => a.name === name)?.categories ?? [];
+  }
+
+  function toggleAgentSort(column: AgentSortColumn) {
+    if (agentSortColumn === column) {
+      if (agentSortDir === 'asc') {
+        setAgentSortDir('desc');
+      } else {
+        setAgentSortColumn(null);
+        setAgentSortDir('asc');
+      }
+    } else {
+      setAgentSortColumn(column);
+      setAgentSortDir('asc');
+    }
+  }
+
+  const sortedAgents = (() => {
+    if (!agentSortColumn) return agents;
+    const dir = agentSortDir === 'asc' ? 1 : -1;
+    const keyFor = (a: Agent) => {
+      if (agentSortColumn === 'ref') return a.refNumber ?? '';
+      if (agentSortColumn === 'name') return a.name;
+      if (agentSortColumn === 'role') return a.role;
+      if (agentSortColumn === 'llm') return connections.find((c) => c.id === a.connectionId)?.label ?? '';
+      return categoriesForAgent(a.name).join(', ');
+    };
+    return [...agents].sort((a, b) => keyFor(a).localeCompare(keyFor(b)) * dir);
+  })();
+
+  function sortArrow(column: AgentSortColumn): string {
+    if (agentSortColumn !== column) return '';
+    return agentSortDir === 'asc' ? ' ▲' : ' ▼';
   }
 
   function selectAgent(id: string) {
@@ -608,85 +647,132 @@ export function SettingsModal({
               </div>
 
               <div className="modal-section" {...devRef('s15')}>
-                <div className="modal-section-title">Available Agents (drag to reorder)</div>
-                {agents.map((agent, index) => (
-                  <div
-                    className={`agent-list-item ${dragOverAgentId === agent.id ? 'drag-over' : ''}`}
-                    key={agent.id}
-                    {...devRef('r2')}
-                    draggable
-                    style={{
-                      cursor: 'grab',
-                      outline: agent.id === currentAgentId ? '2px solid #3b99fc' : 'none',
-                    }}
-                    onClick={() => selectAgent(agent.id)}
-                    onDragStart={() => setDraggedAgentId(agent.id)}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragOverAgentId(agent.id);
-                    }}
-                    onDragLeave={() => setDragOverAgentId((prev) => (prev === agent.id ? null : prev))}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setDragOverAgentId(null);
-                      if (!draggedAgentId || draggedAgentId === agent.id) return;
-                      const fromIdx = agents.findIndex((a) => a.id === draggedAgentId);
-                      const toIdx = agents.findIndex((a) => a.id === agent.id);
-                      if (fromIdx < 0 || toIdx < 0) return;
-                      const next = [...agents];
-                      const [moved] = next.splice(fromIdx, 1);
-                      next.splice(toIdx, 0, moved);
-                      onReorderAgents(next);
-                      setDraggedAgentId(null);
-                    }}
-                    onDragEnd={() => {
-                      setDraggedAgentId(null);
-                      setDragOverAgentId(null);
-                    }}
-                  >
-                    <div className="avatar" style={{ background: agent.color }}>
-                      {agent.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="agent-info">
-                      <div className="agent-name">
-                        {agent.refNumber} · {agent.name} ({agent.role})
-                      </div>
-                    </div>
-                    <div className="agent-reorder-btns" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="btn-icon"
-                        {...devRef('b34')}
-                        onClick={() => moveAgent(agent.id, -1)}
-                        disabled={index === 0}
-                        title="Move up (renumbers Agt##)"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        className="btn-icon"
-                        {...devRef('b35')}
-                        onClick={() => moveAgent(agent.id, 1)}
-                        disabled={index === agents.length - 1}
-                        title="Move down (renumbers Agt##)"
-                      >
-                        ▼
-                      </button>
-                    </div>
-                    <button
-                      className="btn-icon delete"
-                      {...devRef('b36')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(agent.id);
-                      }}
-                      disabled={agents.length <= 1}
-                      title={agents.length <= 1 ? 'At least one agent is required' : 'Delete agent'}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                ))}
-                <button className="btn-secondary" {...devRef('b37')} onClick={onAdd}>
+                <div className="modal-section-title">
+                  Available Agents {agentSortColumn ? '(sorted — drag reorder disabled)' : '(drag to reorder)'}
+                </div>
+                <div className="table-scroll">
+                  <table className="agent-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th className="sortable" onClick={() => toggleAgentSort('ref')}>
+                          Ref{sortArrow('ref')}
+                        </th>
+                        <th className="sortable" onClick={() => toggleAgentSort('name')}>
+                          Name{sortArrow('name')}
+                        </th>
+                        <th className="sortable" onClick={() => toggleAgentSort('role')}>
+                          Role{sortArrow('role')}
+                        </th>
+                        <th className="sortable" onClick={() => toggleAgentSort('category')}>
+                          Categories{sortArrow('category')}
+                        </th>
+                        <th className="sortable" onClick={() => toggleAgentSort('llm')}>
+                          LLM{sortArrow('llm')}
+                        </th>
+                        <th>Order</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedAgents.map((agent) => {
+                        const index = agents.findIndex((a) => a.id === agent.id);
+                        const connection = connections.find((c) => c.id === agent.connectionId);
+                        const cats = categoriesForAgent(agent.name);
+                        return (
+                          <tr
+                            className={`agent-row ${agent.id === currentAgentId ? 'current' : ''} ${
+                              dragOverAgentId === agent.id ? 'drag-over' : ''
+                            }`}
+                            key={agent.id}
+                            {...devRef('r2', index)}
+                            draggable={agentSortColumn === null}
+                            style={{ cursor: agentSortColumn === null ? 'grab' : 'pointer' }}
+                            onClick={() => selectAgent(agent.id)}
+                            onDragStart={() => setDraggedAgentId(agent.id)}
+                            onDragOver={(e) => {
+                              if (agentSortColumn !== null) return;
+                              e.preventDefault();
+                              setDragOverAgentId(agent.id);
+                            }}
+                            onDragLeave={() => setDragOverAgentId((prev) => (prev === agent.id ? null : prev))}
+                            onDrop={(e) => {
+                              if (agentSortColumn !== null) return;
+                              e.preventDefault();
+                              setDragOverAgentId(null);
+                              if (!draggedAgentId || draggedAgentId === agent.id) return;
+                              const fromIdx = agents.findIndex((a) => a.id === draggedAgentId);
+                              const toIdx = agents.findIndex((a) => a.id === agent.id);
+                              if (fromIdx < 0 || toIdx < 0) return;
+                              const next = [...agents];
+                              const [moved] = next.splice(fromIdx, 1);
+                              next.splice(toIdx, 0, moved);
+                              onReorderAgents(next);
+                              setDraggedAgentId(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedAgentId(null);
+                              setDragOverAgentId(null);
+                            }}
+                          >
+                            <td>
+                              <div className="avatar" style={{ background: agent.color, width: 22, height: 22, fontSize: 11 }}>
+                                {agent.name.charAt(0).toUpperCase()}
+                              </div>
+                            </td>
+                            <td>{agent.refNumber}</td>
+                            <td>{agent.name}</td>
+                            <td>{agent.role}</td>
+                            <td>
+                              {cats.length === 0
+                                ? '—'
+                                : cats.map((c) => (
+                                    <span key={c} className="category-chip">
+                                      {c}
+                                    </span>
+                                  ))}
+                            </td>
+                            <td>{connection ? connection.label : '—'}</td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <div className="agent-reorder-btns">
+                                <button
+                                  className="btn-icon"
+                                  {...devRef('b34', index)}
+                                  onClick={() => moveAgent(agent.id, -1)}
+                                  disabled={index === 0}
+                                  title="Move up (renumbers Agt##)"
+                                >
+                                  ▲
+                                </button>
+                                <button
+                                  className="btn-icon"
+                                  {...devRef('b35', index)}
+                                  onClick={() => moveAgent(agent.id, 1)}
+                                  disabled={index === agents.length - 1}
+                                  title="Move down (renumbers Agt##)"
+                                >
+                                  ▼
+                                </button>
+                              </div>
+                            </td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="btn-icon delete"
+                                {...devRef('b36', index)}
+                                onClick={() => onDelete(agent.id)}
+                                disabled={agents.length <= 1}
+                                title={agents.length <= 1 ? 'At least one agent is required' : 'Delete agent'}
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <button className="btn-secondary" {...devRef('b37')} onClick={onAdd} style={{ marginTop: 8 }}>
                   + Add Blank Agent
                 </button>
                 <button className="btn-secondary" {...devRef('b38')} onClick={onOpenLibrary}>
