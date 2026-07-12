@@ -23,6 +23,7 @@ import {
 import { GEMINI_TTS_VOICES } from '@/lib/google-tts';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
+import { useClickOutside } from '@/lib/use-click-outside';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
@@ -165,6 +166,14 @@ export function SettingsModal({
   const [agentSortColumn, setAgentSortColumn] = useState<AgentSortColumn | null>(null);
   const [agentSortDir, setAgentSortDir] = useState<'asc' | 'desc'>('asc');
   const [categoryMenuAgentId, setCategoryMenuAgentId] = useState<string | null>(null);
+  const categoriesMenuRef = useClickOutside<HTMLDivElement>(
+    () => setCategoriesMenuOpen(false),
+    categoriesMenuOpen
+  );
+  const tableCategoryMenuRef = useClickOutside<HTMLTableCellElement>(
+    () => setCategoryMenuAgentId(null),
+    categoryMenuAgentId !== null
+  );
   const [tableCategoryFilter, setTableCategoryFilter] = useState('');
   const [agentTableView, setAgentTableView] = useState<'overview' | 'traits'>('overview');
   const [tableAgentsDraft, setTableAgentsDraft] = useState<Agent[]>(agents);
@@ -567,7 +576,7 @@ export function SettingsModal({
                 </div>
                 <div className="form-group">
                   <label>Skill Categories (assign as many as you like)</label>
-                  <div className="moods-menu-wrap">
+                  <div className="moods-menu-wrap" ref={categoriesMenuRef}>
                     <button
                       type="button"
                       className="control-btn"
@@ -582,6 +591,7 @@ export function SettingsModal({
                           type="text"
                           className="control-input"
                           {...devRef('i14')}
+                          autoFocus
                           placeholder="Filter categories…"
                           value={categoryFilter}
                           onChange={(e) => setCategoryFilter(e.target.value)}
@@ -738,7 +748,10 @@ export function SettingsModal({
                               {agent.refNumber}
                             </td>
                             <td>{agent.name}</td>
-                            <td style={{ position: 'relative' }}>
+                            <td
+                              style={{ position: 'relative' }}
+                              ref={categoryMenuAgentId === agent.id ? tableCategoryMenuRef : undefined}
+                            >
                               <div
                                 style={{ display: 'flex', flexWrap: 'wrap', gap: 3, cursor: 'pointer', minHeight: 18 }}
                                 title="Click to edit categories"
@@ -764,6 +777,7 @@ export function SettingsModal({
                                   <input
                                     type="text"
                                     className="control-input"
+                                    autoFocus
                                     placeholder="Filter categories…"
                                     value={tableCategoryFilter}
                                     onChange={(e) => setTableCategoryFilter(e.target.value)}
@@ -918,7 +932,10 @@ export function SettingsModal({
                                 onChange={(e) => updateDraftField(agent.id, { role: e.target.value })}
                               />
                             </td>
-                            <td style={{ position: 'relative' }}>
+                            <td
+                              style={{ position: 'relative' }}
+                              ref={categoryMenuAgentId === agent.id ? tableCategoryMenuRef : undefined}
+                            >
                               <div
                                 {...devRef('dr18', index)}
                                 style={{
@@ -952,6 +969,7 @@ export function SettingsModal({
                                     type="text"
                                     className="control-input"
                                     {...devRef('i23', index)}
+                                    autoFocus
                                     placeholder="Filter categories…"
                                     value={tableCategoryFilter}
                                     onChange={(e) => setTableCategoryFilter(e.target.value)}

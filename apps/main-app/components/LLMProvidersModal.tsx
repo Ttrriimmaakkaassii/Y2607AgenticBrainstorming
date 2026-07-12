@@ -11,6 +11,7 @@ import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 import { GEMINI_TTS_MODELS, describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
 import { testConnection } from '@/lib/llm-client';
+import { useClickOutside } from '@/lib/use-click-outside';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail';
 
@@ -84,6 +85,10 @@ export function LLMProvidersModal({
   const [customAgentPresets, setCustomAgentPresets] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
+  const categoryFilterRef = useClickOutside<HTMLDivElement>(
+    () => setCategoryFilterOpen(false),
+    categoryFilterOpen
+  );
   const [selectedCategoryFilters, setSelectedCategoryFilters] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -438,7 +443,7 @@ export function LLMProvidersModal({
 
           <div className="modal-section">
             <div className="modal-section-title">Assign Agents to LLMs</div>
-            <div className="moods-menu-wrap" style={{ marginBottom: 8 }}>
+            <div className="moods-menu-wrap" style={{ marginBottom: 8 }} ref={categoryFilterRef}>
               <button
                 type="button"
                 className="control-btn"

@@ -21,6 +21,7 @@ import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { devRef } from '@/lib/devref';
+import { useClickOutside } from '@/lib/use-click-outside';
 import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
@@ -358,6 +359,11 @@ export function ChatApp() {
   const [customMoods, setCustomMoods] = useState<CustomMood[]>([]);
   const [moodsMenuOpen, setMoodsMenuOpen] = useState(false);
   const [moodFilter, setMoodFilter] = useState('');
+  const moodsMenuRef = useClickOutside<HTMLDivElement>(() => setMoodsMenuOpen(false), moodsMenuOpen);
+  const participantsMenuRef = useClickOutside<HTMLDivElement>(
+    () => setParticipantsMenuOpen(false),
+    participantsMenuOpen
+  );
   const [guidelines, setGuidelines] = useState<Guideline[]>([]);
   const [traitDefs, setTraitDefs] = useState<TraitDef[]>([]);
 
@@ -1784,7 +1790,7 @@ export function ChatApp() {
               {topicExpanded ? '🗕' : '🗖'}
             </button>
           </div>
-          <div className="moods-menu-wrap">
+          <div className="moods-menu-wrap" ref={moodsMenuRef}>
             <button
               className="control-btn"
               {...devRef('b7')}
@@ -1799,6 +1805,7 @@ export function ChatApp() {
                   type="text"
                   className="control-input"
                   {...devRef('i2')}
+                  autoFocus
                   placeholder="Filter or add a new mood…"
                   value={moodFilter}
                   onChange={(e) => setMoodFilter(e.target.value)}
@@ -2017,7 +2024,7 @@ export function ChatApp() {
               </button>
             );
           })}
-        <div className="participants-menu-wrap">
+        <div className="participants-menu-wrap" ref={participantsMenuRef}>
           <button
             className="control-btn"
             {...devRef('b16')}
@@ -2031,6 +2038,7 @@ export function ChatApp() {
               <input
                 type="text"
                 className="control-input"
+                autoFocus
                 placeholder="Filter by name, role, category…"
                 value={participantFilter}
                 onChange={(e) => setParticipantFilter(e.target.value)}
