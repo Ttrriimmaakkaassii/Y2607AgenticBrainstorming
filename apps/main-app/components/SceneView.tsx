@@ -48,6 +48,19 @@ function moveTowardCenter(seat: SceneSeat, amount: number): SceneSeat {
   return { ...seat, xPct: seat.xPct + (50 - seat.xPct) * amount, yPct: seat.yPct + (50 - seat.yPct) * amount };
 }
 
+/** A straight line when both points are on the same side of the stage; a
+ * bowed curve — arcing away from the central bubble at 50/50 — when they're
+ * on opposite sides, so the arrow doesn't just cut straight through it. */
+function buildArrowPath(x1: number, y1: number, x2: number, y2: number): string {
+  const oppositeSides = (x1 - 50) * (x2 - 50) < 0;
+  if (!oppositeSides) return `M ${x1},${y1} L ${x2},${y2}`;
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const bow = Math.min(20, Math.max(10, Math.abs(x2 - x1) * 0.22));
+  const cy = my <= 50 ? my - bow : my + bow;
+  return `M ${x1},${y1} Q ${mx},${cy} ${x2},${y2}`;
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -346,7 +359,15 @@ export function SceneView({
     if (!focusAgent || !centralMessage) return null;
     return findAddressedAgent(centralMessage.content, focusAgent.id, activeAgents);
   }, [focusAgent, centralMessage, activeAgents]);
+  // The addressed agent's CURRENT seat (re-reads seatByAgentId, which already
+  // reflects any drag override), so the arrow's endpoint follows them live
+  // even if they've been moved since the message was said.
   const addressedSeat = addressedAgent ? seatByAgentId.get(addressedAgent.id) ?? null : null;
+  // The speaker's own seat, including the same toward-center drift applied
+  // to their avatar while they're actively speaking, so the arrow visibly
+  // starts at the speaker rather than the bubble's fixed center point.
+  const focusSpeakingNow = focusId != null && (isLiveSpeaking(focusId) || replayFocusAgentId === focusId);
+  const arrowOriginSeat = focusSeat ? (focusSpeakingNow ? moveTowardCenter(focusSeat, SPEAKER_CENTER_PULL) : focusSeat) : null;
 
   return (
     <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
@@ -417,20 +438,18 @@ export function SceneView({
           )}
         </div>
 
-        {addressedSeat && (
+        {addressedSeat && arrowOriginSeat && (
           <svg className="scene-address-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
             <defs>
               <marker id="scene-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
                 <path d="M0,0 L8,4 L0,8 Z" fill={focusAgent!.color} />
               </marker>
             </defs>
-            <line
+            <path
               key={`${focusAgent!.id}-${addressedAgent!.id}`}
               className="scene-address-line"
-              x1={50}
-              y1={50}
-              x2={addressedSeat.xPct}
-              y2={addressedSeat.yPct}
+              d={buildArrowPath(arrowOriginSeat.xPct, arrowOriginSeat.yPct, addressedSeat.xPct, addressedSeat.yPct)}
+              fill="none"
               stroke={focusAgent!.color}
               markerEnd="url(#scene-arrowhead)"
             />
