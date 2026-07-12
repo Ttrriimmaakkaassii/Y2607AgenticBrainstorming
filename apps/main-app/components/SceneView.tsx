@@ -153,7 +153,15 @@ export function SceneView({
   const [audioEnabled, setAudioEnabled] = useState(false);
   const audioEnabledRef = useRef(audioEnabled);
   audioEnabledRef.current = audioEnabled;
+  // Some mobile browsers (notably Android Chrome) can silently drop a
+  // queued speechSynthesis utterance with no onend/onerror/onstart event at
+  // all, freezing `spokenRange` on whatever it last was — so relying purely
+  // on it changing to notice a stall doesn't work. Continuous mode (on by
+  // default) watches for that freeze and force-advances instead of leaving
+  // replay stuck on the first message.
+  const [continuousReplay, setContinuousReplay] = useState(true);
   const audioStartedRef = useRef(false);
+  const lastSpokenChangeRef = useRef(Date.now());
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ChatApp recreates onStopSpeaking on every render (it's not memoized), so
   // this is read through a ref rather than depended on directly — depending
@@ -220,6 +228,7 @@ export function SceneView({
   useEffect(() => {
     if (!audioEnabled || playbackMode !== 'replay' || !isPlaying) return;
     audioStartedRef.current = false;
+    lastSpokenChangeRef.current = Date.now();
     const current = timeline[cursorIndex];
     if (current) onPlayFromMessageId(current.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,12 +240,38 @@ export function SceneView({
     if (!audioEnabled || playbackMode !== 'replay' || !isPlaying) return;
     if (speakingMessageId) {
       audioStartedRef.current = true;
+      lastSpokenChangeRef.current = Date.now();
       const idx = timeline.findIndex((m) => m.id === speakingMessageId);
       if (idx >= 0 && idx !== cursorIndex) setCursorIndex(idx);
-    } else if (audioStartedRef.current) {
+    } else if (audioStartedRef.current && !continuousReplay) {
       setIsPlaying(false);
     }
-  }, [speakingMessageId, audioEnabled, playbackMode, isPlaying, timeline, cursorIndex]);
+  }, [speakingMessageId, audioEnabled, playbackMode, isPlaying, timeline, cursorIndex, continuousReplay]);
+
+  // Watchdog: if the reader hasn't advanced (spokenRange frozen, or gone
+  // silently null with nothing following it up) for noticeably longer than
+  // this message should ever take to speak, force it onto the next message
+  // instead of leaving replay stuck. Only active in Continuous mode.
+  useEffect(() => {
+    if (!audioEnabled || !continuousReplay || playbackMode !== 'replay' || !isPlaying) return;
+    const watchdog = setInterval(() => {
+      const current = timeline[cursorIndex];
+      if (!current) return;
+      const estimatedMs = Math.max(6000, (current.content.length / 12) * 1000 + 5000);
+      if (Date.now() - lastSpokenChangeRef.current < estimatedMs) return;
+      if (cursorIndex + 1 >= timeline.length) {
+        setIsPlaying(false);
+        return;
+      }
+      onStopSpeaking();
+      const nextIdx = cursorIndex + 1;
+      lastSpokenChangeRef.current = Date.now();
+      audioStartedRef.current = false;
+      setCursorIndex(nextIdx);
+      onPlayFromMessageId(timeline[nextIdx].id);
+    }, 1000);
+    return () => clearInterval(watchdog);
+  }, [audioEnabled, continuousReplay, playbackMode, isPlaying, timeline, cursorIndex, onStopSpeaking, onPlayFromMessageId]);
 
   function startReplay() {
     setPlaybackMode('replay');
@@ -495,6 +530,18 @@ export function SceneView({
           onClick={toggleAudio}
         >
           {audioEnabled ? '🔊' : '🔇'}
+        </button>
+        <button
+          className={`btn-icon ${continuousReplay ? 'active' : ''}`}
+          {...devRef('b60')}
+          title={
+            continuousReplay
+              ? 'Continuous: on — replay recovers and keeps going even if the reader stalls (default)'
+              : 'Continuous: off — replay stops if the reader stalls instead of forcing it onward'
+          }
+          onClick={() => setContinuousReplay((v) => !v)}
+        >
+          {continuousReplay ? '🔁' : '⏹️'}
         </button>
         <input
           type="range"
