@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Agent, LLMConnection, Thread } from '@/lib/types';
 import { fetchSubjectAnalysis } from '@/lib/llm-client';
 import { devRef } from '@/lib/devref';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface AnalyticsModalProps {
   agents: Agent[];
@@ -37,6 +38,7 @@ function confidenceColor(score: number): string {
 }
 
 export function AnalyticsModal({ agents, threads, connections, onClose }: AnalyticsModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   const allMessages = threads.flatMap((t) => t.messages);
   const agentMessages = allMessages.filter((m) => m.agentId !== 'user');
   const likes = allMessages.filter((m) => m.feedback === 'like').length;
@@ -100,7 +102,7 @@ export function AnalyticsModal({ agents, threads, connections, onClose }: Analyt
   });
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">📊 Conversation Analytics</span>

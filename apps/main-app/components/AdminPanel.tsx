@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { fetchAllProfiles, setApproval, UserProfile } from '@/lib/admin';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface AdminPanelProps {
   onClose: () => void;
 }
 
 export function AdminPanel({ onClose }: AdminPanelProps) {
+  const overlayClose = useOverlayClose(onClose);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -32,7 +34,7 @@ export function AdminPanel({ onClose }: AdminPanelProps) {
   const active = profiles.filter((p) => p.isApproved || p.isAdmin);
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
         <div className="modal-header">
           <span className="modal-title">🛡️ Admin — User Access</span>

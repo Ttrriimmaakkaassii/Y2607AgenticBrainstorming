@@ -1,6 +1,7 @@
 'use client';
 
 import { ArchivedConversation } from '@/lib/types';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface ArchivesModalProps {
   archives: ArchivedConversation[];
@@ -11,6 +12,7 @@ interface ArchivesModalProps {
 }
 
 export function ArchivesModal({ archives, onRestore, onDelete, onClose, embedded }: ArchivesModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   const content = (
     <>
       {archives.length === 0 && <div className="empty-state">No archived conversations yet.</div>}
@@ -43,7 +45,7 @@ export function ArchivesModal({ archives, onRestore, onDelete, onClose, embedded
   if (embedded) return content;
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">🗄️ Archived Conversations</span>

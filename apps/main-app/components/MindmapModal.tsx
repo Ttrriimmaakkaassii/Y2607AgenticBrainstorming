@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Transformer } from 'markmap-lib';
 import { Markmap } from 'markmap-view';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface MindmapModalProps {
   markdown: string;
@@ -49,6 +50,7 @@ async function rasterize(svg: SVGSVGElement, width: number, height: number): Pro
 }
 
 export function MindmapModal({ markdown, title, onClose }: MindmapModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   const svgRef = useRef<SVGSVGElement>(null);
   const markmapRef = useRef<Markmap | null>(null);
   const [wrapWidth, setWrapWidth] = useState(300);
@@ -127,7 +129,7 @@ export function MindmapModal({ markdown, title, onClose }: MindmapModalProps) {
   }
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div
         className="modal"
         onClick={(e) => e.stopPropagation()}

@@ -11,6 +11,7 @@ import {
   recolorCustomCategory,
   renameCustomCategory,
 } from '@/lib/categories';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface AgentLibraryModalProps {
   onAdd: (preset: AgentPreset) => void;
@@ -20,6 +21,7 @@ interface AgentLibraryModalProps {
 const CUSTOM_AGENTS_VIEW = 'custom';
 
 export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -101,7 +103,7 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
   }
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-header">
           <span className="modal-title">📚 Agent Library</span>

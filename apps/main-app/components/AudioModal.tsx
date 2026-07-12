@@ -7,6 +7,7 @@ import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } fro
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import { loadCustomTtsApiKey, loadCustomTtsBaseUrl, loadCustomTtsVoice, synthesizeCustomTts } from '@/lib/custom-tts';
 import { devRef } from '@/lib/devref';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface AudioModalProps {
   agents: Agent[];
@@ -38,6 +39,7 @@ export function AudioModal({
   onToast,
   embedded,
 }: AudioModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const messages = threads.flatMap((t) => t.messages);
   const cancelledRef = useRef(false);
@@ -295,7 +297,7 @@ export function AudioModal({
   if (embedded) return content;
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 700 }}>
         <div className="modal-header">
           <span className="modal-title">🎧 Listen to Conversation</span>

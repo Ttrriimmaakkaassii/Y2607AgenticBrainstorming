@@ -22,6 +22,7 @@ import {
 } from '@/lib/custom-tts';
 import { testConnection } from '@/lib/llm-client';
 import { useClickOutside } from '@/lib/use-click-outside';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail';
 
@@ -80,6 +81,7 @@ export function LLMProvidersModal({
   onUpdateTtsModel,
   embedded,
 }: LLMProvidersModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   const [provider, setProvider] = useState<LLMProvider>('openai');
   const [model, setModel] = useState(LLM_CATALOG[0].models[0].id);
   const [effort, setEffort] = useState<Effort>('medium');
@@ -756,7 +758,7 @@ export function LLMProvidersModal({
   if (embedded) return content;
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
         <div className="modal-header">
           <span className="modal-title">🔌 LLM Providers</span>

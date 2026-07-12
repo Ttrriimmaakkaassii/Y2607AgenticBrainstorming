@@ -2,6 +2,7 @@
 
 import { Agent, ConversationState, Thread } from '@/lib/types';
 import { buildConversationMindmapMarkdown } from '@/lib/mindmap';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 
 interface ExportModalProps {
   state: ConversationState;
@@ -72,6 +73,7 @@ function buildReport(state: ConversationState): string {
 }
 
 export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportModalProps) {
+  const overlayClose = useOverlayClose(onClose);
   function exportJSON() {
     download('conversation.json', JSON.stringify(state, null, 2), 'application/json');
     onToast('📋 Downloaded JSON');
@@ -107,7 +109,7 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
   }
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">📥 Export Options</span>

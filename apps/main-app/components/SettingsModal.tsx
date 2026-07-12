@@ -24,6 +24,7 @@ import { GEMINI_TTS_VOICES } from '@/lib/google-tts';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
+import { useOverlayClose } from '@/lib/use-overlay-close';
 import { LLMProvidersModal } from './LLMProvidersModal';
 import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
@@ -137,6 +138,7 @@ export function SettingsModal({
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
   const configureAgentRef = useRef<HTMLDivElement>(null);
+  const overlayClose = useOverlayClose(onClose);
 
   const [name, setName] = useState(currentAgent?.name ?? '');
   const [role, setRole] = useState(currentAgent?.role ?? '');
@@ -359,7 +361,7 @@ export function SettingsModal({
   ];
 
   return (
-    <div className="modal-overlay active" onClick={onClose}>
+    <div className="modal-overlay active" {...overlayClose}>
       <div className="modal modal-fullscreen" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">⚙️ Settings</span>
