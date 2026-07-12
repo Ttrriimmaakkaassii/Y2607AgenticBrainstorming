@@ -92,8 +92,12 @@ export interface ConversationSettings {
   interactionStyle: InteractionStyle;
   ttsRate: number;
   ttsLang: string;
-  /** 'google' requires a saved Gemini API key; falls back to 'browser' when absent. */
-  ttsProvider: 'browser' | 'google';
+  /**
+   * 'google' requires a saved Gemini API key; 'custom' requires a saved
+   * base URL + API key for a BYO TTS HTTP service. Both fall back to
+   * 'browser' when their credentials are absent.
+   */
+  ttsProvider: 'browser' | 'google' | 'custom';
   /** Gemini TTS model id, e.g. "gemini-2.5-flash-preview-tts". */
   googleTtsModel: string;
   /** Digits only, international format without leading 00/+ (e.g. "212661320000"). */

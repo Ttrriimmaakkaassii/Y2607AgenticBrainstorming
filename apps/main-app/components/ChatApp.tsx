@@ -26,6 +26,7 @@ import { AGENT_REACTIONS, UNIVERSAL_REACTIONS } from '@/lib/reactions';
 import { SceneView } from './SceneView';
 import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
+import { loadCustomTtsApiKey, loadCustomTtsBaseUrl, loadCustomTtsVoice, synthesizeCustomTts } from '@/lib/custom-tts';
 import {
   loadConnections,
   loadConnectionsFromSupabase,
@@ -1093,6 +1094,12 @@ export function ChatApp() {
         speakMessageGoogle(index, msg, apiKey);
         return;
       }
+      const customBaseUrl = loadCustomTtsBaseUrl();
+      const customApiKey = loadCustomTtsApiKey();
+      if (state.settings.ttsProvider === 'custom' && customBaseUrl && customApiKey) {
+        speakMessageCustom(index, msg, customBaseUrl, customApiKey);
+        return;
+      }
       speakMessageBrowser(index, msg);
     }
 
@@ -1213,6 +1220,26 @@ export function ChatApp() {
         }
         playGoogleAudioChunk(msg, restUrl, restText, restOffset, () => speakAt(index + 1));
       });
+    }
+
+    // No fast-start split here (unlike Gemini) — a custom/self-hosted TTS
+    // service's latency characteristics aren't known in advance, so this
+    // keeps the request shape simple: synthesize the whole message once.
+    async function speakMessageCustom(index: number, msg: Message, baseUrl: string, apiKey: string) {
+      const voice = loadCustomTtsVoice();
+      setTtsLoadingMessageId(msg.id);
+      const abortController = new AbortController();
+      ttsAbortControllerRef.current = abortController;
+      const audioUrl = await synthesizeCustomTts(baseUrl, apiKey, msg.content, voice, abortController.signal);
+      if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
+      setTtsLoadingMessageId((prev) => (prev === msg.id ? null : prev));
+      if (speakingCancelledRef.current) return;
+      if (!audioUrl) {
+        showToast('⚠️ Custom TTS failed — falling back to the browser voice.');
+        speakMessageBrowser(index, msg);
+        return;
+      }
+      playGoogleAudioChunk(msg, audioUrl, msg.content, 0, () => speakAt(index + 1));
     }
 
     function speakMessageBrowser(index: number, msg: Message) {

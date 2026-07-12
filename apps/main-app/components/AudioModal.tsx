@@ -5,6 +5,7 @@ import { Agent, Message, Thread } from '@/lib/types';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
+import { loadCustomTtsApiKey, loadCustomTtsBaseUrl, loadCustomTtsVoice, synthesizeCustomTts } from '@/lib/custom-tts';
 import { devRef } from '@/lib/devref';
 
 interface AudioModalProps {
@@ -12,12 +13,12 @@ interface AudioModalProps {
   threads: Thread[];
   ttsRate: number;
   ttsLang: string;
-  ttsProvider: 'browser' | 'google';
+  ttsProvider: 'browser' | 'google' | 'custom';
   googleTtsModel: string;
   onUpdateTts: (updates: {
     ttsRate?: number;
     ttsLang?: string;
-    ttsProvider?: 'browser' | 'google';
+    ttsProvider?: 'browser' | 'google' | 'custom';
     googleTtsModel?: string;
   }) => void;
   onClose: () => void;
@@ -113,6 +114,38 @@ export function AudioModal({
       audio.play();
     }
 
+    async function speakAtCustom(index: number, msg: Message, baseUrl: string, apiKey: string) {
+      const voice = loadCustomTtsVoice();
+      const abortController = new AbortController();
+      ttsAbortControllerRef.current = abortController;
+      const audioUrl = await synthesizeCustomTts(
+        baseUrl,
+        apiKey,
+        `${authorName(msg)} says: ${msg.content}`,
+        voice,
+        abortController.signal
+      );
+      if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
+      if (cancelledRef.current) return;
+      if (!audioUrl) {
+        onToast('⚠️ Custom TTS failed — falling back to the browser voice.');
+        speakAtBrowser(index, msg);
+        return;
+      }
+      const audio = new Audio(audioUrl);
+      googleAudioRef.current = audio;
+      setPlayingIndex(index);
+      audio.onended = () => {
+        googleAudioRef.current = null;
+        speakAt(index + 1);
+      };
+      audio.onerror = () => {
+        googleAudioRef.current = null;
+        speakAt(index + 1);
+      };
+      audio.play();
+    }
+
     function speakAt(index: number) {
       if (cancelledRef.current || index >= messages.length) {
         setPlayingIndex(null);
@@ -122,6 +155,12 @@ export function AudioModal({
       const apiKey = loadTtsApiKey();
       if (ttsProvider === 'google' && apiKey) {
         speakAtGoogle(index, msg, apiKey);
+        return;
+      }
+      const customBaseUrl = loadCustomTtsBaseUrl();
+      const customApiKey = loadCustomTtsApiKey();
+      if (ttsProvider === 'custom' && customBaseUrl && customApiKey) {
+        speakAtCustom(index, msg, customBaseUrl, customApiKey);
         return;
       }
       speakAtBrowser(index, msg);
@@ -175,10 +214,11 @@ export function AudioModal({
           <select
             {...devRef('dr14')}
             value={ttsProvider}
-            onChange={(e) => onUpdateTts({ ttsProvider: e.target.value as 'browser' | 'google' })}
+            onChange={(e) => onUpdateTts({ ttsProvider: e.target.value as 'browser' | 'google' | 'custom' })}
           >
             <option value="browser">🔊 Browser (free, built-in)</option>
             <option value="google">✨ Gemini TTS (higher quality — needs an API key in 🔌 LLM)</option>
+            <option value="custom">🎙️ Custom TTS API (needs a base URL + key in 🔌 LLM)</option>
           </select>
         </div>
         {ttsProvider === 'google' && (
@@ -245,8 +285,8 @@ export function AudioModal({
         <div className="modal-section-title">Note</div>
         <div style={{ fontSize: 12, color: '#667781' }}>
           By default, playback uses your browser&apos;s built-in text-to-speech engine — free, but
-          voice quality depends on your device. Add your own Gemini API key in 🔌 LLM → TTS API and
-          switch the TTS Engine above to Gemini TTS for more natural, realistic voices.
+          voice quality depends on your device. Add your own Gemini API key, or your own Custom TTS
+          API base URL + key, in 🔌 LLM → TTS API, then switch the TTS Engine above to use it.
         </div>
       </div>
     </>

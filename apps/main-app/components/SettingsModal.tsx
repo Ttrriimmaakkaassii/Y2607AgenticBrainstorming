@@ -83,12 +83,12 @@ interface SettingsModalProps {
   threads: Thread[];
   ttsRate: number;
   ttsLang: string;
-  ttsProvider: 'browser' | 'google';
+  ttsProvider: 'browser' | 'google' | 'custom';
   googleTtsModel: string;
   onUpdateTts: (updates: {
     ttsRate?: number;
     ttsLang?: string;
-    ttsProvider?: 'browser' | 'google';
+    ttsProvider?: 'browser' | 'google' | 'custom';
     googleTtsModel?: string;
   }) => void;
   archives: ArchivedConversation[];

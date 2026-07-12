@@ -10,6 +10,16 @@ import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 import { GEMINI_TTS_MODELS, describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
+import {
+  CUSTOM_TTS_DEFAULT_VOICE,
+  loadCustomTtsApiKey,
+  loadCustomTtsBaseUrl,
+  loadCustomTtsVoice,
+  saveCustomTtsApiKey,
+  saveCustomTtsBaseUrl,
+  saveCustomTtsVoice,
+  testCustomTts,
+} from '@/lib/custom-tts';
 import { testConnection } from '@/lib/llm-client';
 import { useClickOutside } from '@/lib/use-click-outside';
 
@@ -82,6 +92,11 @@ export function LLMProvidersModal({
   const [ttsApiKey, setTtsApiKey] = useState(() => loadTtsApiKey());
   const [connectionTestStatus, setConnectionTestStatus] = useState<Record<string, TestStatus>>({});
   const [ttsTestStatus, setTtsTestStatus] = useState<TestStatus>('idle');
+  const [customTtsBaseUrl, setCustomTtsBaseUrl] = useState(() => loadCustomTtsBaseUrl());
+  const [customTtsApiKey, setCustomTtsApiKey] = useState(() => loadCustomTtsApiKey());
+  const [customTtsVoice, setCustomTtsVoice] = useState(() => loadCustomTtsVoice());
+  const [customTtsTestText, setCustomTtsTestText] = useState('This is a test.');
+  const [customTtsTestStatus, setCustomTtsTestStatus] = useState<TestStatus>('idle');
   const [customAgentPresets, setCustomAgentPresets] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
@@ -159,6 +174,38 @@ export function LLMProvidersModal({
       onToast(`⚠️ Key saved, but ${describeGoogleTtsError(errorStatus)}`);
     } else {
       onToast('⚠️ Key saved, but the verification request failed — check your connection and try again.');
+    }
+  }
+
+  function saveCustomTts() {
+    saveCustomTtsBaseUrl(customTtsBaseUrl);
+    saveCustomTtsApiKey(customTtsApiKey);
+    saveCustomTtsVoice(customTtsVoice);
+    onToast(
+      customTtsBaseUrl.trim() && customTtsApiKey.trim()
+        ? '💾 Custom TTS settings saved'
+        : '🗑️ Custom TTS settings cleared — using browser voices'
+    );
+  }
+
+  async function testCustomTtsButton() {
+    if (!customTtsBaseUrl.trim() || !customTtsApiKey.trim()) {
+      onToast('Enter a base URL and API key first.');
+      return;
+    }
+    setCustomTtsTestStatus('testing');
+    const { ok, audioUrl, error } = await testCustomTts(
+      customTtsBaseUrl,
+      customTtsApiKey,
+      customTtsVoice,
+      customTtsTestText
+    );
+    setCustomTtsTestStatus(ok ? 'ok' : 'fail');
+    if (ok && audioUrl) {
+      onToast('✅ Custom TTS is working — playing test audio');
+      new Audio(audioUrl).play();
+    } else {
+      onToast(`❌ ${error ?? 'Custom TTS test failed'}`);
     }
   }
 
@@ -438,6 +485,70 @@ export function LLMProvidersModal({
               kind of key used for a Gemini LLM connection above, not a separate Google Cloud Console
               key. Stored only in this browser, same as your LLM keys — never synced anywhere. Without
               a key, read-aloud keeps using your browser's free built-in voices.
+            </div>
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">🎙️ Custom TTS API (optional, BYO service)</div>
+            <div className="form-group">
+              <label>Base URL</label>
+              <input
+                type="text"
+                value={customTtsBaseUrl}
+                onChange={(e) => setCustomTtsBaseUrl(e.target.value)}
+                placeholder="https://your-tts-service.example.workers.dev"
+              />
+            </div>
+            <div className="form-group">
+              <label>API Key</label>
+              <input
+                type="password"
+                value={customTtsApiKey}
+                onChange={(e) => setCustomTtsApiKey(e.target.value)}
+                placeholder="Bearer token for your service"
+              />
+            </div>
+            <div className="form-group">
+              <label>Voice</label>
+              <input
+                type="text"
+                value={customTtsVoice}
+                onChange={(e) => setCustomTtsVoice(e.target.value)}
+                placeholder={CUSTOM_TTS_DEFAULT_VOICE}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button className="btn-secondary" onClick={saveCustomTts}>
+                💾 Save
+              </button>
+            </div>
+            <div className="form-group" style={{ marginTop: 10 }}>
+              <label>Test phrase</label>
+              <input
+                type="text"
+                value={customTtsTestText}
+                onChange={(e) => setCustomTtsTestText(e.target.value)}
+                placeholder="Type something to hear it spoken…"
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                className="btn-secondary"
+                onClick={testCustomTtsButton}
+                disabled={customTtsTestStatus === 'testing'}
+              >
+                {customTtsTestStatus === 'testing' ? 'Testing…' : '▶️ Test'}
+              </button>
+              <StatusDot status={customTtsTestStatus} />
+            </div>
+            <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
+              Optional. Point this at any HTTP text-to-speech service that accepts{' '}
+              <code>POST {'{baseUrl}'}/api/v1/audiotize</code> with{' '}
+              <code>Authorization: Bearer &lt;key&gt;</code> and a JSON body of{' '}
+              <code>{'{ text, voice? }'}</code>, returning raw audio bytes. Stored only in this
+              browser, never synced anywhere. Pick which engine to prioritize (Browser / Gemini TTS /
+              Custom TTS API) in 🎧 Audio → TTS Engine — whichever you select there is used first and
+              falls back to the browser voice if it fails or isn't configured.
             </div>
           </div>
 
