@@ -57,6 +57,11 @@ interface SceneViewProps {
   onFeedback: (message: Message, type: Feedback) => void;
   onReaction: (message: Message, type: ReactionType) => void;
   onReply: (message: Message) => void;
+  /** Which message/word the app's configured TTS reader is currently on (or null), so replay can sync its cursor and highlight to it. */
+  spokenRange: { messageId: string; charIndex: number; charLength: number } | null;
+  /** Starts the configured TTS reader (Browser/Google/Txt2Audio, whichever is set in Audio settings) from this message onward. */
+  onPlayFromMessageId: (id: string) => void;
+  onStopSpeaking: () => void;
   onClose: () => void;
 }
 
@@ -70,8 +75,12 @@ export function SceneView({
   onFeedback,
   onReaction,
   onReply,
+  spokenRange,
+  onPlayFromMessageId,
+  onStopSpeaking,
   onClose,
 }: SceneViewProps) {
+  const speakingMessageId = spokenRange?.messageId ?? null;
   const activeAgents = useMemo(() => agents.filter((a) => a.active), [agents]);
   const seats = useMemo(() => circleLayout(activeAgents.length), [activeAgents.length]);
 
@@ -104,7 +113,16 @@ export function SceneView({
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const audioEnabledRef = useRef(audioEnabled);
+  audioEnabledRef.current = audioEnabled;
+  const audioStartedRef = useRef(false);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stop any narration this view kicked off if it's closed/unmounted mid-replay.
+  useEffect(() => () => {
+    if (audioEnabledRef.current) onStopSpeaking();
+  }, [onStopSpeaking]);
 
   const thinkingIds = useMemo(
     () => Array.from(thinking.keys()).filter((id) => activeAgents.some((a) => a.id === id)),
@@ -122,9 +140,12 @@ export function SceneView({
     }
   }, [thinkingIds]);
 
-  // Auto-advance the replay cursor while playing.
+  // Auto-advance the replay cursor while playing — a fixed-timer estimate,
+  // used only when audio narration is off. With narration on, the cursor
+  // instead follows the reader (see the effect below) so the scene stays in
+  // sync with actual speech instead of a length-based guess.
   useEffect(() => {
-    if (playbackMode !== 'replay' || !isPlaying) return;
+    if (playbackMode !== 'replay' || !isPlaying || audioEnabled) return;
     const current = timeline[cursorIndex];
     if (!current) {
       setIsPlaying(false);
@@ -143,7 +164,32 @@ export function SceneView({
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
     };
-  }, [playbackMode, isPlaying, cursorIndex, playbackSpeed, timeline]);
+  }, [playbackMode, isPlaying, cursorIndex, playbackSpeed, timeline, audioEnabled]);
+
+  // Kick off the configured TTS reader at the current cursor when audio
+  // narration is on and replay starts playing. Deliberately excludes
+  // cursorIndex/timeline from its deps — it should fire once per Play press,
+  // not every time the cursor advances (the effect below tracks that).
+  useEffect(() => {
+    if (!audioEnabled || playbackMode !== 'replay' || !isPlaying) return;
+    audioStartedRef.current = false;
+    const current = timeline[cursorIndex];
+    if (current) onPlayFromMessageId(current.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, playbackMode, audioEnabled]);
+
+  // Follow the reader: move the cursor to whichever message it's currently
+  // speaking, and stop playback once it naturally runs out of messages.
+  useEffect(() => {
+    if (!audioEnabled || playbackMode !== 'replay' || !isPlaying) return;
+    if (speakingMessageId) {
+      audioStartedRef.current = true;
+      const idx = timeline.findIndex((m) => m.id === speakingMessageId);
+      if (idx >= 0 && idx !== cursorIndex) setCursorIndex(idx);
+    } else if (audioStartedRef.current) {
+      setIsPlaying(false);
+    }
+  }, [speakingMessageId, audioEnabled, playbackMode, isPlaying, timeline, cursorIndex]);
 
   function startReplay() {
     setPlaybackMode('replay');
@@ -156,18 +202,29 @@ export function SceneView({
       startReplay();
       return;
     }
+    if (isPlaying && audioEnabled) onStopSpeaking();
     setIsPlaying((v) => !v);
   }
 
   function scrubTo(index: number) {
+    if (audioEnabled) onStopSpeaking();
     setPlaybackMode('replay');
     setIsPlaying(false);
     setCursorIndex(index);
   }
 
   function goLive() {
+    if (audioEnabled) onStopSpeaking();
     setPlaybackMode('live');
     setIsPlaying(false);
+  }
+
+  function toggleAudio() {
+    setAudioEnabled((v) => {
+      const next = !v;
+      if (!next) onStopSpeaking();
+      return next;
+    });
   }
 
   // --- Free-form dragging -------------------------------------------------
@@ -327,6 +384,7 @@ export function SceneView({
               agent={focusAgent}
               message={centralMessage}
               typing
+              spokenRange={spokenRange && spokenRange.messageId === centralMessage.id ? spokenRange : null}
               onFeedback={onFeedback}
               onReaction={onReaction}
               onReply={onReply}
@@ -347,6 +405,14 @@ export function SceneView({
           disabled={timeline.length === 0}
         >
           {isPlaying ? '⏸️' : '▶️'}
+        </button>
+        <button
+          className={`btn-icon ${audioEnabled ? 'active' : ''}`}
+          {...devRef('b59')}
+          title={audioEnabled ? 'Audio narration on (uses your Audio settings reader)' : 'Read replay aloud with your configured TTS reader'}
+          onClick={toggleAudio}
+        >
+          {audioEnabled ? '🔊' : '🔇'}
         </button>
         <input
           type="range"
@@ -399,22 +465,48 @@ interface CentralBubbleProps {
   agent: Agent;
   message: Message;
   typing: boolean;
+  /** When the reader is actively speaking THIS message, the word currently being read — drives live word-sync highlighting instead of the typewriter approximation. */
+  spokenRange: { charIndex: number; charLength: number } | null;
   onFeedback: (message: Message, type: Feedback) => void;
   onReaction: (message: Message, type: ReactionType) => void;
   onReply: (message: Message) => void;
 }
 
+function renderSpokenHighlight(text: string, range: { charIndex: number; charLength: number }) {
+  if (range.charIndex < 0 || range.charIndex >= text.length) return text;
+  const before = text.slice(0, range.charIndex);
+  const word = text.slice(range.charIndex, range.charIndex + range.charLength);
+  const after = text.slice(range.charIndex + range.charLength);
+  return (
+    <>
+      {before}
+      <span className="spoken-word">{word}</span>
+      {after}
+    </>
+  );
+}
+
 /** The one shared speech bubble, always centered on the stage and linked to
  * whoever's currently speaking via the header + the speaker's own avatar
  * drifting toward it. Used for both live conversation and replay. */
-function CentralBubble({ agent, message, typing, onFeedback, onReaction, onReply }: CentralBubbleProps) {
-  const typed = useTypewriter(typing ? message.content : '');
-  const text = typing ? typed : message.content;
+function CentralBubble({ agent, message, typing, spokenRange, onFeedback, onReaction, onReply }: CentralBubbleProps) {
+  // While the reader is actively on this message, the real spoken-word
+  // position drives what's shown/highlighted, so the bubble text stays in
+  // lockstep with the audio — the typewriter's own timer-based reveal only
+  // applies when nothing's actually being read aloud.
+  const typed = useTypewriter(typing && !spokenRange ? message.content : '');
+  const text = spokenRange ? message.content : typing ? typed : message.content;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [text]);
+
+  useEffect(() => {
+    if (!spokenRange || !scrollRef.current) return;
+    const marked = scrollRef.current.querySelector('.spoken-word');
+    marked?.scrollIntoView({ block: 'nearest' });
+  }, [spokenRange?.charIndex]);
 
   return (
     <div className="scene-central-box" style={{ borderTopColor: agent.color }} onClick={(e) => e.stopPropagation()}>
@@ -423,7 +515,11 @@ function CentralBubble({ agent, message, typing, onFeedback, onReaction, onReply
         {agent.refNumber} {agent.name} is speaking
       </div>
       <div className="scene-central-text" ref={scrollRef}>
-        <SceneMarkdown content={text} />
+        {spokenRange ? (
+          <p className="scene-paragraph">{renderSpokenHighlight(text, spokenRange)}</p>
+        ) : (
+          <SceneMarkdown content={text} />
+        )}
       </div>
       <div className="scene-central-actions">
         {FEEDBACK_ICONS.map((f) => (

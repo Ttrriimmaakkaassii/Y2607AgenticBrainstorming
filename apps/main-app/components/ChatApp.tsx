@@ -2416,6 +2416,12 @@ export function ChatApp() {
           onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}
           onReaction={(message, type) => handleReaction(message.threadId, message, type)}
           onReply={(message) => setReplyingTo(message)}
+          spokenRange={speaking}
+          onPlayFromMessageId={(id) => {
+            const idx = allMessages.findIndex((m) => m.id === id);
+            if (idx >= 0) playFromMessage(idx);
+          }}
+          onStopSpeaking={stopSpeaking}
           onClose={() => setSceneViewOpen(false)}
         />
       )}
