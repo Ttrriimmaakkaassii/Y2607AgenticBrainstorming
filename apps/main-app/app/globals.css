@@ -1935,7 +1935,33 @@ body.dev-mode [data-devref]::after {
   flex-direction: column;
   align-items: center;
   cursor: pointer;
-  transition: transform 0.4s ease;
+  transition: transform 0.4s ease, filter 0.5s ease, opacity 0.5s ease;
+  z-index: 2;
+}
+
+/* "Always Visible" rule: the speaker is highlighted with a spotlight/scale
+   bump and everyone else dims slightly, instead of zooming far enough to
+   crop other seats out of frame. */
+.scene-avatar-slot.focused {
+  transform: translate(-50%, -50%) scale(1.12);
+  z-index: 4;
+}
+
+.scene-avatar-slot.dimmed {
+  filter: brightness(0.6) saturate(0.8);
+  opacity: 0.82;
+}
+
+.scene-spotlight {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 70%);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .scene-avatar-body {
@@ -1946,6 +1972,18 @@ body.dev-mode [data-devref]::after {
   border: 2px solid;
   border-bottom: none;
   z-index: 1;
+  transition: transform 0.5s ease;
+}
+
+.scene-avatar-seat-shadow {
+  position: absolute;
+  bottom: -2px;
+  width: 50px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  filter: blur(2px);
+  z-index: 0;
 }
 
 .scene-avatar-circle {
@@ -1970,6 +2008,23 @@ body.dev-mode [data-devref]::after {
 @keyframes scene-pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.08); }
+}
+
+/* Idle gaze: two small dots nudged toward whoever is speaking. */
+.scene-avatar-eyes {
+  position: absolute;
+  top: 14px;
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.scene-avatar-eyes span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  transition: transform 0.4s ease;
 }
 
 .scene-avatar-nametag {
@@ -2014,32 +2069,78 @@ body.dev-mode [data-devref]::after {
   50% { opacity: 1; transform: translateY(-3px); }
 }
 
+/* Speech bubbles: forced dark text on a soft per-agent tint, regardless of
+   app theme, so legibility never depends on which theme is active. */
 .scene-speech-bubble {
   position: absolute;
   bottom: 100%;
-  margin-bottom: 8px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 6px 10px;
-  min-width: 90px;
-  max-width: 160px;
-  font-size: 11px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  margin-bottom: 12px;
+  border-radius: 14px;
+  padding: 8px 12px;
+  min-width: 110px;
+  max-width: 190px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #1b1b1b;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.15);
   transition: max-width 0.4s ease, font-size 0.4s ease;
 }
 
+.scene-speech-tail {
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid;
+}
+
 .scene-speech-bubble.expanded {
-  max-width: 320px;
-  font-size: 13px;
-  z-index: 5;
+  max-width: 340px;
+  font-size: 13.5px;
+  z-index: 6;
 }
 
 .scene-speech-text {
-  max-height: 140px;
+  max-height: 160px;
   overflow-y: auto;
-  white-space: pre-wrap;
   word-break: break-word;
+  scroll-behavior: smooth;
+}
+
+.scene-paragraph {
+  margin: 0 0 6px;
+}
+
+.scene-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.scene-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.scene-inline-code {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.92em;
+}
+
+.scene-code-block {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 4px 0;
+  overflow-x: auto;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .scene-speech-actions {
@@ -2047,11 +2148,43 @@ body.dev-mode [data-devref]::after {
   flex-wrap: wrap;
   gap: 2px;
   margin-top: 6px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid rgba(0, 0, 0, 0.15);
   padding-top: 4px;
 }
 
 .scene-speech-actions .btn-icon {
   font-size: 13px;
   padding: 2px;
+  color: #1b1b1b;
+}
+
+/* Persistent media-player-style replay control bar. */
+.scene-playback-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-panel);
+  flex-wrap: wrap;
+}
+
+.scene-playback-bar select {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.scene-scrubber {
+  flex: 1;
+  min-width: 120px;
+}
+
+.scene-playback-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 46px;
+  text-align: center;
 }

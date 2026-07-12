@@ -335,6 +335,16 @@ export function ChatApp() {
   const [showAudioRail, setShowAudioRail] = useState(false);
   const [sceneViewOpen, setSceneViewOpen] = useState(false);
   const [sceneId, setSceneId] = useState('roundtable');
+  // How long the conversation engine pauses after an agent finishes replying
+  // before the next agent's turn starts — gives Scene View's camera/reader
+  // time to settle on the finished message. Read via a ref inside
+  // runAgentRound (a long-running async loop) so changes apply mid-round,
+  // matching the settingsRef/statusRef pattern above.
+  const [postSpeechDelayMs, setPostSpeechDelayMs] = useState(2500);
+  const postSpeechDelayRef = useRef(postSpeechDelayMs);
+  useEffect(() => {
+    postSpeechDelayRef.current = postSpeechDelayMs;
+  }, [postSpeechDelayMs]);
   const [topicExpanded, setTopicExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
   const [customMoods, setCustomMoods] = useState<CustomMood[]>([]);
@@ -690,6 +700,11 @@ export function ChatApp() {
         threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
         updatedAt: Date.now(),
       }));
+      // Give the reader (and Scene View's camera) time to settle on the
+      // message that just finished before the next agent starts typing.
+      if (postSpeechDelayRef.current > 0 && isRunnable()) {
+        await new Promise((resolve) => setTimeout(resolve, postSpeechDelayRef.current));
+      }
       // With no exchange limit set, keep going until every agent in this
       // round has had a turn (so all active agents respond to the user's
       // message, not just the first one in rotation) — only an explicit
@@ -2372,6 +2387,8 @@ export function ChatApp() {
           thinking={thinking}
           sceneId={sceneId}
           onChangeScene={setSceneId}
+          postSpeechDelayMs={postSpeechDelayMs}
+          onChangePostSpeechDelay={setPostSpeechDelayMs}
           onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}
           onReaction={(message, type) => handleReaction(message.threadId, message, type)}
           onReply={(message) => setReplyingTo(message)}
