@@ -6,6 +6,9 @@ import { TraitDef } from '@/lib/traits';
 import { SCENES, getScene, type SceneSeat } from '@/lib/scenes';
 import { PLAYBACK_SPEEDS, type PlaybackSpeed, buildSceneTimeline, messageDurationMs } from '@/lib/scene-timeline';
 import { SceneAvatar } from './SceneAvatar';
+import { SceneMarkdown } from './SceneMarkdown';
+import { useTypewriter } from '@/lib/use-typewriter';
+import { AGENT_REACTIONS } from '@/lib/reactions';
 import { devRef } from '@/lib/devref';
 
 const DELAY_OPTIONS = [
@@ -15,8 +18,19 @@ const DELAY_OPTIONS = [
   { label: '8s', value: 8000 },
 ];
 
+const FEEDBACK_ICONS: { type: Feedback; icon: string }[] = [
+  { type: 'like', icon: '👍' },
+  { type: 'dislike', icon: '👎' },
+  { type: 'clarify', icon: '🤔' },
+];
+
 function angleBetween(from: SceneSeat, to: SceneSeat): number {
   return (Math.atan2(to.yPct - from.yPct, to.xPct - from.xPct) * 180) / Math.PI;
+}
+
+/** Percent-space drag bounds so an avatar can never be dragged fully off the stage. */
+function clampPct(v: number): number {
+  return Math.max(6, Math.min(94, v));
 }
 
 interface SceneViewProps {
@@ -51,11 +65,24 @@ export function SceneView({
   const activeAgents = useMemo(() => agents.filter((a) => a.active), [agents]);
   const scene = getScene(sceneId);
   const seats = useMemo(() => scene.layout(activeAgents.length), [scene, activeAgents.length]);
+
+  const stageRef = useRef<HTMLDivElement>(null);
+  // User-dragged overrides, kept per scenery so switching scenes doesn't
+  // carry a Round Table layout into the Boardroom. Component-local state,
+  // as requested — not persisted across reloads.
+  const [customSeats, setCustomSeats] = useState<Record<string, Record<string, { xPct: number; yPct: number }>>>({});
+  const dragState = useRef<{ agentId: string; startX: number; startY: number; moved: boolean } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
   const seatByAgentId = useMemo(() => {
     const map = new Map<string, SceneSeat>();
-    activeAgents.forEach((a, i) => map.set(a.id, seats[i]));
+    activeAgents.forEach((a, i) => {
+      const base = seats[i];
+      const override = customSeats[sceneId]?.[a.id];
+      map.set(a.id, override ? { ...base, xPct: override.xPct, yPct: override.yPct } : base);
+    });
     return map;
-  }, [activeAgents, seats]);
+  }, [activeAgents, seats, customSeats, sceneId]);
 
   const timeline = useMemo(() => buildSceneTimeline(messages), [messages]);
 
@@ -129,6 +156,55 @@ export function SceneView({
     setIsPlaying(false);
   }
 
+  // --- Free-form dragging -------------------------------------------------
+
+  function handleAvatarPointerDown(agentId: string, e: React.PointerEvent) {
+    e.stopPropagation();
+    dragState.current = { agentId, startX: e.clientX, startY: e.clientY, moved: false };
+    setDraggingId(agentId);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    const drag = dragState.current;
+    const rect = stageRef.current;
+    if (!drag || !rect) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const box = rect.getBoundingClientRect();
+    const xPct = clampPct(((e.clientX - box.left) / box.width) * 100);
+    const yPct = clampPct(((e.clientY - box.top) / box.height) * 100);
+    setCustomSeats((prev) => ({
+      ...prev,
+      [sceneId]: { ...prev[sceneId], [drag.agentId]: { xPct, yPct } },
+    }));
+  }
+
+  function handlePointerUp() {
+    const drag = dragState.current;
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerUp);
+    setDraggingId(null);
+    if (drag && !drag.moved) {
+      // A click, not a drag — toggle camera focus like before.
+      setManualFocusId((prev) => (prev === drag.agentId ? null : drag.agentId));
+    }
+    dragState.current = null;
+  }
+
+  useEffect(
+    () => () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    },
+    []
+  );
+
+  // --- Focus / camera -------------------------------------------------
+
   const lastMessageByAgentLive = useMemo(() => {
     const map = new Map<string, Message>();
     for (const m of messages) {
@@ -156,6 +232,7 @@ export function SceneView({
 
   const autoFocusId = !userDismissed && thinkingIds.length === 1 ? thinkingIds[0] : null;
   const focusId = replaying ? replayFocusAgentId : manualFocusId ?? autoFocusId;
+  const focusAgent = focusId ? activeAgents.find((a) => a.id === focusId) ?? null : null;
   const focusSeat = focusId ? seatByAgentId.get(focusId) ?? null : null;
   // Kept intentionally subtle: the "Always Visible" rule means the speaker
   // is highlighted via the spotlight/dim treatment on each avatar, not by
@@ -163,6 +240,8 @@ export function SceneView({
   const zoom = focusSeat ? 1.08 : 1;
   const focusX = focusSeat?.xPct ?? 50;
   const focusY = focusSeat?.yPct ?? 50;
+
+  const theaterMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
 
   return (
     <div className="scene-view" {...devRef('s22')}>
@@ -182,12 +261,21 @@ export function SceneView({
         <button className="control-btn" {...devRef('b51')} onClick={dismissToWideShot} title="Zoom out to the full scene">
           🔭 Wide Shot
         </button>
+        {Object.keys(customSeats[sceneId] ?? {}).length > 0 && (
+          <button
+            className="control-btn"
+            title="Reset dragged seats back to the scenery's default layout"
+            onClick={() => setCustomSeats((prev) => ({ ...prev, [sceneId]: {} }))}
+          >
+            ↺ Reset Seats
+          </button>
+        )}
         <button className="control-btn" {...devRef('b52')} onClick={onClose} title="Back to text thread">
           📜 Thread View
         </button>
       </div>
 
-      <div className="scene-stage" style={{ background: scene.background }} onClick={dismissToWideShot}>
+      <div className="scene-stage" ref={stageRef} style={{ background: scene.background }} onClick={dismissToWideShot}>
         <div
           className="scene-world"
           style={{
@@ -209,10 +297,12 @@ export function SceneView({
                 isSpeaking={!replaying && thinkingIds.includes(agent.id)}
                 isFocused={focusId === agent.id}
                 isDimmed={focusId != null && focusId !== agent.id}
+                isDragging={draggingId === agent.id}
+                theaterMode={replaying}
                 gazeAngleDeg={gazeAngleDeg}
                 displayMessage={displayMessages.get(agent.id)}
                 liveTyping={replaying ? replayFocusAgentId === agent.id : !replaying}
-                onFocus={() => setManualFocusId((prev) => (prev === agent.id ? null : agent.id))}
+                onPointerDown={(e) => handleAvatarPointerDown(agent.id, e)}
                 onFeedback={onFeedback}
                 onReaction={onReaction}
                 onReply={onReply}
@@ -225,6 +315,18 @@ export function SceneView({
             </div>
           )}
         </div>
+
+        {replaying && focusAgent && theaterMessage && (
+          <TheaterBox
+            key={theaterMessage.id}
+            agent={focusAgent}
+            message={theaterMessage}
+            typing={true}
+            onFeedback={onFeedback}
+            onReaction={onReaction}
+            onReply={onReply}
+          />
+        )}
       </div>
 
       <div className="scene-playback-bar" onClick={(e) => e.stopPropagation()}>
@@ -282,6 +384,60 @@ export function SceneView({
             🔴 Live
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface TheaterBoxProps {
+  agent: Agent;
+  message: Message;
+  typing: boolean;
+  onFeedback: (message: Message, type: Feedback) => void;
+  onReaction: (message: Message, type: ReactionType) => void;
+  onReply: (message: Message) => void;
+}
+
+/** Theater Mode: a centered, teleprompter-style overlay for the active speaker's text during replay. */
+function TheaterBox({ agent, message, typing, onFeedback, onReaction, onReply }: TheaterBoxProps) {
+  const typed = useTypewriter(typing ? message.content : '');
+  const text = typing ? typed : message.content;
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [text]);
+
+  return (
+    <div className="scene-theater-overlay" onClick={(e) => e.stopPropagation()}>
+      <div className="scene-theater-box" style={{ borderTopColor: agent.color }}>
+        <div className="scene-theater-speaker">
+          <span className="scene-theater-dot" style={{ background: agent.color }} />
+          {agent.refNumber} {agent.name}
+        </div>
+        <div className="scene-theater-text" ref={scrollRef}>
+          <SceneMarkdown content={text} />
+        </div>
+        <div className="scene-theater-actions">
+          {FEEDBACK_ICONS.map((f) => (
+            <button
+              key={f.type}
+              className={`btn-icon ${message.feedback === f.type ? 'active' : ''}`}
+              title={f.type}
+              onClick={() => onFeedback(message, f.type)}
+            >
+              {f.icon}
+            </button>
+          ))}
+          <button className="btn-icon" title="Reply" onClick={() => onReply(message)}>
+            ↩️
+          </button>
+          {AGENT_REACTIONS.map((r) => (
+            <button key={r.type} className="btn-icon" title={r.tooltip} onClick={() => onReaction(message, r.type)}>
+              {r.icon}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

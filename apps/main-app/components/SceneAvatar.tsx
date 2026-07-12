@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { Agent, Feedback, Message, ReactionType } from '@/lib/types';
 import type { TraitDef } from '@/lib/traits';
 import type { SceneSeat } from '@/lib/scenes';
@@ -19,11 +20,6 @@ function traitValue(agent: Agent, traitDefs: TraitDef[], pattern: RegExp): numbe
   return agent.traits?.[def.id] ?? 50;
 }
 
-/** Soft light tint of the agent's color for a bubble background that still guarantees dark, legible text. */
-function softTint(hex: string, alphaHex: string): string {
-  return /^#[0-9a-fA-F]{6}$/.test(hex) ? `${hex}${alphaHex}` : `#3b99fc${alphaHex}`;
-}
-
 interface SceneAvatarProps {
   agent: Agent;
   seat: SceneSeat;
@@ -31,11 +27,14 @@ interface SceneAvatarProps {
   isSpeaking: boolean;
   isFocused: boolean;
   isDimmed: boolean;
+  isDragging: boolean;
+  /** In Theater Mode (replay) the centered overlay owns the text — avatars stay bubble-free. */
+  theaterMode: boolean;
   /** Degrees toward whichever agent is currently speaking (0 = looking straight ahead), for idle gaze tracking. */
   gazeAngleDeg: number;
   displayMessage?: Message;
   liveTyping: boolean;
-  onFocus: () => void;
+  onPointerDown: (e: React.PointerEvent) => void;
   onFeedback: (message: Message, type: Feedback) => void;
   onReaction: (message: Message, type: ReactionType) => void;
   onReply: (message: Message) => void;
@@ -48,10 +47,12 @@ export function SceneAvatar({
   isSpeaking,
   isFocused,
   isDimmed,
+  isDragging,
+  theaterMode,
   gazeAngleDeg,
   displayMessage,
   liveTyping,
-  onFocus,
+  onPointerDown,
   onFeedback,
   onReaction,
   onReply,
@@ -62,6 +63,10 @@ export function SceneAvatar({
   const pulseSpeed = 1.4 - (energy / 100) * 0.7;
   const typed = useTypewriter(liveTyping ? displayMessage?.content ?? '' : '');
   const bubbleText = liveTyping ? typed : displayMessage?.content ?? '';
+  const bubbleScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (bubbleScrollRef.current) bubbleScrollRef.current.scrollTop = bubbleScrollRef.current.scrollHeight;
+  }, [bubbleText]);
   const eyeOffsetX = Math.cos((gazeAngleDeg * Math.PI) / 180) * 3;
   const eyeOffsetY = Math.sin((gazeAngleDeg * Math.PI) / 180) * 3;
   const leanDeg = Math.max(-6, Math.min(6, gazeAngleDeg / 30));
@@ -70,19 +75,23 @@ export function SceneAvatar({
     <div
       className={`scene-avatar-slot ${isFocused ? 'focused' : ''} ${isSpeaking ? 'speaking' : ''} ${
         isDimmed ? 'dimmed' : ''
-      }`}
-      style={{ left: `${seat.xPct}%`, top: `${seat.yPct}%`, transform: `translate(-50%, -50%) scale(${seat.scale})` }}
-      onClick={onFocus}
+      } ${isDragging ? 'dragging' : ''}`}
+      style={{
+        left: `${seat.xPct}%`,
+        top: `${seat.yPct}%`,
+        transform: `translate(-50%, -50%) scale(${seat.scale * (isFocused ? 1.12 : 1)})`,
+      }}
+      onPointerDown={onPointerDown}
     >
       {isFocused && <div className="scene-spotlight" />}
-      {displayMessage && (
-        <div className={`scene-speech-bubble ${isFocused ? 'expanded' : ''}`} style={{ background: softTint(agent.color, '22') }}>
-          <div className="scene-speech-tail" style={{ borderTopColor: softTint(agent.color, '22') }} />
-          <div className="scene-speech-text">
+      {!theaterMode && displayMessage && (
+        <div className={`scene-speech-bubble ${isFocused ? 'expanded' : ''}`}>
+          <div className="scene-speech-tail" style={{ borderTopColor: agent.color }} />
+          <div className="scene-speech-text" ref={bubbleScrollRef}>
             <SceneMarkdown content={bubbleText} />
           </div>
           {isFocused && (
-            <div className="scene-speech-actions" onClick={(e) => e.stopPropagation()}>
+            <div className="scene-speech-actions" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
               {FEEDBACK_ICONS.map((f) => (
                 <button
                   key={f.type}
