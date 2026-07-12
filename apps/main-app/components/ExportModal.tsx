@@ -1,8 +1,17 @@
 'use client';
 
+import { useState } from 'react';
 import { Agent, ConversationState, Thread } from '@/lib/types';
 import { buildConversationMindmapMarkdown } from '@/lib/mindmap';
 import { useOverlayClose } from '@/lib/use-overlay-close';
+import {
+  PodcastResult,
+  loadCustomPodcastBaseUrl,
+  loadCustomTtsApiKey,
+  podcastizeConversation,
+  saveCustomPodcastBaseUrl,
+} from '@/lib/custom-tts';
+import { pickGoogleVoiceForAgent } from '@/lib/google-tts';
 
 interface ExportModalProps {
   state: ConversationState;
@@ -74,6 +83,55 @@ function buildReport(state: ConversationState): string {
 
 export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportModalProps) {
   const overlayClose = useOverlayClose(onClose);
+  const [podcastBaseUrl, setPodcastBaseUrl] = useState(() => loadCustomPodcastBaseUrl());
+  const [podcastFeedSlug, setPodcastFeedSlug] = useState('');
+  const [podcastTitle, setPodcastTitle] = useState(state.settings.topic || 'Untitled Episode');
+  const [podcastDescription, setPodcastDescription] = useState('');
+  const [podcastStatus, setPodcastStatus] = useState<'idle' | 'working' | 'ok' | 'fail'>('idle');
+  const [podcastResult, setPodcastResult] = useState<PodcastResult | null>(null);
+  const [podcastError, setPodcastError] = useState<string | null>(null);
+
+  async function createPodcastEpisode() {
+    saveCustomPodcastBaseUrl(podcastBaseUrl);
+    const apiKey = loadCustomTtsApiKey();
+    if (!apiKey.trim()) {
+      onToast('Add your Custom TTS API key in 🔌 LLM → Custom TTS API first.');
+      return;
+    }
+    const allMessages = state.threads
+      .flatMap((t) => t.messages)
+      .slice()
+      .sort((a, b) => a.timestamp - b.timestamp);
+    const segments = allMessages.map((msg) => {
+      const author = msg.agentId === 'user' ? null : state.agents.find((a) => a.id === msg.agentId);
+      const voice =
+        msg.agentId === 'user'
+          ? pickGoogleVoiceForAgent('user', null)
+          : pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
+      return { speaker: agentName(state.agents, msg.agentId), text: msg.content, voice };
+    });
+    setPodcastStatus('working');
+    setPodcastError(null);
+    setPodcastResult(null);
+    const { ok, result, error } = await podcastizeConversation(
+      podcastBaseUrl,
+      apiKey,
+      podcastFeedSlug,
+      podcastTitle,
+      podcastDescription,
+      segments
+    );
+    if (ok && result) {
+      setPodcastStatus('ok');
+      setPodcastResult(result);
+      onToast('🎙️ Podcast episode created');
+    } else {
+      setPodcastStatus('fail');
+      setPodcastError(error ?? 'Podcast creation failed');
+      onToast(`❌ ${error ?? 'Podcast creation failed'}`);
+    }
+  }
+
   function exportJSON() {
     download('conversation.json', JSON.stringify(state, null, 2), 'application/json');
     onToast('📋 Downloaded JSON');
@@ -141,6 +199,73 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
             <button className="btn-secondary" onClick={exportMindmapOutline}>
               📝 Download Mind Map Outline (.md)
             </button>
+          </div>
+          <div className="modal-section">
+            <div className="modal-section-title">🎙️ Turn into Podcast Episode</div>
+            <div className="form-group">
+              <label>Podcast Base URL</label>
+              <input
+                type="text"
+                value={podcastBaseUrl}
+                onChange={(e) => setPodcastBaseUrl(e.target.value)}
+                placeholder="https://your-tts-service.example.workers.dev"
+              />
+            </div>
+            <div className="form-group">
+              <label>Feed Slug (must already exist on the service)</label>
+              <input
+                type="text"
+                value={podcastFeedSlug}
+                onChange={(e) => setPodcastFeedSlug(e.target.value)}
+                placeholder="my-show"
+              />
+            </div>
+            <div className="form-group">
+              <label>Episode Title</label>
+              <input type="text" value={podcastTitle} onChange={(e) => setPodcastTitle(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Description (optional)</label>
+              <input
+                type="text"
+                value={podcastDescription}
+                onChange={(e) => setPodcastDescription(e.target.value)}
+              />
+            </div>
+            <button
+              className="btn-secondary"
+              onClick={createPodcastEpisode}
+              disabled={podcastStatus === 'working'}
+            >
+              {podcastStatus === 'working' ? '🔄 Creating episode…' : '🎙️ Create Podcast Episode'}
+            </button>
+            {podcastStatus === 'ok' && podcastResult && (
+              <div style={{ fontSize: 12, marginTop: 8 }}>
+                <div>✅ Episode created ({(podcastResult.bytes / 1024).toFixed(0)} KB)</div>
+                <div style={{ marginTop: 4 }}>
+                  <a href={podcastResult.audioUrl} target="_blank" rel="noreferrer">
+                    ▶️ Listen to episode
+                  </a>
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  <a href={podcastResult.feedUrl} target="_blank" rel="noreferrer">
+                    📡 RSS feed
+                  </a>{' '}
+                  — paste this URL into any podcast app
+                </div>
+              </div>
+            )}
+            {podcastStatus === 'fail' && podcastError && (
+              <div className="auth-error" style={{ marginTop: 8 }}>
+                {podcastError}
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
+              Every message in this conversation becomes a segment, spoken in a voice assigned per
+              agent (same deterministic assignment used for read-aloud). Uses the same API key as
+              🔌 LLM → Custom TTS API — set that up first. The feed slug must already exist on your
+              service.
+            </div>
           </div>
         </div>
       </div>

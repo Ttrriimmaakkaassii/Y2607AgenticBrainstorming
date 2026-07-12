@@ -1,6 +1,7 @@
 const BASE_URL_KEY = 'multi-agent-custom-tts-base-url';
 const API_KEY_KEY = 'multi-agent-custom-tts-api-key';
 const VOICE_KEY = 'multi-agent-custom-tts-voice';
+const PODCAST_BASE_URL_KEY = 'multi-agent-custom-tts-podcast-base-url';
 
 export const CUSTOM_TTS_DEFAULT_VOICE = 'Kore';
 
@@ -38,6 +39,21 @@ export function loadCustomTtsVoice(): string {
 export function saveCustomTtsVoice(voice: string): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(VOICE_KEY, voice.trim() || CUSTOM_TTS_DEFAULT_VOICE);
+}
+
+/**
+ * The podcast (multi-speaker episode) endpoint can live on a different
+ * base URL than the single-clip audiotize endpoint — kept as a separate
+ * field, sharing the same API key.
+ */
+export function loadCustomPodcastBaseUrl(): string {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(PODCAST_BASE_URL_KEY) ?? '';
+}
+
+export function saveCustomPodcastBaseUrl(url: string): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PODCAST_BASE_URL_KEY, url.trim().replace(/\/+$/, ''));
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -105,5 +121,58 @@ export async function testCustomTts(
     return { ok: true, audioUrl: URL.createObjectURL(blob) };
   } catch {
     return { ok: false, audioUrl: null, error: 'Network error — check the base URL and your connection.' };
+  }
+}
+
+export interface PodcastSegment {
+  speaker: string;
+  text: string;
+  voice?: string;
+}
+
+export interface PodcastResult {
+  episodeId: string;
+  audioUrl: string;
+  feedUrl: string;
+  bytes: number;
+}
+
+/**
+ * POSTs to `${baseUrl}/api/v1/podcastize` to stitch a multi-speaker
+ * conversation into one episode. Unlike /audiotize, this returns JSON
+ * (episode + RSS feed URLs), not raw audio bytes. `feedSlug` must already
+ * exist as a feed on the service.
+ */
+export async function podcastizeConversation(
+  baseUrl: string,
+  apiKey: string,
+  feedSlug: string,
+  title: string,
+  description: string,
+  segments: PodcastSegment[]
+): Promise<{ ok: boolean; result?: PodcastResult; error?: string }> {
+  if (!baseUrl.trim()) return { ok: false, error: 'Enter the podcast base URL first.' };
+  if (!apiKey.trim()) return { ok: false, error: 'Enter the API key first.' };
+  if (!feedSlug.trim()) return { ok: false, error: 'Enter the feed slug first.' };
+  if (segments.length === 0) return { ok: false, error: 'No messages to turn into a podcast episode.' };
+  try {
+    const res = await fetch(`${baseUrl.trim().replace(/\/+$/, '')}/api/v1/podcastize`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        feedSlug: feedSlug.trim(),
+        title: title.trim() || 'Untitled Episode',
+        description: description.trim() || undefined,
+        segments,
+      }),
+    });
+    if (!res.ok) return { ok: false, error: await readErrorMessage(res) };
+    const result = (await res.json()) as PodcastResult;
+    return { ok: true, result };
+  } catch {
+    return { ok: false, error: 'Network error — check the base URL and your connection.' };
   }
 }
