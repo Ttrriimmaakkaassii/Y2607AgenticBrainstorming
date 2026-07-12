@@ -22,6 +22,8 @@ import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
+import { AGENT_REACTIONS, UNIVERSAL_REACTIONS } from '@/lib/reactions';
+import { SceneView } from './SceneView';
 import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
@@ -61,29 +63,6 @@ import { ArchivesModal } from './ArchivesModal';
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
 const DEFAULT_WHATSAPP_NUMBER = '212661320000';
 
-interface ReactionDef {
-  type: ReactionType;
-  icon: string;
-  label: string;
-  tooltip: string;
-}
-
-// Requires the message's author to be a connected agent — triggers a real follow-up reply.
-const AGENT_REACTIONS: ReactionDef[] = [
-  { type: 'elaborate', icon: '🔎', label: 'Elaborate', tooltip: 'Ask this agent to elaborate with more depth' },
-  { type: 'explainFurther', icon: '💬', label: 'Explain Further', tooltip: 'Ask this agent to explain further, more simply' },
-  { type: 'why', icon: '❓', label: 'Why?', tooltip: 'Ask this agent why it said that' },
-  { type: 'sources', icon: '📚', label: 'Sources', tooltip: 'Ask this agent for its sources/reasoning' },
-  { type: 'bullets', icon: '•', label: 'Bullet Points', tooltip: 'Ask this agent to restate as bullet points' },
-  { type: 'suggest', icon: '💡', label: 'Suggest', tooltip: 'Suggest a logical follow-up question or response' },
-];
-
-// Work on any message (agent or user) — no LLM call needed.
-const UNIVERSAL_REACTIONS: ReactionDef[] = [
-  { type: 'mindmap', icon: '🗺️', label: 'Mind Map', tooltip: 'Turn this message into a mind map' },
-  { type: 'youtube', icon: '📺', label: 'YouTube', tooltip: 'Search YouTube for related videos' },
-  { type: 'tiktok', icon: '🎵', label: 'TikTok', tooltip: 'Search TikTok for related videos' },
-];
 
 const DEFAULT_AGENTS: Agent[] = [
   {
@@ -354,6 +333,8 @@ export function ChatApp() {
     settingsRef.current = state.settings;
   }, [state.settings]);
   const [showAudioRail, setShowAudioRail] = useState(false);
+  const [sceneViewOpen, setSceneViewOpen] = useState(false);
+  const [sceneId, setSceneId] = useState('roundtable');
   const [topicExpanded, setTopicExpanded] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
   const [customMoods, setCustomMoods] = useState<CustomMood[]>([]);
@@ -1919,6 +1900,9 @@ export function ChatApp() {
           <button className="icon-btn" {...devRef('b12')} onClick={() => setActiveModal('analytics')}>
             📊 Analytics
           </button>
+          <button className="icon-btn" {...devRef('b55')} onClick={() => setSceneViewOpen((v) => !v)}>
+            🎬 {sceneViewOpen ? 'Thread View' : 'Scene View'}
+          </button>
           <button className="icon-btn" {...devRef('b13')} onClick={() => setActiveModal('export')}>
             📥 Export
           </button>
@@ -2380,7 +2364,26 @@ export function ChatApp() {
             />
           </>
         )}
-      <div className="conversation-area" ref={conversationAreaRef} {...devRef('s8')}>
+      {sceneViewOpen && (
+        <SceneView
+          agents={state.agents}
+          traitDefs={traitDefs}
+          messages={allMessages}
+          thinking={thinking}
+          sceneId={sceneId}
+          onChangeScene={setSceneId}
+          onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}
+          onReaction={(message, type) => handleReaction(message.threadId, message, type)}
+          onReply={(message) => setReplyingTo(message)}
+          onClose={() => setSceneViewOpen(false)}
+        />
+      )}
+      <div
+        className="conversation-area"
+        ref={conversationAreaRef}
+        {...devRef('s8')}
+        style={sceneViewOpen ? { display: 'none' } : undefined}
+      >
         {state.threads.length === 0 && (
           <div className="start-discussion">
             <button onClick={startDiscussion}>▶️ Start New Discussion</button>
