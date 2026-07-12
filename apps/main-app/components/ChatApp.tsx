@@ -2717,6 +2717,7 @@ export function ChatApp() {
         <AnalyticsModal
           agents={state.agents}
           threads={state.threads}
+          connections={connections}
           onClose={() => setActiveModal(null)}
         />
       )}

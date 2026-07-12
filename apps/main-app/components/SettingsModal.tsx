@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getProvider } from '@/lib/llm-catalog';
 import { Agent, ArchivedConversation, LLMConnection, Thread } from '@/lib/types';
 import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
@@ -135,6 +135,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
+  const configureAgentRef = useRef<HTMLDivElement>(null);
 
   const [name, setName] = useState(currentAgent?.name ?? '');
   const [role, setRole] = useState(currentAgent?.role ?? '');
@@ -248,6 +249,7 @@ export function SettingsModal({
     setConnectionId(agent.connectionId);
     setVoiceURI(agent.voiceURI ?? null);
     setGoogleVoiceName(agent.googleVoiceName ?? null);
+    configureAgentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function save() {
@@ -418,7 +420,7 @@ export function SettingsModal({
                 </div>
               </div>
 
-              <div className="modal-section" {...devRef('s14')}>
+              <div className="modal-section" ref={configureAgentRef} {...devRef('s14')}>
                 <div className="modal-section-title">Configure Agent</div>
                 <div className="form-group">
                   <label>Agent Name</label>

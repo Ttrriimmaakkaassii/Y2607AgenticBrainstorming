@@ -277,3 +277,28 @@ export async function testConnection(connection: LLMConnection): Promise<boolean
   const reply = await callDirect(connection, 'You are a connectivity test. Reply with exactly: OK', 'Test');
   return reply !== null;
 }
+
+/**
+ * Asks the given connection to extract a strict, skeptical breakdown of
+ * every distinct subject discussed in `transcript` — used by the Analytics
+ * "Subjects Discussed" checklist. Returns the raw model output (expected to
+ * be a JSON array); callers must parse and validate it themselves, since a
+ * model can still return malformed output despite instructions.
+ */
+export async function fetchSubjectAnalysis(
+  connection: LLMConnection,
+  transcript: string
+): Promise<string | null> {
+  const systemPrompt =
+    'You are a strict, skeptical analyst reviewing a multi-agent discussion transcript. ' +
+    'Extract every distinct subject/topic discussed. For each subject, output a short subject ' +
+    'name (2-6 words, no details or explanation), a short category (one or two words), and a ' +
+    'confidence score from 0 to 100 for how CONCLUSIVELY that subject was resolved or answered ' +
+    '(0 = totally unresolved or left open, 100 = fully conclusive with a clear, well-supported ' +
+    'answer or consensus). Be strict: do not award a high score unless the conversation clearly ' +
+    'reached a firm, well-justified conclusion — disagreement, hedging, or an unanswered question ' +
+    'should score low. Order the subjects from most recently discussed to earliest. Respond with ' +
+    'ONLY a JSON array, no prose, no markdown code fences, in exactly this shape: ' +
+    '[{"subject": "...", "category": "...", "confidence": 0}]';
+  return callDirect(connection, systemPrompt, transcript || 'No conversation yet.');
+}
