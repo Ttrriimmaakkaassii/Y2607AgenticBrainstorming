@@ -2,7 +2,7 @@
 
 import { Agent } from '@/lib/types';
 import type { TraitDef } from '@/lib/traits';
-import type { SceneSeat } from '@/lib/scenes';
+import { SPEAKING_COLOR, ADDRESSED_COLOR, type SceneSeat } from '@/lib/scenes';
 import { shadeColor } from '@/lib/color';
 
 function traitValue(agent: Agent, traitDefs: TraitDef[], pattern: RegExp): number {
@@ -16,6 +16,8 @@ interface SceneAvatarProps {
   seat: SceneSeat;
   traitDefs: TraitDef[];
   isSpeaking: boolean;
+  /** This agent is who the current speaker's message is addressing. */
+  isAddressed: boolean;
   isFocused: boolean;
   isDimmed: boolean;
   isDragging: boolean;
@@ -32,6 +34,7 @@ export function SceneAvatar({
   seat,
   traitDefs,
   isSpeaking,
+  isAddressed,
   isFocused,
   isDimmed,
   isDragging,
@@ -42,12 +45,16 @@ export function SceneAvatar({
   const pulseSpeed = 1.4 - (energy / 100) * 0.7;
   const eyeOffsetX = Math.cos((gazeAngleDeg * Math.PI) / 180) * 3;
   const eyeOffsetY = Math.sin((gazeAngleDeg * Math.PI) / 180) * 3;
+  // Speaking (green) takes priority over being addressed (red), which takes
+  // priority over the agent's own preset color — so the two roles read at a
+  // glance regardless of what color an agent was assigned.
+  const displayColor = isSpeaking ? SPEAKING_COLOR : isAddressed ? ADDRESSED_COLOR : agent.color;
 
   return (
     <div
       className={`scene-avatar-slot ${isFocused ? 'focused' : ''} ${isSpeaking ? 'speaking' : ''} ${
-        isDimmed ? 'dimmed' : ''
-      } ${isDragging ? 'dragging' : ''}`}
+        isAddressed ? 'addressed' : ''
+      } ${isDimmed ? 'dimmed' : ''} ${isDragging ? 'dragging' : ''}`}
       style={{
         left: `${seat.xPct}%`,
         top: `${seat.yPct}%`,
@@ -60,8 +67,11 @@ export function SceneAvatar({
       <div
         className="scene-avatar-circle"
         style={{
-          background: `radial-gradient(circle at 32% 26%, ${shadeColor(agent.color, 24)} 0%, ${agent.color} 60%)`,
-          boxShadow: isSpeaking ? `0 0 0 4px ${agent.color}55, 0 0 24px ${agent.color}aa` : 'none',
+          background: `radial-gradient(circle at 32% 26%, ${shadeColor(displayColor, 24)} 0%, ${displayColor} 60%)`,
+          boxShadow:
+            isSpeaking || isAddressed
+              ? `0 0 0 4px ${displayColor}55, 0 0 24px ${displayColor}aa`
+              : 'none',
           animationDuration: isSpeaking ? `${pulseSpeed}s` : undefined,
         }}
       >
@@ -71,7 +81,7 @@ export function SceneAvatar({
           <span style={{ transform: `translate(${eyeOffsetX}px, ${eyeOffsetY}px)` }} />
         </div>
       </div>
-      <div className="scene-avatar-nametag" style={{ borderColor: agent.color }}>
+      <div className="scene-avatar-nametag" style={{ borderColor: displayColor }}>
         {agent.refNumber} {agent.name}
       </div>
       {isSpeaking && (

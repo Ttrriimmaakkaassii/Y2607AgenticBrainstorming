@@ -1073,9 +1073,14 @@ export function ChatApp() {
     // Chrome silently drops boundary/word events if speak() is called in
     // the same tick as cancel(), and can stall on long utterances unless
     // periodically nudged with pause()/resume() — both are long-standing
-    // Web Speech API quirks, not bugs in this app's logic.
+    // DESKTOP Web Speech API quirks. On Android, pause()/resume() is the
+    // opposite of harmless: resume() is well known to never actually
+    // resume there, permanently freezing the utterance — which read as
+    // "the reading just stops" even after the message-to-message chaining
+    // was already fixed. So the nudge only runs where it was meant to.
+    const isAndroid = /android/i.test(navigator.userAgent);
     const keepAlive = setInterval(() => {
-      if (window.speechSynthesis.speaking) {
+      if (!isAndroid && window.speechSynthesis.speaking) {
         window.speechSynthesis.pause();
         window.speechSynthesis.resume();
       }

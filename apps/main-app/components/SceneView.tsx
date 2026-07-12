@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Agent, Feedback, Message, ReactionType } from '@/lib/types';
 import { TraitDef } from '@/lib/traits';
-import { SCENE_BACKGROUND, sideLayout, type SceneSeat } from '@/lib/scenes';
+import { SCENE_BACKGROUND, sideLayout, SPEAKING_COLOR, type SceneSeat } from '@/lib/scenes';
 import { PLAYBACK_SPEEDS, type PlaybackSpeed, buildSceneTimeline, messageDurationMs } from '@/lib/scene-timeline';
 import { SceneAvatar } from './SceneAvatar';
 import { SceneMarkdown } from './SceneMarkdown';
@@ -458,6 +458,7 @@ export function SceneView({
                 seat={seat}
                 traitDefs={traitDefs}
                 isSpeaking={speakingNow}
+                isAddressed={addressedAgent?.id === agent.id}
                 isFocused={focusId === agent.id}
                 isDimmed={focusId != null && focusId !== agent.id}
                 isDragging={draggingId === agent.id}
@@ -471,25 +472,30 @@ export function SceneView({
               No active agents to seat in this scene.
             </div>
           )}
-        </div>
 
-        {addressedSeat && arrowOriginSeat && (
-          <svg className="scene-address-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <defs>
-              <marker id="scene-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                <path d="M0,0 L8,4 L0,8 Z" fill={focusAgent!.color} />
-              </marker>
-            </defs>
-            <path
-              key={`${focusAgent!.id}-${addressedAgent!.id}`}
-              className="scene-address-line"
-              d={buildArrowPath(arrowOriginSeat.xPct, arrowOriginSeat.yPct, addressedSeat.xPct, addressedSeat.yPct)}
-              fill="none"
-              stroke={focusAgent!.color}
-              markerEnd="url(#scene-arrowhead)"
-            />
-          </svg>
-        )}
+          {/* Lives inside .scene-world (not as a stage-level sibling) so it
+              rides the same zoom transform as the avatars — drawing it
+              outside caused the endpoints to drift out of alignment with
+              the actual avatar positions whenever the camera was zoomed in
+              on a focused speaker. */}
+          {addressedSeat && arrowOriginSeat && (
+            <svg className="scene-address-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <defs>
+                <marker id="scene-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" fill={SPEAKING_COLOR} />
+                </marker>
+              </defs>
+              <path
+                key={`${focusAgent!.id}-${addressedAgent!.id}`}
+                className="scene-address-line"
+                d={buildArrowPath(arrowOriginSeat.xPct, arrowOriginSeat.yPct, addressedSeat.xPct, addressedSeat.yPct)}
+                fill="none"
+                stroke={SPEAKING_COLOR}
+                markerEnd="url(#scene-arrowhead)"
+              />
+            </svg>
+          )}
+        </div>
 
         {focusAgent && centralMessage && (
           <div className="scene-central-anchor">
