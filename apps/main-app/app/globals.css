@@ -44,6 +44,18 @@
   box-sizing: border-box;
 }
 
+/* Native form controls don't inherit theme colors by default (browser UA
+   styles), so without this every theme — especially the ascii/green one —
+   shows stray white input/select boxes. Specific rules further down may
+   still override this for particular components. */
+input,
+select,
+textarea {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
 html,
 body {
   margin: 0;

@@ -709,6 +709,7 @@ export function SettingsModal({
                           <th></th>
                           <th>Ref</th>
                           <th>Name</th>
+                          <th>Categories</th>
                           {traitDefs.map((def) => (
                             <th key={def.id} title={def.category}>
                               {def.name}
@@ -717,7 +718,9 @@ export function SettingsModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {agents.map((agent) => (
+                        {agents.map((agent) => {
+                          const cats = categoriesForAgent(agent.name);
+                          return (
                           <tr key={agent.id} className={`agent-row ${agent.id === currentAgentId ? 'current' : ''}`}>
                             <td>
                               <div
@@ -735,6 +738,62 @@ export function SettingsModal({
                               {agent.refNumber}
                             </td>
                             <td>{agent.name}</td>
+                            <td style={{ position: 'relative' }}>
+                              <div
+                                style={{ display: 'flex', flexWrap: 'wrap', gap: 3, cursor: 'pointer', minHeight: 18 }}
+                                title="Click to edit categories"
+                                onClick={() => {
+                                  setTableCategoryFilter('');
+                                  setCategoryMenuAgentId((prev) => (prev === agent.id ? null : agent.id));
+                                }}
+                              >
+                                {cats.length === 0 ? (
+                                  <span className="category-chip" style={{ opacity: 0.6 }}>
+                                    + add ▾
+                                  </span>
+                                ) : (
+                                  cats.map((c) => (
+                                    <span key={c} className="category-chip">
+                                      {c}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                              {categoryMenuAgentId === agent.id && (
+                                <div className="moods-menu" style={{ zIndex: 60 }}>
+                                  <input
+                                    type="text"
+                                    className="control-input"
+                                    placeholder="Filter categories…"
+                                    value={tableCategoryFilter}
+                                    onChange={(e) => setTableCategoryFilter(e.target.value)}
+                                  />
+                                  <div className="moods-menu-list">
+                                    {allCategoryNames
+                                      .filter((catName) =>
+                                        catName.toLowerCase().includes(tableCategoryFilter.trim().toLowerCase())
+                                      )
+                                      .map((catName) => (
+                                        <div key={catName} className="moods-menu-row">
+                                          <label>
+                                            <input
+                                              type="checkbox"
+                                              checked={cats.includes(catName)}
+                                              onChange={() => toggleAgentCategory(agent, catName)}
+                                            />
+                                            {catName}
+                                          </label>
+                                        </div>
+                                      ))}
+                                    {allCategoryNames.filter((catName) =>
+                                      catName.toLowerCase().includes(tableCategoryFilter.trim().toLowerCase())
+                                    ).length === 0 && (
+                                      <div className="moods-menu-empty">No categories match.</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
                             {traitDefs.map((def) => {
                               const value = agent.traits?.[def.id] ?? 50;
                               return (
@@ -754,10 +813,11 @@ export function SettingsModal({
                               );
                             })}
                           </tr>
-                        ))}
+                          );
+                        })}
                         {traitDefs.length === 0 && (
                           <tr>
-                            <td colSpan={3}>
+                            <td colSpan={4}>
                               <div className="empty-state">No traits defined yet — add one in Traits &amp; Character above.</div>
                             </td>
                           </tr>
@@ -859,18 +919,33 @@ export function SettingsModal({
                               />
                             </td>
                             <td style={{ position: 'relative' }}>
-                              <button
-                                type="button"
-                                className="btn-secondary"
+                              <div
                                 {...devRef('dr18', index)}
-                                style={{ fontSize: 11, padding: '3px 6px', width: '100%' }}
+                                style={{
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  gap: 3,
+                                  cursor: 'pointer',
+                                  minHeight: 18,
+                                }}
+                                title="Click to edit categories"
                                 onClick={() => {
                                   setTableCategoryFilter('');
                                   setCategoryMenuAgentId((prev) => (prev === agent.id ? null : agent.id));
                                 }}
                               >
-                                {cats.length === 0 ? '🏷️ Categories ▾' : `🏷️ ${cats.length} category▾`}
-                              </button>
+                                {cats.length === 0 ? (
+                                  <span className="category-chip" style={{ opacity: 0.6 }}>
+                                    + add ▾
+                                  </span>
+                                ) : (
+                                  cats.map((c) => (
+                                    <span key={c} className="category-chip">
+                                      {c}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
                               {categoryMenuAgentId === agent.id && (
                                 <div className="moods-menu" style={{ zIndex: 60 }}>
                                   <input
@@ -907,26 +982,25 @@ export function SettingsModal({
                                   </div>
                                 </div>
                               )}
-                              <div style={{ marginTop: 2 }}>
-                                {cats.map((c) => (
-                                  <span key={c} className="category-chip">
-                                    {c}
-                                  </span>
-                                ))}
-                              </div>
                             </td>
-                            <td>
+                            <td style={{ maxWidth: 110 }}>
                               <select
                                 {...devRef('dr19', index)}
+                                style={{ maxWidth: 110 }}
+                                title={
+                                  agent.connectionId
+                                    ? connections.find((c) => c.id === agent.connectionId)?.label
+                                    : 'No LLM connected'
+                                }
                                 value={agent.connectionId ?? ''}
                                 onChange={(e) =>
                                   updateDraftField(agent.id, { connectionId: e.target.value || null })
                                 }
                               >
-                                <option value="">No LLM connected</option>
+                                <option value="">No LLM</option>
                                 {connections.map((c) => (
                                   <option key={c.id} value={c.id}>
-                                    {c.label} ({getProvider(c.provider)?.name} · {c.model} · {c.effort})
+                                    {c.label}
                                   </option>
                                 ))}
                               </select>
