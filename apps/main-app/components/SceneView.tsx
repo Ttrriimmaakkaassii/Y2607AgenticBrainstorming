@@ -18,6 +18,13 @@ const DELAY_OPTIONS = [
   { label: '8s', value: 8000 },
 ];
 
+type TextSize = 'sm' | 'md' | 'lg';
+const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
+  { value: 'sm', label: 'A Small' },
+  { value: 'md', label: 'A Medium' },
+  { value: 'lg', label: 'A Large' },
+];
+
 const FEEDBACK_ICONS: { type: Feedback; icon: string }[] = [
   { type: 'like', icon: '👍' },
   { type: 'dislike', icon: '👎' },
@@ -90,6 +97,7 @@ export function SceneView({
   const [userDismissed, setUserDismissed] = useState(false);
   const prevThinkingCount = useRef(0);
 
+  const [textSize, setTextSize] = useState<TextSize>('md');
   const [playbackMode, setPlaybackMode] = useState<'live' | 'replay'>('live');
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -244,8 +252,20 @@ export function SceneView({
   const theaterMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
 
   return (
-    <div className="scene-view" {...devRef('s22')}>
+    <div className={`scene-view scene-text-${textSize}`} {...devRef('s22')}>
       <div className="scene-toolbar">
+        <select
+          {...devRef('dr23')}
+          value={textSize}
+          onChange={(e) => setTextSize(e.target.value as TextSize)}
+          title="Speech bubble text size"
+        >
+          {TEXT_SIZE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <select
           {...devRef('dr20')}
           value={sceneId}
@@ -316,16 +336,21 @@ export function SceneView({
           )}
         </div>
 
-        {replaying && focusAgent && theaterMessage && (
-          <TheaterBox
-            key={theaterMessage.id}
-            agent={focusAgent}
-            message={theaterMessage}
-            typing={true}
-            onFeedback={onFeedback}
-            onReaction={onReaction}
-            onReply={onReply}
-          />
+        {replaying && focusAgent && theaterMessage && focusSeat && (
+          <div
+            className={`scene-theater-anchor ${focusSeat.yPct < 38 ? 'below' : 'above'}`}
+            style={{ left: `${focusSeat.xPct}%`, top: `${focusSeat.yPct}%` }}
+          >
+            <TheaterBox
+              key={theaterMessage.id}
+              agent={focusAgent}
+              message={theaterMessage}
+              typing={true}
+              onFeedback={onFeedback}
+              onReaction={onReaction}
+              onReply={onReply}
+            />
+          </div>
         )}
       </div>
 
@@ -409,36 +434,37 @@ function TheaterBox({ agent, message, typing, onFeedback, onReaction, onReply }:
   }, [text]);
 
   return (
-    <div className="scene-theater-overlay" onClick={(e) => e.stopPropagation()}>
-      <div className="scene-theater-box" style={{ borderTopColor: agent.color }}>
-        <div className="scene-theater-speaker">
-          <span className="scene-theater-dot" style={{ background: agent.color }} />
-          {agent.refNumber} {agent.name}
-        </div>
-        <div className="scene-theater-text" ref={scrollRef}>
-          <SceneMarkdown content={text} />
-        </div>
-        <div className="scene-theater-actions">
-          {FEEDBACK_ICONS.map((f) => (
-            <button
-              key={f.type}
-              className={`btn-icon ${message.feedback === f.type ? 'active' : ''}`}
-              title={f.type}
-              onClick={() => onFeedback(message, f.type)}
-            >
-              {f.icon}
-            </button>
-          ))}
-          <button className="btn-icon" title="Reply" onClick={() => onReply(message)}>
-            ↩️
+    <div className="scene-theater-box" style={{ borderTopColor: agent.color }} onClick={(e) => e.stopPropagation()}>
+      <div className="scene-theater-tail" style={{ borderColor: agent.color }} />
+      <div className="scene-theater-speaker">
+        <span className="scene-theater-dot" style={{ background: agent.color }} />
+        {agent.refNumber} {agent.name} is speaking
+      </div>
+      <div className="scene-theater-text" ref={scrollRef}>
+        <SceneMarkdown content={text} />
+      </div>
+      <div className="scene-theater-actions">
+        {FEEDBACK_ICONS.map((f) => (
+          <button
+            key={f.type}
+            className={`btn-icon ${message.feedback === f.type ? 'active' : ''}`}
+            title={f.type}
+            onClick={() => onFeedback(message, f.type)}
+          >
+            {f.icon}
           </button>
-          {AGENT_REACTIONS.map((r) => (
-            <button key={r.type} className="btn-icon" title={r.tooltip} onClick={() => onReaction(message, r.type)}>
-              {r.icon}
-            </button>
-          ))}
-        </div>
+        ))}
+        <button className="btn-icon" title="Reply" onClick={() => onReply(message)}>
+          ↩️
+        </button>
+        {AGENT_REACTIONS.map((r) => (
+          <button key={r.type} className="btn-icon" title={r.tooltip} onClick={() => onReaction(message, r.type)}>
+            {r.icon}
+          </button>
+        ))}
       </div>
     </div>
   );
 }
+
+

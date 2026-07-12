@@ -54,14 +54,16 @@ export const SCENES: SceneDef[] = [
     id: 'roundtable',
     label: 'Round Table',
     icon: '⭕',
-    background: 'radial-gradient(circle at 50% 45%, #3d2b1f 0%, #241a12 60%, #120d09 100%)',
+    background:
+      'radial-gradient(circle at 50% 30%, rgba(255,196,120,0.18) 0%, rgba(255,196,120,0) 45%), radial-gradient(ellipse at 50% 48%, #4a3625 0%, #2a1d13 45%, #140d08 78%, #080503 100%)',
     layout: (n) => circle(n, 50, 48, 34, 26),
   },
   {
     id: 'picnic',
     label: 'Picnic',
     icon: '🧺',
-    background: 'linear-gradient(180deg, #bfe6ff 0%, #bfe6ff 35%, #8fd48a 35%, #6bbf63 100%)',
+    background:
+      'radial-gradient(circle at 50% 12%, rgba(255,250,220,0.55) 0%, rgba(255,250,220,0) 40%), linear-gradient(180deg, #a9dcff 0%, #cdeaff 30%, #8fd48a 35%, #57a851 70%, #3f8a3c 100%)',
     layout: (n) =>
       Array.from({ length: n }, (_, i) => ({
         xPct: 50 + jitter(i + 1, 30),
@@ -73,7 +75,8 @@ export const SCENES: SceneDef[] = [
     id: 'boardroom',
     label: 'Boardroom',
     icon: '💼',
-    background: 'linear-gradient(180deg, #2a2f36 0%, #1b1e23 100%)',
+    background:
+      'radial-gradient(ellipse at 50% 0%, rgba(150,180,220,0.16) 0%, rgba(150,180,220,0) 55%), linear-gradient(180deg, #343b46 0%, #23272e 45%, #14171c 100%)',
     layout: (n) => {
       if (n === 0) return [];
       const head: SceneSeat = { xPct: 50, yPct: 18, scale: 1.1 };
@@ -85,7 +88,8 @@ export const SCENES: SceneDef[] = [
     id: 'lounge',
     label: 'Lounge',
     icon: '🛋️',
-    background: 'linear-gradient(180deg, #4a3728 0%, #2c2018 100%)',
+    background:
+      'radial-gradient(circle at 30% 20%, rgba(255,190,120,0.2) 0%, rgba(255,190,120,0) 45%), linear-gradient(160deg, #5a4230 0%, #3a2a1c 55%, #201509 100%)',
     layout: (n) =>
       Array.from({ length: n }, (_, i) => ({
         xPct: 20 + ((i * 60) / Math.max(n - 1, 1)) * (n > 1 ? 1 : 0) + (n === 1 ? 30 : 0),
@@ -97,21 +101,24 @@ export const SCENES: SceneDef[] = [
     id: 'campfire',
     label: 'Campfire',
     icon: '🔥',
-    background: 'radial-gradient(circle at 50% 55%, #3a2410 0%, #140b04 55%, #050302 100%)',
+    background:
+      'radial-gradient(circle at 50% 60%, rgba(255,140,40,0.35) 0%, rgba(255,90,20,0.12) 30%, rgba(255,90,20,0) 55%), radial-gradient(circle at 50% 55%, #3a2410 0%, #140b04 55%, #030201 100%)',
     layout: (n) => circle(n, 50, 55, 30, 22),
   },
   {
     id: 'debate',
     label: 'Debate Stage',
     icon: '🎙️',
-    background: 'linear-gradient(180deg, #1a1a2e 0%, #0d0d18 100%)',
+    background:
+      'radial-gradient(ellipse at 50% 30%, rgba(120,140,255,0.22) 0%, rgba(120,140,255,0) 55%), linear-gradient(180deg, #22223a 0%, #14141f 55%, #08080d 100%)',
     layout: (n) => row(n, 55, 70, 1.05),
   },
   {
     id: 'coffeeshop',
     label: 'Coffee Shop',
     icon: '☕',
-    background: 'linear-gradient(180deg, #e8d5c0 0%, #d4b998 100%)',
+    background:
+      'radial-gradient(circle at 50% 10%, rgba(255,240,210,0.5) 0%, rgba(255,240,210,0) 40%), linear-gradient(180deg, #f0ddc4 0%, #dcc09a 55%, #c2a179 100%)',
     layout: (n) =>
       Array.from({ length: n }, (_, i) => ({
         xPct: 20 + (i % 3) * 30 + jitter(i + 3, 6),
@@ -123,7 +130,8 @@ export const SCENES: SceneDef[] = [
     id: 'zen',
     label: 'Zen Garden',
     icon: '🪴',
-    background: 'linear-gradient(180deg, #e8e2d0 0%, #d6cfb8 100%)',
+    background:
+      'radial-gradient(circle at 50% 8%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0) 40%), linear-gradient(180deg, #eee7d4 0%, #dcd3b4 55%, #c7bb96 100%)',
     layout: (n) => grid(n, Math.min(n, 4) || 1, 22, 26, 22, 28),
   },
 ];

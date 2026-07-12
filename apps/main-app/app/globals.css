@@ -1922,6 +1922,18 @@ body.dev-mode [data-devref]::after {
   user-select: none;
 }
 
+/* Cinematic vignette — darkens the edges so the seated scene reads like a
+   framed shot rather than a flat CSS gradient. Purely decorative, so it
+   sits above the world but below all interactive avatar/bubble content. */
+.scene-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.4) 100%);
+  pointer-events: none;
+  z-index: 15;
+}
+
 .scene-world {
   position: absolute;
   inset: 0;
@@ -1974,12 +1986,12 @@ body.dev-mode [data-devref]::after {
 
 .scene-avatar-body {
   position: absolute;
-  bottom: 6px;
-  width: 46px;
-  height: 30px;
-  border: 2px solid;
-  border-bottom: none;
+  bottom: -2px;
+  width: 60px;
+  height: 46px;
+  overflow: visible;
   z-index: 1;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.3));
   transition: transform 0.5s ease;
 }
 
@@ -2007,6 +2019,16 @@ body.dev-mode [data-devref]::after {
   z-index: 2;
   position: relative;
   transition: box-shadow 0.3s ease;
+}
+
+/* A soft highlight so the "head" reads as a rounded form rather than a flat disc. */
+.scene-avatar-circle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 55%);
+  pointer-events: none;
 }
 
 .scene-avatar-slot.speaking .scene-avatar-circle {
@@ -2179,20 +2201,29 @@ body.dev-mode [data-devref]::after {
 /* Theater Mode: a large centered "teleprompter" overlay used during replay,
    replacing the per-avatar bubbles so text stays readable regardless of
    where its speaker happens to be seated/dragged. */
-.scene-theater-overlay {
+/* Anchored to the speaking avatar's own seat coordinates (not a fixed
+   bottom-center box) so the bubble visibly "links" to whoever is talking,
+   even after they've been dragged. Sits in .scene-stage, outside the
+   zoomed .scene-world, so its size never scales with the camera. */
+.scene-theater-anchor {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 24px;
-  pointer-events: none;
   z-index: 30;
+  pointer-events: none;
+}
+
+.scene-theater-anchor.above {
+  transform: translate(-50%, calc(-100% - 46px));
+}
+
+.scene-theater-anchor.below {
+  transform: translate(-50%, 46px);
 }
 
 .scene-theater-box {
+  position: relative;
   pointer-events: auto;
-  width: min(680px, 92%);
+  width: min(90vw, 560px);
+  max-width: 90vw;
   border-top: 4px solid;
   border-radius: 16px;
   padding: 18px 24px;
@@ -2204,9 +2235,31 @@ body.dev-mode [data-devref]::after {
   animation: scene-theater-in 0.4s ease;
 }
 
+.scene-theater-tail {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 14px;
+  background: rgba(8, 8, 10, 0.9);
+  border-right: 4px solid;
+  border-bottom: 4px solid;
+  border-color: inherit;
+}
+
+.scene-theater-anchor.above .scene-theater-tail {
+  bottom: -7px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.scene-theater-anchor.below .scene-theater-tail {
+  top: -7px;
+  transform: translateX(-50%) rotate(225deg);
+}
+
 @keyframes scene-theater-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .scene-theater-speaker {
@@ -2255,6 +2308,18 @@ body.dev-mode [data-devref]::after {
 .scene-theater-actions .btn-icon:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* User-adjustable text size — scales both the floating live bubbles and the
+   Theater Mode overlay together. */
+.scene-text-sm .scene-speech-bubble { font-size: 12px; max-width: 200px; }
+.scene-text-sm .scene-speech-bubble.expanded { font-size: 13px; max-width: 320px; }
+.scene-text-sm .scene-theater-text { font-size: 16px; }
+.scene-text-sm .scene-theater-box { width: min(90vw, 440px); }
+
+.scene-text-lg .scene-speech-bubble { font-size: 17px; max-width: 300px; }
+.scene-text-lg .scene-speech-bubble.expanded { font-size: 19px; max-width: 440px; }
+.scene-text-lg .scene-theater-text { font-size: 26px; }
+.scene-text-lg .scene-theater-box { width: min(94vw, 680px); }
 
 /* Persistent media-player-style replay control bar. */
 .scene-playback-bar {

@@ -6,6 +6,7 @@ import type { TraitDef } from '@/lib/traits';
 import type { SceneSeat } from '@/lib/scenes';
 import { useTypewriter } from '@/lib/use-typewriter';
 import { AGENT_REACTIONS } from '@/lib/reactions';
+import { shadeColor } from '@/lib/color';
 import { SceneMarkdown } from './SceneMarkdown';
 
 const FEEDBACK_ICONS: { type: Feedback; icon: string }[] = [
@@ -59,7 +60,8 @@ export function SceneAvatar({
 }: SceneAvatarProps) {
   const formality = traitValue(agent, traitDefs, /formal/i);
   const energy = traitValue(agent, traitDefs, /aggress|energ|assert/i);
-  const bodyRadius = 24 - Math.round((formality / 100) * 18);
+  const isFormal = formality >= 50;
+  const outfitColor = shadeColor(agent.color, -22);
   const pulseSpeed = 1.4 - (energy / 100) * 0.7;
   const typed = useTypewriter(liveTyping ? displayMessage?.content ?? '' : '');
   const bubbleText = liveTyping ? typed : displayMessage?.content ?? '';
@@ -115,15 +117,25 @@ export function SceneAvatar({
           )}
         </div>
       )}
-      <div
+      <svg
         className="scene-avatar-body"
-        style={{
-          background: `${agent.color}33`,
-          borderColor: agent.color,
-          borderRadius: `${bodyRadius}px ${bodyRadius}px 6px 6px`,
-          transform: `rotate(${leanDeg}deg)`,
-        }}
-      />
+        viewBox="0 0 60 46"
+        style={{ transform: `rotate(${leanDeg}deg)` }}
+      >
+        <path
+          d={
+            isFormal
+              ? 'M4,46 C4,20 15,3 30,3 C45,3 56,20 56,46 Z'
+              : 'M2,46 C2,18 12,1 30,1 C48,1 58,18 58,46 Z'
+          }
+          fill={outfitColor}
+        />
+        {isFormal ? (
+          <path d="M25,3 L30,16 L35,3 Z" fill={shadeColor(agent.color, 30)} opacity={0.85} />
+        ) : (
+          <path d="M22,4 Q30,12 38,4 L38,1 L22,1 Z" fill={shadeColor(agent.color, 30)} opacity={0.6} />
+        )}
+      </svg>
       <div className="scene-avatar-seat-shadow" />
       <div
         className="scene-avatar-circle"
