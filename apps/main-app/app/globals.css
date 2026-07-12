@@ -2346,6 +2346,30 @@ body.dev-mode [data-devref]::after {
 .scene-text-lg .scene-theater-text { font-size: 26px; }
 .scene-text-lg .scene-theater-box { width: min(94vw, 680px); }
 
+/* Indeterminate progress bar for the podcastize request — the service
+   gives no real progress events, so this just signals "still working". */
+.podcast-progress-bar {
+  width: 100%;
+  max-width: 380px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.podcast-progress-fill {
+  width: 40%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  animation: podcast-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes podcast-progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 /* Persistent media-player-style replay control bar. */
 .scene-playback-bar {
   display: flex;

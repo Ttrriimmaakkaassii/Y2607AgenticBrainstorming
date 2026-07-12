@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Agent, ConversationState, Thread } from '@/lib/types';
 import { buildConversationMindmapMarkdown } from '@/lib/mindmap';
 import { useOverlayClose } from '@/lib/use-overlay-close';
 import {
   PodcastResult,
+  addPodcastSlugToHistory,
   loadCustomPodcastBaseUrl,
   loadCustomTtsApiKey,
   loadCustomTtsBaseUrl,
+  loadPodcastSlugHistory,
   podcastizeConversation,
   saveCustomPodcastBaseUrl,
 } from '@/lib/custom-tts';
@@ -22,7 +24,10 @@ interface ExportModalProps {
 }
 
 function download(filename: string, content: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
+  downloadBlob(filename, new Blob([content], { type: mimeType }));
+}
+
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -91,6 +96,17 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
   const [podcastStatus, setPodcastStatus] = useState<'idle' | 'working' | 'ok' | 'fail'>('idle');
   const [podcastResult, setPodcastResult] = useState<PodcastResult | null>(null);
   const [podcastError, setPodcastError] = useState<string | null>(null);
+  const [podcastSlugHistory, setPodcastSlugHistory] = useState<string[]>([]);
+  const [podcastElapsedSec, setPodcastElapsedSec] = useState(0);
+  const [podcastDownloading, setPodcastDownloading] = useState(false);
+  const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    setPodcastSlugHistory(loadPodcastSlugHistory());
+    return () => {
+      if (elapsedTimer.current) clearInterval(elapsedTimer.current);
+    };
+  }, []);
 
   async function createPodcastEpisode() {
     const effectiveBaseUrl = podcastBaseUrl.trim() || loadCustomTtsBaseUrl();
@@ -115,6 +131,8 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
     setPodcastStatus('working');
     setPodcastError(null);
     setPodcastResult(null);
+    setPodcastElapsedSec(0);
+    elapsedTimer.current = setInterval(() => setPodcastElapsedSec((s) => s + 1), 1000);
     const { ok, result, error } = await podcastizeConversation(
       effectiveBaseUrl,
       apiKey,
@@ -123,14 +141,35 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
       podcastDescription,
       segments
     );
+    if (elapsedTimer.current) clearInterval(elapsedTimer.current);
     if (ok && result) {
       setPodcastStatus('ok');
       setPodcastResult(result);
+      setPodcastSlugHistory(addPodcastSlugToHistory(podcastFeedSlug));
       onToast('🎙️ Podcast episode created');
     } else {
       setPodcastStatus('fail');
       setPodcastError(error ?? 'Podcast creation failed');
       onToast(`❌ ${error ?? 'Podcast creation failed'}`);
+    }
+  }
+
+  async function downloadPodcastEpisode() {
+    if (!podcastResult) return;
+    setPodcastDownloading(true);
+    try {
+      const res = await fetch(podcastResult.audioUrl);
+      if (!res.ok) throw new Error('download failed');
+      const blob = await res.blob();
+      const ext = podcastResult.audioUrl.split('.').pop()?.split('?')[0] || 'wav';
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const base = (podcastTitle.trim() || podcastFeedSlug.trim() || 'podcast').replace(/[^a-z0-9]+/gi, '-');
+      downloadBlob(`${base}-${stamp}.${ext}`, blob);
+      onToast('⬇️ Podcast episode downloaded');
+    } catch {
+      onToast('❌ Could not download the episode — try "Listen to episode" and save from there.');
+    } finally {
+      setPodcastDownloading(false);
     }
   }
 
@@ -217,10 +256,16 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
               <label>Feed Slug (must already exist on the service)</label>
               <input
                 type="text"
+                list="podcast-slug-history"
                 value={podcastFeedSlug}
                 onChange={(e) => setPodcastFeedSlug(e.target.value)}
                 placeholder="my-show"
               />
+              <datalist id="podcast-slug-history">
+                {podcastSlugHistory.map((slug) => (
+                  <option key={slug} value={slug} />
+                ))}
+              </datalist>
             </div>
             <div className="form-group compact-field">
               <label>Episode Title</label>
@@ -239,15 +284,28 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
               onClick={createPodcastEpisode}
               disabled={podcastStatus === 'working'}
             >
-              {podcastStatus === 'working' ? '🔄 Creating episode…' : '🎙️ Create Podcast Episode'}
+              {podcastStatus === 'working' ? `🔄 Creating episode… (${podcastElapsedSec}s)` : '🎙️ Create Podcast Episode'}
             </button>
+            {podcastStatus === 'working' && (
+              <div className="podcast-progress-bar" style={{ marginTop: 8 }}>
+                <div className="podcast-progress-fill" />
+              </div>
+            )}
             {podcastStatus === 'ok' && podcastResult && (
               <div style={{ fontSize: 12, marginTop: 8 }}>
                 <div>✅ Episode created ({(podcastResult.bytes / 1024).toFixed(0)} KB)</div>
-                <div style={{ marginTop: 4 }}>
+                <div style={{ marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <a href={podcastResult.audioUrl} target="_blank" rel="noreferrer">
                     ▶️ Listen to episode
                   </a>
+                  <button
+                    className="btn-icon"
+                    style={{ fontSize: 12 }}
+                    onClick={downloadPodcastEpisode}
+                    disabled={podcastDownloading}
+                  >
+                    {podcastDownloading ? '⬇️ Downloading…' : '⬇️ Download'}
+                  </button>
                 </div>
                 <div style={{ marginTop: 4 }}>
                   <a href={podcastResult.feedUrl} target="_blank" rel="noreferrer">

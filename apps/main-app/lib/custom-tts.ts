@@ -2,6 +2,8 @@ const BASE_URL_KEY = 'multi-agent-custom-tts-base-url';
 const API_KEY_KEY = 'multi-agent-custom-tts-api-key';
 const VOICE_KEY = 'multi-agent-custom-tts-voice';
 const PODCAST_BASE_URL_KEY = 'multi-agent-custom-tts-podcast-base-url';
+const PODCAST_SLUG_HISTORY_KEY = 'multi-agent-custom-tts-podcast-slugs';
+const MAX_SLUG_HISTORY = 10;
 
 export const CUSTOM_TTS_DEFAULT_VOICE = 'Kore';
 
@@ -68,6 +70,26 @@ export function loadCustomPodcastBaseUrl(): string {
 export function saveCustomPodcastBaseUrl(url: string): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(PODCAST_BASE_URL_KEY, normalizeBaseUrl(url));
+}
+
+/** Most-recently-used feed slugs, newest first, for the Feed Slug autocomplete dropdown. */
+export function loadPodcastSlugHistory(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PODCAST_SLUG_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addPodcastSlugToHistory(slug: string): string[] {
+  const trimmed = slug.trim();
+  if (typeof window === 'undefined' || !trimmed) return loadPodcastSlugHistory();
+  const next = [trimmed, ...loadPodcastSlugHistory().filter((s) => s !== trimmed)].slice(0, MAX_SLUG_HISTORY);
+  window.localStorage.setItem(PODCAST_SLUG_HISTORY_KEY, JSON.stringify(next));
+  return next;
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
