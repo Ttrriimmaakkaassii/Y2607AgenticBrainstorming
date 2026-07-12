@@ -1,27 +1,22 @@
 /**
- * Dev Mode reference-code attribute helper. Every call returns a unique,
- * purely numeric-suffixed code ("S1", "S2", ...) instead of a hand-picked
- * name — codes are assigned automatically by call order within a render
- * pass, so there's no manual bookkeeping and no risk of two elements
- * accidentally sharing a code. Visibility is gated purely by CSS
- * (`body.dev-mode [data-devref]` in globals.css), toggled by ChatApp when
- * the user enables Dev Mode.
+ * Dev Mode reference-code attribute helper. Each call site is given a
+ * FIXED, hand-assigned numeric code baked into the source (e.g.
+ * `devRef('42')`) — not a runtime-computed value. This is deliberate: a
+ * code must always point back to the same call site so that when the user
+ * reports a code (e.g. "a4323"), it can be traced to an exact section by
+ * reading the source, regardless of how many agents/messages/etc. exist at
+ * runtime. A previous runtime-auto-incrementing version was reverted
+ * because it made codes meaningless outside the exact render that produced
+ * them.
  *
- * The counter resets at the start of ChatApp's render (see
- * resetDevRefCounter, called at the top of the ChatApp function body) so
- * the same element gets the same code across renders, as long as the
- * surrounding JSX tree shape hasn't changed (e.g. a conditional section
- * toggling open/closed will shift the numbers after it — expected for a
- * debug aid, not meant to be a permanent stable id).
+ * For a call site inside a list (.map()), pass the loop index as the
+ * second argument so each rendered instance still gets a distinct code
+ * ("42-0", "42-1", ...) while the base code stays traceable to that one
+ * call site in the source.
+ *
+ * Visibility is gated purely by CSS (`body.dev-mode [data-devref]` in
+ * globals.css), toggled by ChatApp when the user enables Dev Mode.
  */
-
-let counter = 0;
-
-export function resetDevRefCounter(): void {
-  counter = 0;
-}
-
-export function devRef(): { 'data-devref': string } {
-  counter += 1;
-  return { 'data-devref': `S${counter}` };
+export function devRef(code: string, index?: number | string): { 'data-devref': string } {
+  return { 'data-devref': index != null ? `${code}-${index}` : code };
 }

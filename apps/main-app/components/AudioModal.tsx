@@ -157,7 +157,7 @@ export function AudioModal({
           {messages.map((msg, i) => (
             <button
               key={msg.id}
-              {...devRef()}
+              {...devRef('121')}
               className={`audio-track-chip ${playingIndex === i ? 'playing' : ''}`}
               onClick={() => playFrom(i)}
               title={`Play from: ${authorName(msg)} — ${msg.content.slice(0, 60)}`}
@@ -173,7 +173,7 @@ export function AudioModal({
         <div className="form-group">
           <label>TTS Engine</label>
           <select
-            {...devRef()}
+            {...devRef('122')}
             value={ttsProvider}
             onChange={(e) => onUpdateTts({ ttsProvider: e.target.value as 'browser' | 'google' })}
           >
@@ -185,7 +185,7 @@ export function AudioModal({
           <div className="form-group">
             <label>Gemini TTS Model</label>
             <select
-              {...devRef()}
+              {...devRef('123')}
               value={googleTtsModel}
               onChange={(e) => onUpdateTts({ googleTtsModel: e.target.value })}
             >
@@ -201,7 +201,7 @@ export function AudioModal({
           <label>Voice Speed</label>
           <input
             type="number"
-            {...devRef()}
+            {...devRef('124')}
             min={0.5}
             max={2}
             step={0.1}
@@ -211,7 +211,7 @@ export function AudioModal({
         </div>
         <div className="form-group">
           <label>Voice Language</label>
-          <select {...devRef()} value={ttsLang} onChange={(e) => onUpdateTts({ ttsLang: e.target.value })}>
+          <select {...devRef('125')} value={ttsLang} onChange={(e) => onUpdateTts({ ttsLang: e.target.value })}>
             <option value="en-US">English (US)</option>
             <option value="en-GB">English (UK)</option>
             <option value="en-AU">English (Australia)</option>
@@ -234,10 +234,10 @@ export function AudioModal({
             <option value="ar-MA">Arabic (Morocco)</option>
           </select>
         </div>
-        <button className="btn-primary" {...devRef()} onClick={() => playFrom(0)}>
+        <button className="btn-primary" {...devRef('126')} onClick={() => playFrom(0)}>
           ▶️ Play From Start
         </button>
-        <button className="btn-secondary" {...devRef()} onClick={stopSpeaking} style={{ marginTop: 8 }}>
+        <button className="btn-secondary" {...devRef('127')} onClick={stopSpeaking} style={{ marginTop: 8 }}>
           ⏹️ Stop
         </button>
       </div>

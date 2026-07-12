@@ -284,11 +284,11 @@ export function SettingsModal({
             ×
           </button>
         </div>
-        <div className="settings-tabs" {...devRef()}>
+        <div className="settings-tabs" {...devRef('52')}>
           {TABS.map((t, i) => (
             <button
               key={t.id}
-              {...devRef()}
+              {...devRef('53')}
               className={`settings-tab ${tab === t.id ? 'active' : ''}`}
               onClick={() => setTab(t.id)}
             >
@@ -296,16 +296,16 @@ export function SettingsModal({
             </button>
           ))}
         </div>
-        <div className="modal-body" {...devRef()}>
+        <div className="modal-body" {...devRef('54')}>
           {tab === 'agent' && (
             <>
-              <div className="modal-section" {...devRef()}>
+              <div className="modal-section" {...devRef('55')}>
                 <div className="modal-section-title">Sharing</div>
                 <div className="form-group">
                   <label>My WhatsApp Number (digits only, international format)</label>
                   <input
                     type="text"
-                    {...devRef()}
+                    {...devRef('56')}
                     placeholder="e.g. 212661320000 — leave blank to use the default"
                     value={whatsappNumber}
                     onChange={(e) => onUpdateWhatsappNumber(e.target.value)}
@@ -313,7 +313,7 @@ export function SettingsModal({
                 </div>
               </div>
 
-              <div className="modal-section" {...devRef()}>
+              <div className="modal-section" {...devRef('57')}>
                 <div className="modal-section-title">General Guidelines (applies to all agents)</div>
                 {guidelines.map((g, gi) => {
                   const expanded = expandedGuidelineIds.has(g.id);
@@ -321,7 +321,7 @@ export function SettingsModal({
                     <div key={g.id} className="guideline-row">
                       <input
                         type="checkbox"
-                        {...devRef()}
+                        {...devRef('58')}
                         checked={g.enabled}
                         title={g.enabled ? 'Disable (recall it later without losing it)' : 'Re-enable'}
                         onChange={() => onGuidelinesChange(toggleGuideline(g.id))}
@@ -329,7 +329,7 @@ export function SettingsModal({
                       {expanded ? (
                         <textarea
                           className="guideline-textarea"
-                          {...devRef()}
+                          {...devRef('59')}
                           value={g.text}
                           onChange={(e) =>
                             onGuidelinesChange(updateGuideline(g.id, { text: e.target.value }))
@@ -338,7 +338,7 @@ export function SettingsModal({
                       ) : (
                         <input
                           type="text"
-                          {...devRef()}
+                          {...devRef('60')}
                           style={{ flex: 1 }}
                           value={g.text}
                           onChange={(e) =>
@@ -348,7 +348,7 @@ export function SettingsModal({
                       )}
                       <button
                         className="btn-icon"
-                        {...devRef()}
+                        {...devRef('61')}
                         title={expanded ? 'Collapse' : 'Expand to full text'}
                         onClick={() => toggleGuidelineExpanded(g.id)}
                       >
@@ -361,7 +361,7 @@ export function SettingsModal({
                       />
                       <button
                         className="btn-icon delete"
-                        {...devRef()}
+                        {...devRef('62')}
                         title="Delete permanently"
                         onClick={() => onGuidelinesChange(deleteGuideline(g.id))}
                       >
@@ -374,7 +374,7 @@ export function SettingsModal({
                   {newGuidelineExpanded ? (
                     <textarea
                       className="guideline-textarea"
-                      {...devRef()}
+                      {...devRef('63')}
                       placeholder="New guideline all agents must follow…"
                       value={newGuidelineText}
                       onChange={(e) => setNewGuidelineText(e.target.value)}
@@ -382,7 +382,7 @@ export function SettingsModal({
                   ) : (
                     <input
                       type="text"
-                      {...devRef()}
+                      {...devRef('64')}
                       style={{ flex: 1 }}
                       placeholder="New guideline all agents must follow…"
                       value={newGuidelineText}
@@ -391,7 +391,7 @@ export function SettingsModal({
                   )}
                   <button
                     className="btn-icon"
-                    {...devRef()}
+                    {...devRef('65')}
                     title={newGuidelineExpanded ? 'Collapse' : 'Expand to full text'}
                     onClick={() => setNewGuidelineExpanded((v) => !v)}
                   >
@@ -404,7 +404,7 @@ export function SettingsModal({
                   />
                   <button
                     className="btn-secondary"
-                    {...devRef()}
+                    {...devRef('66')}
                     onClick={() => {
                       if (!newGuidelineText.trim()) return;
                       onGuidelinesChange(addGuideline(newGuidelineText, newGuidelineCategory));
@@ -418,20 +418,20 @@ export function SettingsModal({
                 </div>
               </div>
 
-              <div className="modal-section" {...devRef()}>
+              <div className="modal-section" {...devRef('67')}>
                 <div className="modal-section-title">Configure Agent</div>
                 <div className="form-group">
                   <label>Agent Name</label>
-                  <input {...devRef()} value={name} onChange={(e) => setName(e.target.value)} />
+                  <input {...devRef('68')} value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label>Role / Personality</label>
-                  <input {...devRef()} value={role} onChange={(e) => setRole(e.target.value)} />
+                  <input {...devRef('69')} value={role} onChange={(e) => setRole(e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label>Instructions</label>
                   <textarea
-                    {...devRef()}
+                    {...devRef('70')}
                     value={instructions}
                     onChange={(e) => setInstructions(e.target.value)}
                   />
@@ -439,7 +439,7 @@ export function SettingsModal({
                 <div className="form-group">
                   <label>Connected LLM</label>
                   <select
-                    {...devRef()}
+                    {...devRef('71')}
                     value={connectionId ?? ''}
                     onChange={(e) => setConnectionId(e.target.value || null)}
                   >
@@ -454,7 +454,7 @@ export function SettingsModal({
                 <div className="form-group">
                   <label>Read-Aloud Voice</label>
                   <select
-                    {...devRef()}
+                    {...devRef('72')}
                     value={voiceURI ?? ''}
                     onChange={(e) => setVoiceURI(e.target.value || null)}
                   >
@@ -469,7 +469,7 @@ export function SettingsModal({
                 <div className="form-group">
                   <label>Gemini TTS Voice (used when TTS Engine is set to Gemini TTS)</label>
                   <select
-                    {...devRef()}
+                    {...devRef('73')}
                     value={googleVoiceName ?? ''}
                     onChange={(e) => setGoogleVoiceName(e.target.value || null)}
                   >
@@ -485,7 +485,7 @@ export function SettingsModal({
                   <label>Avatar Color</label>
                   <input
                     type="color"
-                    {...devRef()}
+                    {...devRef('74')}
                     value={color}
                     onChange={(e) => setColor(e.target.value)}
                     style={{ width: 50, height: 30, border: '1px solid #ddd', padding: 0 }}
@@ -497,7 +497,7 @@ export function SettingsModal({
                     <button
                       type="button"
                       className="control-btn"
-                      {...devRef()}
+                      {...devRef('75')}
                       onClick={() => setCategoriesMenuOpen((v) => !v)}
                     >
                       🏷️ Categories ({currentAgentCategories.length}) ▾
@@ -507,7 +507,7 @@ export function SettingsModal({
                         <input
                           type="text"
                           className="control-input"
-                          {...devRef()}
+                          {...devRef('76')}
                           placeholder="Filter categories…"
                           value={categoryFilter}
                           onChange={(e) => setCategoryFilter(e.target.value)}
@@ -522,7 +522,7 @@ export function SettingsModal({
                                 <label>
                                   <input
                                     type="checkbox"
-                                    {...devRef()}
+                                    {...devRef('77')}
                                     checked={currentAgentCategories.includes(name)}
                                     onChange={() => toggleCurrentAgentCategory(name)}
                                   />
@@ -553,7 +553,7 @@ export function SettingsModal({
                             <span className="trait-slider-label">{def.name}</span>
                             <input
                               type="range"
-                              {...devRef()}
+                              {...devRef('78')}
                               min={0}
                               max={100}
                               value={value}
@@ -575,7 +575,7 @@ export function SettingsModal({
                   <div className="trait-slider-row">
                     <input
                       type="text"
-                      {...devRef()}
+                      {...devRef('79')}
                       style={{ flex: 1 }}
                       placeholder="New trait name (e.g. Aggressiveness)"
                       value={newTraitName}
@@ -588,7 +588,7 @@ export function SettingsModal({
                     />
                     <button
                       className="btn-secondary"
-                      {...devRef()}
+                      {...devRef('80')}
                       onClick={() => {
                         if (!newTraitName.trim()) return;
                         onTraitDefsChange(addTraitDef(newTraitName, newTraitCategory));
@@ -600,18 +600,18 @@ export function SettingsModal({
                     </button>
                   </div>
                 </div>
-                <button className="btn-primary" {...devRef()} onClick={save}>
+                <button className="btn-primary" {...devRef('81')} onClick={save}>
                   Save Changes
                 </button>
               </div>
 
-              <div className="modal-section" {...devRef()}>
+              <div className="modal-section" {...devRef('82')}>
                 <div className="modal-section-title">Available Agents (drag to reorder)</div>
                 {agents.map((agent, index) => (
                   <div
                     className={`agent-list-item ${dragOverAgentId === agent.id ? 'drag-over' : ''}`}
                     key={agent.id}
-                    {...devRef()}
+                    {...devRef('83')}
                     draggable
                     style={{
                       cursor: 'grab',
@@ -653,7 +653,7 @@ export function SettingsModal({
                     <div className="agent-reorder-btns" onClick={(e) => e.stopPropagation()}>
                       <button
                         className="btn-icon"
-                        {...devRef()}
+                        {...devRef('84')}
                         onClick={() => moveAgent(agent.id, -1)}
                         disabled={index === 0}
                         title="Move up (renumbers Agt##)"
@@ -662,7 +662,7 @@ export function SettingsModal({
                       </button>
                       <button
                         className="btn-icon"
-                        {...devRef()}
+                        {...devRef('85')}
                         onClick={() => moveAgent(agent.id, 1)}
                         disabled={index === agents.length - 1}
                         title="Move down (renumbers Agt##)"
@@ -672,7 +672,7 @@ export function SettingsModal({
                     </div>
                     <button
                       className="btn-icon delete"
-                      {...devRef()}
+                      {...devRef('86')}
                       onClick={(e) => {
                         e.stopPropagation();
                         onDelete(agent.id);
@@ -684,10 +684,10 @@ export function SettingsModal({
                     </button>
                   </div>
                 ))}
-                <button className="btn-secondary" {...devRef()} onClick={onAdd}>
+                <button className="btn-secondary" {...devRef('87')} onClick={onAdd}>
                   + Add Blank Agent
                 </button>
-                <button className="btn-secondary" {...devRef()} onClick={onOpenLibrary}>
+                <button className="btn-secondary" {...devRef('88')} onClick={onOpenLibrary}>
                   📚 Browse Agent Library
                 </button>
               </div>
@@ -695,7 +695,7 @@ export function SettingsModal({
           )}
 
           {tab === 'llm' && (
-            <div {...devRef()}>
+            <div {...devRef('89')}>
               <LLMProvidersModal
                 embedded
                 connections={connections}
@@ -711,7 +711,7 @@ export function SettingsModal({
           )}
 
           {tab === 'audio' && (
-            <div {...devRef()}>
+            <div {...devRef('90')}>
               <AudioModal
                 embedded
                 agents={agents}
@@ -728,7 +728,7 @@ export function SettingsModal({
           )}
 
           {tab === 'archives' && (
-            <div {...devRef()}>
+            <div {...devRef('91')}>
               <ArchivesModal
                 embedded
                 archives={archives}
@@ -740,13 +740,13 @@ export function SettingsModal({
           )}
 
           {tab === 'log' && (
-            <div {...devRef()}>
+            <div {...devRef('92')}>
               <ChangeLogPanel />
             </div>
           )}
 
           {tab === 'account' && (
-            <div {...devRef()}>
+            <div {...devRef('93')}>
               <AccountSettingsPanel />
             </div>
           )}

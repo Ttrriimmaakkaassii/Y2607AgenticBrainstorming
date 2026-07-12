@@ -14,12 +14,13 @@ import {
   ResponseStyle,
   Thread,
 } from '@/lib/types';
-import { AgentPreset } from '@/lib/agent-library';
+import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
+import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
 import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
-import { devRef, resetDevRefCounter } from '@/lib/devref';
+import { devRef } from '@/lib/devref';
 import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } from '@/lib/google-tts';
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import {
@@ -267,10 +268,6 @@ function useInfinityField(value: number | null, onCommit: (v: number | null) => 
 }
 
 export function ChatApp() {
-  // Reset once per render pass so every devRef() call below (including in
-  // child components like SettingsModal) gets a stable, unique, purely
-  // numeric code for as long as the render tree shape doesn't change.
-  resetDevRefCounter();
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
   const [inputMessage, setInputMessage] = useState('');
@@ -292,7 +289,20 @@ export function ChatApp() {
   const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
   const [participantsMenuOpen, setParticipantsMenuOpen] = useState(false);
   const [participantFilter, setParticipantFilter] = useState('');
+  const [participantCategoryFilters, setParticipantCategoryFilters] = useState<Set<string>>(new Set());
+  const [participantsCustomAgents, setParticipantsCustomAgents] = useState<AgentPreset[]>([]);
+  const [participantsCustomCategories, setParticipantsCustomCategories] = useState<CustomCategory[]>([]);
+  const [manageBulkConnectionId, setManageBulkConnectionId] = useState('');
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setParticipantsCustomAgents(loadCustomAgents());
+    setParticipantsCustomCategories(loadCustomCategories());
+  }, []);
+
+  function categoriesForParticipant(name: string): string[] {
+    return participantsCustomAgents.find((p) => p.name === name)?.categories ?? [];
+  }
   const chipClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [topPanelOpen, setTopPanelOpen] = useState(true);
   const [freezeScroll, setFreezeScroll] = useState(false);
@@ -1690,10 +1700,10 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
-      <div className="fixed-top-icons" {...devRef()}>
+      <div className="fixed-top-icons" {...devRef('1')}>
         <button
           className="icon-btn"
-          {...devRef()}
+          {...devRef('2')}
           onClick={() => setShowAudioRail((v) => !v)}
           title="Toggle audio rail"
         >
@@ -1701,7 +1711,7 @@ export function ChatApp() {
         </button>
         <button
           className="icon-btn"
-          {...devRef()}
+          {...devRef('3')}
           onClick={cycleTheme}
           title={`Theme: ${theme} (click to cycle)`}
         >
@@ -1709,7 +1719,7 @@ export function ChatApp() {
         </button>
         <button
           className={`icon-btn ${devMode ? 'active' : ''}`}
-          {...devRef()}
+          {...devRef('4')}
           onClick={() => setDevMode((v) => !v)}
           title="Dev Mode: show a unique reference code on every section/feature/button/field"
         >
@@ -1719,7 +1729,7 @@ export function ChatApp() {
 
       <button
         className="settings-gear-btn"
-        {...devRef()}
+        {...devRef('5')}
         onClick={() => {
           setModalReturnTo(null);
           setActiveModal('settings');
@@ -1729,10 +1739,10 @@ export function ChatApp() {
         ⚙️
       </button>
 
-      <div className="top-panel-toggle-row" {...devRef()}>
+      <div className="top-panel-toggle-row" {...devRef('6')}>
         <button
           className="control-btn top-panel-toggle-btn"
-          {...devRef()}
+          {...devRef('7')}
           onClick={() => setTopPanelOpen((v) => !v)}
           title={topPanelOpen ? 'Collapse header/search/participants/controls' : 'Show header/search/participants/controls'}
         >
@@ -1742,13 +1752,13 @@ export function ChatApp() {
 
       <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
       <div className="top-panel-inner">
-      <div className="header" {...devRef()}>
+      <div className="header" {...devRef('8')}>
         <div className="header-left">
           <div className="topic-field-wrap">
             {topicExpanded ? (
               <textarea
                 className="select-input topic-textarea"
-                {...devRef()}
+                {...devRef('9')}
                 placeholder="Discussion topic (e.g. Should AI regulation be global?)"
                 value={state.settings.topic}
                 onChange={(e) => updateSettings({ topic: e.target.value })}
@@ -1757,7 +1767,7 @@ export function ChatApp() {
               <input
                 type="text"
                 className="select-input"
-                {...devRef()}
+                {...devRef('10')}
                 style={{ minWidth: 220, flex: 1 }}
                 placeholder="Discussion topic (e.g. Should AI regulation be global?)"
                 value={state.settings.topic}
@@ -1767,7 +1777,7 @@ export function ChatApp() {
             <button
               type="button"
               className="btn-icon"
-              {...devRef()}
+              {...devRef('11')}
               title={topicExpanded ? 'Collapse' : 'Expand to full text'}
               onClick={() => setTopicExpanded((v) => !v)}
             >
@@ -1777,7 +1787,7 @@ export function ChatApp() {
           <div className="moods-menu-wrap">
             <button
               className="control-btn"
-              {...devRef()}
+              {...devRef('12')}
               onClick={() => setMoodsMenuOpen((v) => !v)}
               title="Select one or more discussion moods to blend"
             >
@@ -1788,7 +1798,7 @@ export function ChatApp() {
                 <input
                   type="text"
                   className="control-input"
-                  {...devRef()}
+                  {...devRef('13')}
                   placeholder="Filter or add a new mood…"
                   value={moodFilter}
                   onChange={(e) => setMoodFilter(e.target.value)}
@@ -1809,7 +1819,7 @@ export function ChatApp() {
                             <label>
                               <input
                                 type="checkbox"
-                                {...devRef()}
+                                {...devRef('14')}
                                 checked={state.settings.moods.includes(m.name)}
                                 onChange={() => {
                                   const has = state.settings.moods.includes(m.name);
@@ -1826,7 +1836,7 @@ export function ChatApp() {
                               <span className="moods-menu-actions">
                                 <button
                                   className="btn-icon"
-                                  {...devRef()}
+                                  {...devRef('15')}
                                   title="Rename"
                                   onClick={() => {
                                     const next = window.prompt('Rename mood:', m.name);
@@ -1847,7 +1857,7 @@ export function ChatApp() {
                                 </button>
                                 <button
                                   className="btn-icon delete"
-                                  {...devRef()}
+                                  {...devRef('16')}
                                   title="Delete"
                                   onClick={() => {
                                     setCustomMoods(deleteCustomMood(m.custom!.id));
@@ -1871,7 +1881,7 @@ export function ChatApp() {
                       {q && !exactMatch && (
                         <button
                           className="control-btn"
-                          {...devRef()}
+                          {...devRef('17')}
                           onClick={() => {
                             setCustomMoods(addCustomMood(q));
                             updateSettings({ moods: [...state.settings.moods, moodFilter.trim()] });
@@ -1891,7 +1901,7 @@ export function ChatApp() {
         <div className="header-right">
           <button
             className="icon-btn"
-            {...devRef()}
+            {...devRef('18')}
             onClick={() => {
               setModalReturnTo(null);
               setActiveModal('library');
@@ -1899,20 +1909,20 @@ export function ChatApp() {
           >
             📚 Library
           </button>
-          <button className="icon-btn" {...devRef()} onClick={() => setActiveModal('analytics')}>
+          <button className="icon-btn" {...devRef('19')} onClick={() => setActiveModal('analytics')}>
             📊 Analytics
           </button>
-          <button className="icon-btn" {...devRef()} onClick={() => setActiveModal('export')}>
+          <button className="icon-btn" {...devRef('20')} onClick={() => setActiveModal('export')}>
             📥 Export
           </button>
         </div>
       </div>
 
-      <div className="search-bar" {...devRef()}>
+      <div className="search-bar" {...devRef('21')}>
         <input
           type="text"
           className="select-input"
-          {...devRef()}
+          {...devRef('22')}
           style={{ flex: 1 }}
           placeholder="🔎 Search discussion... (filters live as you type)"
           value={searchQuery}
@@ -1921,7 +1931,7 @@ export function ChatApp() {
         <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <input
             type="checkbox"
-            {...devRef()}
+            {...devRef('23')}
             checked={filterStarredOnly}
             onChange={(e) => setFilterStarredOnly(e.target.checked)}
           />
@@ -1929,7 +1939,7 @@ export function ChatApp() {
         </label>
         <select
           className="select-input"
-          {...devRef()}
+          {...devRef('24')}
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
         >
@@ -1943,7 +1953,7 @@ export function ChatApp() {
         {(searchQuery || filterStarredOnly || filterCategory) && (
           <button
             className="btn-icon"
-            {...devRef()}
+            {...devRef('25')}
             onClick={() => {
               setSearchQuery('');
               setFilterStarredOnly(false);
@@ -1956,7 +1966,7 @@ export function ChatApp() {
         )}
       </div>
 
-      <div className="participants-bar" {...devRef()}>
+      <div className="participants-bar" {...devRef('26')}>
         <span className="control-label">Participants:</span>
         {state.agents
           .filter((agent) => agent.active)
@@ -1965,7 +1975,7 @@ export function ChatApp() {
             return (
               <button
                 key={agent.id}
-                {...devRef()}
+                {...devRef('27', agentIndex)}
                 className={`participant-chip ${connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
                 style={{ borderColor: agent.color }}
                 onClick={() => {
@@ -2010,38 +2020,71 @@ export function ChatApp() {
         <div className="participants-menu-wrap">
           <button
             className="control-btn"
-            {...devRef()}
+            {...devRef('28')}
             onClick={() => setParticipantsMenuOpen((v) => !v)}
             title="Manage which agents are active in this session"
           >
             👥 Manage ({state.agents.filter((a) => a.active).length}/{state.agents.length}) ▾
           </button>
           {participantsMenuOpen && (
-            <div className="participants-menu" {...devRef()}>
+            <div className="participants-menu" {...devRef('29')}>
               <input
                 type="text"
                 className="control-input"
                 placeholder="Filter by name, role, category…"
                 value={participantFilter}
                 onChange={(e) => setParticipantFilter(e.target.value)}
-                {...devRef()}
+                {...devRef('30')}
               />
               {(() => {
+                const allCategoryNames = [
+                  ...AGENT_LIBRARY.map((c) => c.name),
+                  ...participantsCustomCategories.map((c) => c.name),
+                ];
                 const q = participantFilter.trim().toLowerCase();
                 const filtered = state.agents.filter((a) => {
+                  const categories = categoriesForParticipant(a.name);
+                  if (
+                    participantCategoryFilters.size > 0 &&
+                    !categories.some((c) => participantCategoryFilters.has(c))
+                  ) {
+                    return false;
+                  }
                   if (!q) return true;
                   return (
                     a.name.toLowerCase().includes(q) ||
                     a.role.toLowerCase().includes(q) ||
-                    a.refNumber.toLowerCase().includes(q)
+                    a.refNumber.toLowerCase().includes(q) ||
+                    categories.some((c) => c.toLowerCase().includes(q))
                   );
                 });
                 return (
                   <>
+                    {allCategoryNames.length > 0 && (
+                      <div className="participants-menu-list" style={{ maxHeight: 100 }}>
+                        {allCategoryNames.map((name, ci) => (
+                          <label key={name} className="participants-menu-row" {...devRef('30b', ci)}>
+                            <input
+                              type="checkbox"
+                              checked={participantCategoryFilters.has(name)}
+                              onChange={() =>
+                                setParticipantCategoryFilters((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(name)) next.delete(name);
+                                  else next.add(name);
+                                  return next;
+                                })
+                              }
+                            />
+                            <span>🏷️ {name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                     <div className="participants-menu-actions">
                       <button
                         className="control-btn"
-                        {...devRef()}
+                        {...devRef('31')}
                         onClick={() =>
                           setState((prev) => ({
                             ...prev,
@@ -2055,7 +2098,7 @@ export function ChatApp() {
                       </button>
                       <button
                         className="control-btn"
-                        {...devRef()}
+                        {...devRef('32')}
                         onClick={() =>
                           setState((prev) => ({
                             ...prev,
@@ -2068,21 +2111,71 @@ export function ChatApp() {
                         Deactivate all filtered
                       </button>
                     </div>
+                    <div className="participants-menu-actions">
+                      <select
+                        className="control-input"
+                        {...devRef('32b')}
+                        value={manageBulkConnectionId}
+                        onChange={(e) => setManageBulkConnectionId(e.target.value)}
+                      >
+                        <option value="">Set LLM for filtered...</option>
+                        {connections.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="control-btn"
+                        {...devRef('32c')}
+                        onClick={() => {
+                          const connection = connections.find((c) => c.id === manageBulkConnectionId);
+                          if (!connection) {
+                            showToast('Pick an LLM to apply first.');
+                            return;
+                          }
+                          setState((prev) => ({
+                            ...prev,
+                            agents: prev.agents.map((a) =>
+                              filtered.some((f) => f.id === a.id)
+                                ? { ...a, connectionId: connection.id, llmProvider: connection.provider }
+                                : a
+                            ),
+                          }));
+                          showToast(`Applied ${connection.label} to ${filtered.length} filtered agent(s).`);
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
                     <div className="participants-menu-list">
-                      {filtered.map((agent) => (
-                        <label key={agent.id} className="participants-menu-row">
-                          <input
-                            type="checkbox"
-                            checked={agent.active}
-                            onChange={() => toggleAgentActive(agent.id)}
-                          />
-                          <span className="participant-dot" style={{ background: agent.color }} />
-                          <span>
-                            {agent.refNumber} {agent.name}
-                            {!agentIsConnected(agent) && ' ⚠'}
-                          </span>
-                        </label>
-                      ))}
+                      {filtered.map((agent, fi) => {
+                        const connected = agentIsConnected(agent);
+                        return (
+                          <label key={agent.id} className="participants-menu-row" {...devRef('32d', fi)}>
+                            <input
+                              type="checkbox"
+                              checked={agent.active}
+                              onChange={() => toggleAgentActive(agent.id)}
+                            />
+                            <span
+                              title={connected ? 'Connected to an LLM' : 'No LLM connected'}
+                              style={{
+                                display: 'inline-block',
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: connected ? '#2ecc71' : '#e74c3c',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span className="participant-dot" style={{ background: agent.color }} />
+                            <span>
+                              {agent.refNumber} {agent.name}
+                            </span>
+                          </label>
+                        );
+                      })}
                       {filtered.length === 0 && (
                         <div className="participants-menu-empty">No agents match that filter.</div>
                       )}
@@ -2095,12 +2188,12 @@ export function ChatApp() {
         </div>
       </div>
 
-      <div className="controls-panel" {...devRef()}>
+      <div className="controls-panel" {...devRef('33')}>
         <div className="control-group">
           <span className="control-label">Response Style:</span>
           <select
             className="control-input"
-            {...devRef()}
+            {...devRef('34')}
             style={{ width: 'auto' }}
             value={state.settings.responseStyle}
             onChange={(e) => updateSettings({ responseStyle: e.target.value as ResponseStyle })}
@@ -2115,7 +2208,7 @@ export function ChatApp() {
           <span className="control-label">Interaction:</span>
           <select
             className="control-input"
-            {...devRef()}
+            {...devRef('35')}
             style={{ width: 'auto' }}
             value={state.settings.interactionStyle}
             onChange={(e) => updateSettings({ interactionStyle: e.target.value as InteractionStyle })}
@@ -2131,7 +2224,7 @@ export function ChatApp() {
             <input
               type="number"
               className="control-input"
-              {...devRef()}
+              {...devRef('36')}
               min={1}
               max={10}
               value={state.settings.maxSentences}
@@ -2145,13 +2238,13 @@ export function ChatApp() {
             type="text"
             inputMode="numeric"
             className="control-input"
-            {...devRef()}
+            {...devRef('37')}
             {...exchangesField}
           />
           {state.settings.maxExchanges != null && (
             <button
               className="control-btn"
-              {...devRef()}
+              {...devRef('38')}
               title="Extend the exchange limit by 10, even mid-conversation"
               onClick={() => extendExchanges(10)}
             >
@@ -2165,7 +2258,7 @@ export function ChatApp() {
             type="text"
             inputMode="numeric"
             className="control-input"
-            {...devRef()}
+            {...devRef('39')}
             {...tokensField}
           />
         </div>
@@ -2173,7 +2266,7 @@ export function ChatApp() {
           <input
             type="checkbox"
             id="orchestrator"
-            {...devRef()}
+            {...devRef('40')}
             checked={state.settings.orchestratorEnabled}
             onChange={(e) => updateSettings({ orchestratorEnabled: e.target.checked })}
           />
@@ -2183,18 +2276,18 @@ export function ChatApp() {
         </div>
         <div className="control-group">
           {state.status === 'running' ? (
-            <button className="control-btn" {...devRef()} onClick={pauseConversation}>
+            <button className="control-btn" {...devRef('41')} onClick={pauseConversation}>
               ⏸️ Pause
             </button>
           ) : (
-            <button className="control-btn" {...devRef()} onClick={playConversation}>
+            <button className="control-btn" {...devRef('42')} onClick={playConversation}>
               ▶️ Play
             </button>
           )}
-          <button className="control-btn" {...devRef()} onClick={stopConversation}>
+          <button className="control-btn" {...devRef('43')} onClick={stopConversation}>
             ⏹️ Stop
           </button>
-          <button className="control-btn" {...devRef()} onClick={resetConversation}>
+          <button className="control-btn" {...devRef('44')} onClick={resetConversation}>
             🔄 Reset
           </button>
           <button
@@ -2252,7 +2345,7 @@ export function ChatApp() {
       </button>
 
       {selectedMessageIds.length > 0 && (
-        <div className="selection-action-bar" {...devRef()}>
+        <div className="selection-action-bar" {...devRef('45')}>
           <span>{selectedMessageIds.length} selected</span>
           <button className="control-btn" onClick={copySelectedMessages}>
             📋 Copy
@@ -2266,7 +2359,7 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="conversation-body" {...devRef()}>
+      <div className="conversation-body" {...devRef('46')}>
         {showAudioRail && (
           <>
             <div className="audio-rail-backdrop" onClick={() => setShowAudioRail(false)} />
@@ -2279,7 +2372,7 @@ export function ChatApp() {
             />
           </>
         )}
-      <div className="conversation-area" ref={conversationAreaRef} {...devRef()}>
+      <div className="conversation-area" ref={conversationAreaRef} {...devRef('47')}>
         {state.threads.length === 0 && (
           <div className="start-discussion">
             <button onClick={startDiscussion}>▶️ Start New Discussion</button>
@@ -2542,12 +2635,12 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="input-area" {...devRef()}>
+      <div className="input-area" {...devRef('48')}>
         <textarea
           ref={messageInputRef}
           className="message-input"
           rows={1}
-          {...devRef()}
+          {...devRef('49')}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyDown={(e) => {
@@ -2561,7 +2654,7 @@ export function ChatApp() {
         />
         <button
           className={`btn-icon mic-btn ${isListening ? 'listening' : ''}`}
-          {...devRef()}
+          {...devRef('50')}
           onClick={toggleDictation}
           disabled={state.status === 'stopped'}
           title={
@@ -2572,7 +2665,7 @@ export function ChatApp() {
         >
           {isListening ? '🔴' : '🎤'}
         </button>
-        <button className="send-btn" {...devRef()} onClick={() => sendMessage()} disabled={state.status === 'stopped'}>
+        <button className="send-btn" {...devRef('51')} onClick={() => sendMessage()} disabled={state.status === 'stopped'}>
           Send
         </button>
       </div>
