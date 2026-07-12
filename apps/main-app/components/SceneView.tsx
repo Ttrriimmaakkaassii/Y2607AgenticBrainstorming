@@ -118,11 +118,21 @@ export function SceneView({
   audioEnabledRef.current = audioEnabled;
   const audioStartedRef = useRef(false);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ChatApp recreates onStopSpeaking on every render (it's not memoized), so
+  // this is read through a ref rather than depended on directly — depending
+  // on it would re-run this effect's cleanup on every unrelated re-render
+  // (e.g. every time `speaking` updates while audio is actually playing),
+  // which canceled narration the instant it started.
+  const onStopSpeakingRef = useRef(onStopSpeaking);
+  onStopSpeakingRef.current = onStopSpeaking;
 
   // Stop any narration this view kicked off if it's closed/unmounted mid-replay.
-  useEffect(() => () => {
-    if (audioEnabledRef.current) onStopSpeaking();
-  }, [onStopSpeaking]);
+  useEffect(
+    () => () => {
+      if (audioEnabledRef.current) onStopSpeakingRef.current();
+    },
+    []
+  );
 
   const thinkingIds = useMemo(
     () => Array.from(thinking.keys()).filter((id) => activeAgents.some((a) => a.id === id)),
