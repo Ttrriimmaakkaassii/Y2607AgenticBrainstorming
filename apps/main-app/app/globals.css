@@ -897,11 +897,22 @@ body.dev-mode [data-devref] {
   outline: 1px dashed #ff3b30;
 }
 
+/*
+ * The badge is positioned at the element's own top-right corner (top:0;
+ * right:0, i.e. fully inside the element's own box) and then nudged
+ * outside via `transform`, instead of using negative top/right offsets.
+ * Transforms are paint-only and are explicitly excluded from layout and
+ * scrollable-overflow calculations, so the badge can never enlarge an
+ * ancestor's scrollable area or trigger a scrollbar/reflow — which
+ * negative-offset absolute positioning could do, shifting buttons around
+ * whenever Dev Mode was toggled.
+ */
 body.dev-mode [data-devref]::after {
   content: attr(data-devref);
   position: absolute;
-  top: -7px;
-  right: -4px;
+  top: 0;
+  right: 0;
+  transform: translate(40%, -60%);
   background: #ff3b30;
   color: white;
   font-size: 8px;
