@@ -8,6 +8,7 @@ import {
   PodcastResult,
   loadCustomPodcastBaseUrl,
   loadCustomTtsApiKey,
+  loadCustomTtsBaseUrl,
   podcastizeConversation,
   saveCustomPodcastBaseUrl,
 } from '@/lib/custom-tts';
@@ -83,7 +84,7 @@ function buildReport(state: ConversationState): string {
 
 export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportModalProps) {
   const overlayClose = useOverlayClose(onClose);
-  const [podcastBaseUrl, setPodcastBaseUrl] = useState(() => loadCustomPodcastBaseUrl());
+  const [podcastBaseUrl, setPodcastBaseUrl] = useState(() => loadCustomPodcastBaseUrl() || loadCustomTtsBaseUrl());
   const [podcastFeedSlug, setPodcastFeedSlug] = useState('');
   const [podcastTitle, setPodcastTitle] = useState(state.settings.topic || 'Untitled Episode');
   const [podcastDescription, setPodcastDescription] = useState('');
@@ -92,10 +93,11 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
   const [podcastError, setPodcastError] = useState<string | null>(null);
 
   async function createPodcastEpisode() {
+    const effectiveBaseUrl = podcastBaseUrl.trim() || loadCustomTtsBaseUrl();
     saveCustomPodcastBaseUrl(podcastBaseUrl);
     const apiKey = loadCustomTtsApiKey();
     if (!apiKey.trim()) {
-      onToast('Add your Custom TTS API key in 🔌 LLM → Custom TTS API first.');
+      onToast('Add your Txt2Audio API key in 🔌 LLM → Txt2Audio first.');
       return;
     }
     const allMessages = state.threads
@@ -114,7 +116,7 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
     setPodcastError(null);
     setPodcastResult(null);
     const { ok, result, error } = await podcastizeConversation(
-      podcastBaseUrl,
+      effectiveBaseUrl,
       apiKey,
       podcastFeedSlug,
       podcastTitle,
@@ -201,17 +203,17 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
             </button>
           </div>
           <div className="modal-section">
-            <div className="modal-section-title">🎙️ Turn into Podcast Episode</div>
-            <div className="form-group">
-              <label>Podcast Base URL</label>
+            <div className="modal-section-title">🎙️ Turn into Podcast Episode (Txt2Audio)</div>
+            <div className="form-group compact-field">
+              <label>Podcast Base URL (leave blank to use the Txt2Audio Base URL)</label>
               <input
                 type="text"
                 value={podcastBaseUrl}
                 onChange={(e) => setPodcastBaseUrl(e.target.value)}
-                placeholder="https://your-tts-service.example.workers.dev"
+                placeholder="https://your-service.workers.dev"
               />
             </div>
-            <div className="form-group">
+            <div className="form-group compact-field">
               <label>Feed Slug (must already exist on the service)</label>
               <input
                 type="text"
@@ -220,11 +222,11 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
                 placeholder="my-show"
               />
             </div>
-            <div className="form-group">
+            <div className="form-group compact-field">
               <label>Episode Title</label>
               <input type="text" value={podcastTitle} onChange={(e) => setPodcastTitle(e.target.value)} />
             </div>
-            <div className="form-group">
+            <div className="form-group compact-field">
               <label>Description (optional)</label>
               <input
                 type="text"
@@ -260,10 +262,10 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
                 {podcastError}
               </div>
             )}
-            <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: '#667781', marginTop: 6, maxWidth: 420 }}>
               Every message in this conversation becomes a segment, spoken in a voice assigned per
               agent (same deterministic assignment used for read-aloud). Uses the same API key as
-              🔌 LLM → Custom TTS API — set that up first. The feed slug must already exist on your
+              🔌 LLM → Txt2Audio — set that up first. The feed slug must already exist on your
               service.
             </div>
           </div>

@@ -1158,6 +1158,15 @@ body.dev-mode [data-devref]::after {
   min-height: 80px;
 }
 
+/* Caps a field to a sane reading width instead of stretching to fill a
+   wide container (e.g. these fields look stretched-too-wide when the
+   embedding modal — like the fullscreen Settings panel — is much wider
+   than a normal 720px modal). */
+.form-group.compact-field input,
+.form-group.compact-field select {
+  max-width: 380px;
+}
+
 .btn-primary {
   width: 100%;
   padding: 10px;

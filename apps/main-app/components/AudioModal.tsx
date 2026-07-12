@@ -220,7 +220,7 @@ export function AudioModal({
           >
             <option value="browser">🔊 Browser (free, built-in)</option>
             <option value="google">✨ Gemini TTS (higher quality — needs an API key in 🔌 LLM)</option>
-            <option value="custom">🎙️ Custom TTS API (needs a base URL + key in 🔌 LLM)</option>
+            <option value="custom">🎙️ Txt2Audio (needs a base URL + key in 🔌 LLM)</option>
           </select>
         </div>
         {ttsProvider === 'google' && (

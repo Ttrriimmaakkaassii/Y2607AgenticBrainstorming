@@ -6,6 +6,20 @@ const PODCAST_BASE_URL_KEY = 'multi-agent-custom-tts-podcast-base-url';
 export const CUSTOM_TTS_DEFAULT_VOICE = 'Kore';
 
 /**
+ * Strips a trailing slash and, if present, an already-included
+ * `/api/v1/audiotize` or `/api/v1/podcastize` suffix — pasting the full
+ * endpoint URL (instead of just the origin) as the "base URL" is an easy
+ * mistake, and previously caused requests to double up into
+ * `/api/v1/audiotize/api/v1/audiotize`.
+ */
+function normalizeBaseUrl(url: string): string {
+  return url
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/api\/v1\/(audiotize|podcastize)$/i, '');
+}
+
+/**
  * BYO text-to-speech HTTP service (e.g. a self-hosted Gemini-TTS-backed
  * Worker) — same local-only storage pattern as the Gemini TTS key
  * (lib/tts-connection.ts) and LLM connections. Never included in
@@ -18,7 +32,7 @@ export function loadCustomTtsBaseUrl(): string {
 
 export function saveCustomTtsBaseUrl(url: string): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(BASE_URL_KEY, url.trim().replace(/\/+$/, ''));
+  window.localStorage.setItem(BASE_URL_KEY, normalizeBaseUrl(url));
 }
 
 export function loadCustomTtsApiKey(): string {
@@ -53,7 +67,7 @@ export function loadCustomPodcastBaseUrl(): string {
 
 export function saveCustomPodcastBaseUrl(url: string): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(PODCAST_BASE_URL_KEY, url.trim().replace(/\/+$/, ''));
+  window.localStorage.setItem(PODCAST_BASE_URL_KEY, normalizeBaseUrl(url));
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -81,7 +95,7 @@ export async function synthesizeCustomTts(
 ): Promise<string | null> {
   if (!baseUrl.trim() || !apiKey.trim() || !text.trim()) return null;
   try {
-    const res = await fetch(`${baseUrl.trim().replace(/\/+$/, '')}/api/v1/audiotize`, {
+    const res = await fetch(`${normalizeBaseUrl(baseUrl)}/api/v1/audiotize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey.trim()}`,
@@ -108,7 +122,7 @@ export async function testCustomTts(
   if (!baseUrl.trim()) return { ok: false, audioUrl: null, error: 'Enter the base URL first.' };
   if (!apiKey.trim()) return { ok: false, audioUrl: null, error: 'Enter the API key first.' };
   try {
-    const res = await fetch(`${baseUrl.trim().replace(/\/+$/, '')}/api/v1/audiotize`, {
+    const res = await fetch(`${normalizeBaseUrl(baseUrl)}/api/v1/audiotize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey.trim()}`,
@@ -156,7 +170,7 @@ export async function podcastizeConversation(
   if (!feedSlug.trim()) return { ok: false, error: 'Enter the feed slug first.' };
   if (segments.length === 0) return { ok: false, error: 'No messages to turn into a podcast episode.' };
   try {
-    const res = await fetch(`${baseUrl.trim().replace(/\/+$/, '')}/api/v1/podcastize`, {
+    const res = await fetch(`${normalizeBaseUrl(baseUrl)}/api/v1/podcastize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey.trim()}`,

@@ -12,9 +12,11 @@ import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 import { GEMINI_TTS_MODELS, describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
 import {
   CUSTOM_TTS_DEFAULT_VOICE,
+  loadCustomPodcastBaseUrl,
   loadCustomTtsApiKey,
   loadCustomTtsBaseUrl,
   loadCustomTtsVoice,
+  saveCustomPodcastBaseUrl,
   saveCustomTtsApiKey,
   saveCustomTtsBaseUrl,
   saveCustomTtsVoice,
@@ -97,6 +99,7 @@ export function LLMProvidersModal({
   const [customTtsBaseUrl, setCustomTtsBaseUrl] = useState(() => loadCustomTtsBaseUrl());
   const [customTtsApiKey, setCustomTtsApiKey] = useState(() => loadCustomTtsApiKey());
   const [customTtsVoice, setCustomTtsVoice] = useState(() => loadCustomTtsVoice());
+  const [customPodcastBaseUrl, setCustomPodcastBaseUrl] = useState(() => loadCustomPodcastBaseUrl());
   const [customTtsTestText, setCustomTtsTestText] = useState('This is a test.');
   const [customTtsTestStatus, setCustomTtsTestStatus] = useState<TestStatus>('idle');
   const [customAgentPresets, setCustomAgentPresets] = useState<AgentPreset[]>([]);
@@ -183,10 +186,11 @@ export function LLMProvidersModal({
     saveCustomTtsBaseUrl(customTtsBaseUrl);
     saveCustomTtsApiKey(customTtsApiKey);
     saveCustomTtsVoice(customTtsVoice);
+    saveCustomPodcastBaseUrl(customPodcastBaseUrl);
     onToast(
       customTtsBaseUrl.trim() && customTtsApiKey.trim()
-        ? '💾 Custom TTS settings saved'
-        : '🗑️ Custom TTS settings cleared — using browser voices'
+        ? '💾 Txt2Audio settings saved'
+        : '🗑️ Txt2Audio settings cleared — using browser voices'
     );
   }
 
@@ -491,26 +495,35 @@ export function LLMProvidersModal({
           </div>
 
           <div className="modal-section">
-            <div className="modal-section-title">🎙️ Custom TTS API (optional, BYO service)</div>
-            <div className="form-group">
+            <div className="modal-section-title">🎙️ Txt2Audio (optional, BYO service)</div>
+            <div className="form-group compact-field">
               <label>Base URL</label>
               <input
                 type="text"
                 value={customTtsBaseUrl}
                 onChange={(e) => setCustomTtsBaseUrl(e.target.value)}
-                placeholder="https://your-tts-service.example.workers.dev"
+                placeholder="https://your-service.workers.dev"
               />
             </div>
-            <div className="form-group">
+            <div className="form-group compact-field">
+              <label>Podcast Base URL (if different)</label>
+              <input
+                type="text"
+                value={customPodcastBaseUrl}
+                onChange={(e) => setCustomPodcastBaseUrl(e.target.value)}
+                placeholder="Same as Base URL if left blank"
+              />
+            </div>
+            <div className="form-group compact-field">
               <label>API Key</label>
               <input
                 type="password"
                 value={customTtsApiKey}
                 onChange={(e) => setCustomTtsApiKey(e.target.value)}
-                placeholder="Bearer token for your service"
+                placeholder="Bearer token"
               />
             </div>
-            <div className="form-group">
+            <div className="form-group compact-field">
               <label>Voice</label>
               <input
                 type="text"
@@ -524,7 +537,7 @@ export function LLMProvidersModal({
                 💾 Save
               </button>
             </div>
-            <div className="form-group" style={{ marginTop: 10 }}>
+            <div className="form-group compact-field" style={{ marginTop: 10 }}>
               <label>Test phrase</label>
               <input
                 type="text"
@@ -543,14 +556,17 @@ export function LLMProvidersModal({
               </button>
               <StatusDot status={customTtsTestStatus} />
             </div>
-            <div style={{ fontSize: 12, color: '#667781', marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: '#667781', marginTop: 6, maxWidth: 420 }}>
               Optional. Point this at any HTTP text-to-speech service that accepts{' '}
               <code>POST {'{baseUrl}'}/api/v1/audiotize</code> with{' '}
               <code>Authorization: Bearer &lt;key&gt;</code> and a JSON body of{' '}
               <code>{'{ text, voice? }'}</code>, returning raw audio bytes. Stored only in this
               browser, never synced anywhere. Pick which engine to prioritize (Browser / Gemini TTS /
               Custom TTS API) in 🎧 Audio → TTS Engine — whichever you select there is used first and
-              falls back to the browser voice if it fails or isn't configured.
+              falls back to the browser voice if it fails or isn't configured. If your service blocks
+              the request with a CORS error in the browser console, it needs to add
+              &quot;Access-Control-Allow-Origin&quot; response headers (including on the OPTIONS
+              preflight) — that has to be fixed on the service itself, not here.
             </div>
           </div>
 
