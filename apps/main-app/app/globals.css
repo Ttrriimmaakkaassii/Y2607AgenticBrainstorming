@@ -2146,6 +2146,37 @@ body.dev-mode [data-devref]::after {
   line-height: 1.5;
 }
 
+/* Directional "who's being addressed" arrow — drawn from the central
+   bubble to another seated agent's spot whenever the speaker's message
+   mentions them by name or ref (e.g. "@Agt3"). Percent-space viewBox lets
+   it plot straight against the same xPct/yPct seat coordinates as
+   everything else on the stage. */
+.scene-address-arrow {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.scene-address-line {
+  stroke-width: 0.5;
+  stroke-linecap: round;
+  stroke-dasharray: 2.5 2;
+  opacity: 0.85;
+  animation: scene-address-flow 0.6s linear infinite, scene-address-in 0.3s ease;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+@keyframes scene-address-flow {
+  to { stroke-dashoffset: -9; }
+}
+
+@keyframes scene-address-in {
+  from { opacity: 0; }
+  to { opacity: 0.85; }
+}
+
 /* The single shared central bubble — always centered on the stage (both
    live and replay), linked to the speaker via the header + the speaker's
    own avatar drifting toward it. Sits in .scene-stage, outside the zoomed
@@ -2230,6 +2261,10 @@ body.dev-mode [data-devref]::after {
 }
 
 /* User-adjustable bubble size — scales both the box and the text inside it. */
+.scene-bubble-xs .scene-central-box { width: min(66vw, 260px); padding: 12px 16px; }
+.scene-bubble-xs .scene-central-text { font-size: 12px; }
+.scene-bubble-xs .scene-central-speaker { font-size: 11px; margin-bottom: 6px; }
+
 .scene-bubble-sm .scene-central-box { width: min(80vw, 380px); }
 .scene-bubble-sm .scene-central-text { font-size: 15px; }
 

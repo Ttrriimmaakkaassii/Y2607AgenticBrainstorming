@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Agent, Feedback, Message, ReactionType } from '@/lib/types';
 import { TraitDef } from '@/lib/traits';
-import { SCENE_BACKGROUND, circleLayout, type SceneSeat } from '@/lib/scenes';
+import { SCENE_BACKGROUND, sideLayout, type SceneSeat } from '@/lib/scenes';
 import { PLAYBACK_SPEEDS, type PlaybackSpeed, buildSceneTimeline, messageDurationMs } from '@/lib/scene-timeline';
 import { SceneAvatar } from './SceneAvatar';
 import { SceneMarkdown } from './SceneMarkdown';
 import { useTypewriter } from '@/lib/use-typewriter';
-import { AGENT_REACTIONS } from '@/lib/reactions';
+import { AGENT_REACTIONS, UNIVERSAL_REACTIONS } from '@/lib/reactions';
 import { devRef } from '@/lib/devref';
 
 const DELAY_OPTIONS = [
@@ -18,8 +18,9 @@ const DELAY_OPTIONS = [
   { label: '8s', value: 8000 },
 ];
 
-type BubbleSize = 'sm' | 'md' | 'lg';
+type BubbleSize = 'xs' | 'sm' | 'md' | 'lg';
 const BUBBLE_SIZE_OPTIONS: { value: BubbleSize; label: string }[] = [
+  { value: 'xs', label: '💬 Extra Small' },
   { value: 'sm', label: '💬 Small' },
   { value: 'md', label: '💬 Medium' },
   { value: 'lg', label: '💬 Large' },
@@ -47,6 +48,23 @@ function moveTowardCenter(seat: SceneSeat, amount: number): SceneSeat {
   return { ...seat, xPct: seat.xPct + (50 - seat.xPct) * amount, yPct: seat.yPct + (50 - seat.yPct) * amount };
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Finds another seated agent the speaker's message is addressing — either
+ * by "@Agt3"-style reference or by mentioning that agent's name outright —
+ * so the stage can draw a directional arrow at them. */
+function findAddressedAgent(content: string, speakerId: string, agents: Agent[]): Agent | null {
+  for (const a of agents) {
+    if (a.id === speakerId) continue;
+    const refPattern = new RegExp(`@?\\b${escapeRegExp(a.refNumber)}\\b`, 'i');
+    const namePattern = a.name.trim().length > 1 ? new RegExp(`\\b${escapeRegExp(a.name.trim())}\\b`, 'i') : null;
+    if (refPattern.test(content) || namePattern?.test(content)) return a;
+  }
+  return null;
+}
+
 interface SceneViewProps {
   agents: Agent[];
   traitDefs: TraitDef[];
@@ -57,6 +75,9 @@ interface SceneViewProps {
   onFeedback: (message: Message, type: Feedback) => void;
   onReaction: (message: Message, type: ReactionType) => void;
   onReply: (message: Message) => void;
+  onToggleStarred: (message: Message) => void;
+  onSetCategory: (message: Message) => void;
+  onShareWhatsApp: (message: Message) => void;
   /** Which message/word the app's configured TTS reader is currently on (or null), so replay can sync its cursor and highlight to it. */
   spokenRange: { messageId: string; charIndex: number; charLength: number } | null;
   /** Starts the configured TTS reader (Browser/Google/Txt2Audio, whichever is set in Audio settings) from this message onward. */
@@ -75,6 +96,9 @@ export function SceneView({
   onFeedback,
   onReaction,
   onReply,
+  onToggleStarred,
+  onSetCategory,
+  onShareWhatsApp,
   spokenRange,
   onPlayFromMessageId,
   onStopSpeaking,
@@ -82,7 +106,7 @@ export function SceneView({
 }: SceneViewProps) {
   const speakingMessageId = spokenRange?.messageId ?? null;
   const activeAgents = useMemo(() => agents.filter((a) => a.active), [agents]);
-  const seats = useMemo(() => circleLayout(activeAgents.length), [activeAgents.length]);
+  const seats = useMemo(() => sideLayout(activeAgents.length), [activeAgents.length]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   // User-dragged overrides — everyone starts on the default circle, but the
@@ -108,7 +132,7 @@ export function SceneView({
   const [autoFocusId, setAutoFocusId] = useState<string | null>(null);
   const [userDismissed, setUserDismissed] = useState(false);
 
-  const [bubbleSize, setBubbleSize] = useState<BubbleSize>('md');
+  const [bubbleSize, setBubbleSize] = useState<BubbleSize>('sm');
   const [playbackMode, setPlaybackMode] = useState<'live' | 'replay'>('live');
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -318,6 +342,12 @@ export function SceneView({
   const centralMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
   const isLiveSpeaking = (agentId: string) => !replaying && thinkingIds.includes(agentId);
 
+  const addressedAgent = useMemo(() => {
+    if (!focusAgent || !centralMessage) return null;
+    return findAddressedAgent(centralMessage.content, focusAgent.id, activeAgents);
+  }, [focusAgent, centralMessage, activeAgents]);
+  const addressedSeat = addressedAgent ? seatByAgentId.get(addressedAgent.id) ?? null : null;
+
   return (
     <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
       <div className="scene-toolbar">
@@ -387,6 +417,26 @@ export function SceneView({
           )}
         </div>
 
+        {addressedSeat && (
+          <svg className="scene-address-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <defs>
+              <marker id="scene-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" fill={focusAgent!.color} />
+              </marker>
+            </defs>
+            <line
+              key={`${focusAgent!.id}-${addressedAgent!.id}`}
+              className="scene-address-line"
+              x1={50}
+              y1={50}
+              x2={addressedSeat.xPct}
+              y2={addressedSeat.yPct}
+              stroke={focusAgent!.color}
+              markerEnd="url(#scene-arrowhead)"
+            />
+          </svg>
+        )}
+
         {focusAgent && centralMessage && (
           <div className="scene-central-anchor">
             <CentralBubble
@@ -398,6 +448,9 @@ export function SceneView({
               onFeedback={onFeedback}
               onReaction={onReaction}
               onReply={onReply}
+              onToggleStarred={onToggleStarred}
+              onSetCategory={onSetCategory}
+              onShareWhatsApp={onShareWhatsApp}
             />
           </div>
         )}
@@ -480,6 +533,9 @@ interface CentralBubbleProps {
   onFeedback: (message: Message, type: Feedback) => void;
   onReaction: (message: Message, type: ReactionType) => void;
   onReply: (message: Message) => void;
+  onToggleStarred: (message: Message) => void;
+  onSetCategory: (message: Message) => void;
+  onShareWhatsApp: (message: Message) => void;
 }
 
 function renderSpokenHighlight(text: string, range: { charIndex: number; charLength: number }) {
@@ -499,7 +555,18 @@ function renderSpokenHighlight(text: string, range: { charIndex: number; charLen
 /** The one shared speech bubble, always centered on the stage and linked to
  * whoever's currently speaking via the header + the speaker's own avatar
  * drifting toward it. Used for both live conversation and replay. */
-function CentralBubble({ agent, message, typing, spokenRange, onFeedback, onReaction, onReply }: CentralBubbleProps) {
+function CentralBubble({
+  agent,
+  message,
+  typing,
+  spokenRange,
+  onFeedback,
+  onReaction,
+  onReply,
+  onToggleStarred,
+  onSetCategory,
+  onShareWhatsApp,
+}: CentralBubbleProps) {
   // While the reader is actively on this message, the real spoken-word
   // position drives what's shown/highlighted, so the bubble text stays in
   // lockstep with the audio — the typewriter's own timer-based reveal only
@@ -550,6 +617,24 @@ function CentralBubble({ agent, message, typing, spokenRange, onFeedback, onReac
             {r.icon}
           </button>
         ))}
+        {UNIVERSAL_REACTIONS.map((r) => (
+          <button key={r.type} className="btn-icon" title={r.tooltip} onClick={() => onReaction(message, r.type)}>
+            {r.icon}
+          </button>
+        ))}
+        <button
+          className={`btn-icon ${message.starred ? 'active' : ''}`}
+          title="Star for filtering"
+          onClick={() => onToggleStarred(message)}
+        >
+          {message.starred ? '⭐' : '☆'}
+        </button>
+        <button className="btn-icon" title="Tag with a category" onClick={() => onSetCategory(message)}>
+          🏷️
+        </button>
+        <button className="btn-icon" title="Share to WhatsApp" onClick={() => onShareWhatsApp(message)}>
+          💬📱
+        </button>
       </div>
     </div>
   );

@@ -9,18 +9,27 @@ export interface SceneSeat {
 export const SCENE_BACKGROUND =
   'radial-gradient(circle at 50% 30%, rgba(255,196,120,0.14) 0%, rgba(255,196,120,0) 45%), radial-gradient(ellipse at 50% 48%, #3d3a52 0%, #201e2e 45%, #121120 78%, #08070d 100%)';
 
-/** Default seating: everyone arranged in a circle, closest thing to a
- * neutral "round table" that works for any agent count. */
-export function circleLayout(count: number, cx = 50, cy = 48, rx = 34, ry = 26, startDeg = -90): SceneSeat[] {
+/** Default seating: agents line the far left and far right edges only,
+ * alternating sides, evenly spaced top-to-bottom on each side — never
+ * stacked directly above/below one another and never blocking the central
+ * bubble that sits at 50%/50%. */
+export function sideLayout(count: number): SceneSeat[] {
   if (count <= 0) return [];
-  const seats: SceneSeat[] = [];
+  const seats: SceneSeat[] = new Array(count);
+  const leftIdxs: number[] = [];
+  const rightIdxs: number[] = [];
   for (let i = 0; i < count; i++) {
-    const angle = ((startDeg + (360 / count) * i) * Math.PI) / 180;
-    seats.push({
-      xPct: cx + Math.cos(angle) * rx,
-      yPct: cy + Math.sin(angle) * ry,
-      scale: 1,
-    });
+    (i % 2 === 0 ? leftIdxs : rightIdxs).push(i);
   }
+
+  const place = (idxs: number[], xPct: number) => {
+    idxs.forEach((agentIdx, pos) => {
+      const yPct = idxs.length === 1 ? 50 : 18 + (64 * pos) / (idxs.length - 1);
+      seats[agentIdx] = { xPct, yPct, scale: 1 };
+    });
+  };
+
+  place(leftIdxs, 12);
+  place(rightIdxs, 88);
   return seats;
 }

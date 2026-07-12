@@ -2416,6 +2416,9 @@ export function ChatApp() {
           onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}
           onReaction={(message, type) => handleReaction(message.threadId, message, type)}
           onReply={(message) => setReplyingTo(message)}
+          onToggleStarred={(message) => toggleStarred(message.threadId, message.id)}
+          onSetCategory={(message) => setMessageCategory(message.threadId, message.id)}
+          onShareWhatsApp={(message) => shareToWhatsApp(message.content)}
           spokenRange={speaking}
           onPlayFromMessageId={(id) => {
             const idx = allMessages.findIndex((m) => m.id === id);
