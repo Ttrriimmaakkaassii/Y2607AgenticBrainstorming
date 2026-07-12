@@ -77,8 +77,11 @@ export function AudioModal({
       utterance.lang = ttsLang;
       if (voice) utterance.voice = voice;
       utterance.onstart = () => setPlayingIndex(index);
-      utterance.onend = () => speakAt(index + 1);
-      utterance.onerror = () => speakAt(index + 1);
+      // Android Chrome silently drops a speak() call made synchronously
+      // from inside the previous utterance's onend/onerror — deferring to
+      // a fresh tick avoids the queue going quiet mid-conversation.
+      utterance.onend = () => setTimeout(() => speakAt(index + 1), 80);
+      utterance.onerror = () => setTimeout(() => speakAt(index + 1), 80);
       window.speechSynthesis.speak(utterance);
     }
 

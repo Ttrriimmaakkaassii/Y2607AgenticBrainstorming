@@ -1300,13 +1300,18 @@ export function ChatApp() {
             setSpeaking({ messageId: msg.id, charIndex: offset + e.charIndex, charLength: 1 });
           }
         };
+        // Android Chrome silently swallows a speak() call for the NEXT
+        // utterance when it's made synchronously from inside the previous
+        // utterance's onend/onerror handler — desktop Chrome tolerates
+        // this chaining, Android doesn't, and the queue just goes quiet
+        // with no error. Deferring to a fresh tick avoids it.
         utterance.onend = () => {
           if (fallbackTimer) clearInterval(fallbackTimer);
-          speakSentence();
+          setTimeout(speakSentence, 80);
         };
         utterance.onerror = () => {
           if (fallbackTimer) clearInterval(fallbackTimer);
-          speakSentence();
+          setTimeout(speakSentence, 80);
         };
         window.speechSynthesis.speak(utterance);
       }
@@ -1318,7 +1323,7 @@ export function ChatApp() {
           return;
         }
         if (sentenceIdx >= sentences.length) {
-          speakAt(index + 1);
+          setTimeout(() => speakAt(index + 1), 80);
           return;
         }
         const { text, offset } = sentences[sentenceIdx];
