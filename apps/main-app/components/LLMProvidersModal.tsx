@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LLM_CATALOG, getProvider } from '@/lib/llm-catalog';
 import { Agent, Effort, LLMConnection, LLMProvider } from '@/lib/types';
 import { generateId } from '@/lib/id';
-import { renameCustomAgent } from '@/lib/custom-agents';
+import { loadCustomAgents, renameCustomAgent } from '@/lib/custom-agents';
+import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
+import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { devRef } from '@/lib/devref';
 import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 import { GEMINI_TTS_MODELS, describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
@@ -79,6 +81,35 @@ export function LLMProvidersModal({
   const [ttsApiKey, setTtsApiKey] = useState(() => loadTtsApiKey());
   const [connectionTestStatus, setConnectionTestStatus] = useState<Record<string, TestStatus>>({});
   const [ttsTestStatus, setTtsTestStatus] = useState<TestStatus>('idle');
+  const [customAgentPresets, setCustomAgentPresets] = useState<AgentPreset[]>([]);
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+  const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
+  const [selectedCategoryFilters, setSelectedCategoryFilters] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setCustomAgentPresets(loadCustomAgents());
+    setCustomCategories(loadCustomCategories());
+  }, []);
+
+  const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
+
+  function categoriesForAgent(name: string): string[] {
+    return customAgentPresets.find((p) => p.name === name)?.categories ?? [];
+  }
+
+  function toggleCategoryFilter(name: string) {
+    setSelectedCategoryFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  const visibleTableAgents =
+    selectedCategoryFilters.size === 0
+      ? tableAgents
+      : tableAgents.filter((a) => categoriesForAgent(a.name).some((c) => selectedCategoryFilters.has(c)));
 
   async function testLlmConnection(connection: LLMConnection) {
     setConnectionTestStatus((prev) => ({ ...prev, [connection.id]: 'testing' }));
@@ -209,7 +240,9 @@ export function LLMProvidersModal({
 
   function toggleSelectAll() {
     setSelectedIds((prev) =>
-      prev.size === tableAgents.length ? new Set() : new Set(tableAgents.map((a) => a.id))
+      prev.size === visibleTableAgents.length
+        ? new Set()
+        : new Set(visibleTableAgents.map((a) => a.id))
     );
   }
 
@@ -232,6 +265,15 @@ export function LLMProvidersModal({
       )
     );
     onToast(`Applied ${connection.label} to ${selectedIds.size} agent(s) — remember to Save.`);
+  }
+
+  function applyBulkActive(active: boolean) {
+    if (selectedIds.size === 0) {
+      onToast('Select at least one agent first.');
+      return;
+    }
+    setTableAgents((prev) => prev.map((a) => (selectedIds.has(a.id) ? { ...a, active } : a)));
+    onToast(`${active ? 'Activated' : 'Deactivated'} ${selectedIds.size} agent(s) — remember to Save.`);
   }
 
   function saveTable() {
@@ -396,6 +438,50 @@ export function LLMProvidersModal({
 
           <div className="modal-section">
             <div className="modal-section-title">Assign Agents to LLMs</div>
+            <div className="moods-menu-wrap" style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                className="control-btn"
+                {...devRef()}
+                onClick={() => setCategoryFilterOpen((v) => !v)}
+              >
+                🏷️ Categories (
+                {selectedCategoryFilters.size === 0 ? 'All' : selectedCategoryFilters.size}) ▾
+              </button>
+              {categoryFilterOpen && (
+                <div className="moods-menu">
+                  <div className="moods-menu-list">
+                    <div className="moods-menu-row">
+                      <label>
+                        <input
+                          type="checkbox"
+                          {...devRef()}
+                          checked={selectedCategoryFilters.size === 0}
+                          onChange={() => setSelectedCategoryFilters(new Set())}
+                        />
+                        Show all
+                      </label>
+                    </div>
+                    {allCategoryNames.map((name) => (
+                      <div key={name} className="moods-menu-row">
+                        <label>
+                          <input
+                            type="checkbox"
+                            {...devRef()}
+                            checked={selectedCategoryFilters.has(name)}
+                            onChange={() => toggleCategoryFilter(name)}
+                          />
+                          {name}
+                        </label>
+                      </div>
+                    ))}
+                    {allCategoryNames.length === 0 && (
+                      <div className="moods-menu-empty">No categories yet.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="bulk-assign-bar">
               <select
                 {...devRef()}
@@ -412,6 +498,12 @@ export function LLMProvidersModal({
               <button className="control-btn" {...devRef()} onClick={applyBulkConnection}>
                 Apply to selected
               </button>
+              <button className="control-btn" {...devRef()} onClick={() => applyBulkActive(true)}>
+                Activate selected
+              </button>
+              <button className="control-btn" {...devRef()} onClick={() => applyBulkActive(false)}>
+                Deactivate selected
+              </button>
             </div>
             <div className="table-scroll">
               <table className="agent-table">
@@ -421,20 +513,23 @@ export function LLMProvidersModal({
                       <input
                         type="checkbox"
                         {...devRef()}
-                        checked={selectedIds.size === tableAgents.length && tableAgents.length > 0}
+                        checked={selectedIds.size === visibleTableAgents.length && visibleTableAgents.length > 0}
                         onChange={toggleSelectAll}
                       />
                     </th>
                     <th>Ref</th>
                     <th>Alias / Name</th>
+                    <th>Active</th>
+                    <th>Connected</th>
                     <th>LLM</th>
                     <th>Model</th>
                     <th>Effort</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tableAgents.map((agent, ai) => {
+                  {visibleTableAgents.map((agent, ai) => {
                     const connection = connections.find((c) => c.id === agent.connectionId);
+                    const isConnected = !!agent.connectionId && !!connection;
                     return (
                       <tr key={agent.id}>
                         <td>
@@ -458,6 +553,33 @@ export function LLMProvidersModal({
                                 )
                               )
                             }
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            {...devRef()}
+                            checked={agent.active}
+                            title={agent.active ? 'Active' : 'Not active'}
+                            onChange={(e) =>
+                              setTableAgents((prev) =>
+                                prev.map((a) =>
+                                  a.id === agent.id ? { ...a, active: e.target.checked } : a
+                                )
+                              )
+                            }
+                          />
+                        </td>
+                        <td>
+                          <span
+                            title={isConnected ? 'Connected to an LLM' : 'No LLM connected'}
+                            style={{
+                              display: 'inline-block',
+                              width: 10,
+                              height: 10,
+                              borderRadius: '50%',
+                              background: isConnected ? '#2ecc71' : '#e74c3c',
+                            }}
                           />
                         </td>
                         <td colSpan={3}>
