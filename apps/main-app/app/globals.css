@@ -1158,13 +1158,29 @@ body.dev-mode [data-devref]::after {
   min-height: 80px;
 }
 
-/* Caps a field to a sane reading width instead of stretching to fill a
-   wide container (e.g. these fields look stretched-too-wide when the
-   embedding modal — like the fullscreen Settings panel — is much wider
-   than a normal 720px modal). */
+/* The fullscreen Settings panel (.modal-fullscreen, 96vw) is far wider than
+   a normal modal (max-width 500-720px), so every width:100% field/button
+   inside its form-groups was stretching to nearly the full viewport width
+   instead of a sane reading width. Cap them generally here — tables
+   (.agent-table etc.) aren't affected since this only targets form-group
+   fields and top-level action buttons, not table cells. */
+.modal-fullscreen .form-group input,
+.modal-fullscreen .form-group select,
+.modal-fullscreen .form-group textarea {
+  max-width: 480px;
+}
+
+.modal-fullscreen .modal-section > .btn-primary,
+.modal-fullscreen .modal-section > .btn-secondary {
+  max-width: 320px;
+}
+
+/* A tighter cap for fields that should read as especially compact (e.g.
+   the Txt2Audio settings) — !important so it always wins over the
+   484px default above regardless of stylesheet order. */
 .form-group.compact-field input,
 .form-group.compact-field select {
-  max-width: 380px;
+  max-width: 380px !important;
 }
 
 .btn-primary {
