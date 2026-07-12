@@ -297,7 +297,7 @@ export function LLMProvidersModal({
             <div className="form-group">
               <label>Provider</label>
               <select
-                {...devRef('94')}
+                {...devRef('dr8')}
                 value={provider}
                 onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
               >
@@ -310,7 +310,7 @@ export function LLMProvidersModal({
             </div>
             <div className="form-group">
               <label>Model</label>
-              <select {...devRef('95')} value={model} onChange={(e) => setModel(e.target.value)}>
+              <select {...devRef('dr9')} value={model} onChange={(e) => setModel(e.target.value)}>
                 {selectedProviderInfo?.models.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
@@ -321,7 +321,7 @@ export function LLMProvidersModal({
             {selectedModelInfo?.supportsEffort && (
               <div className="form-group">
                 <label>Effort</label>
-                <select {...devRef('96')} value={effort} onChange={(e) => setEffort(e.target.value as Effort)}>
+                <select {...devRef('dr10')} value={effort} onChange={(e) => setEffort(e.target.value as Effort)}>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -332,7 +332,7 @@ export function LLMProvidersModal({
               <label>API Key</label>
               <input
                 type="password"
-                {...devRef('97')}
+                {...devRef('i17')}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={`${selectedProviderInfo?.name} API key`}
@@ -342,13 +342,13 @@ export function LLMProvidersModal({
               <label>Label (optional)</label>
               <input
                 type="text"
-                {...devRef('98')}
+                {...devRef('i18')}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder={`${selectedProviderInfo?.name} · ${selectedModelInfo?.label}`}
               />
             </div>
-            <button className="btn-primary" {...devRef('99')} onClick={addConnection}>
+            <button className="btn-primary" {...devRef('b39')} onClick={addConnection}>
               + Add LLM
             </button>
           </div>
@@ -369,7 +369,7 @@ export function LLMProvidersModal({
                 </div>
                 <button
                   className="btn-secondary"
-                  {...devRef('100')}
+                  {...devRef('b40')}
                   onClick={() => testLlmConnection(c)}
                   disabled={connectionTestStatus[c.id] === 'testing'}
                 >
@@ -377,7 +377,7 @@ export function LLMProvidersModal({
                 </button>
                 <button
                   className="btn-icon delete"
-                  {...devRef('101')}
+                  {...devRef('b41')}
                   onClick={() => deleteConnection(c.id)}
                 >
                   🗑️
@@ -392,7 +392,7 @@ export function LLMProvidersModal({
               <label>Gemini API Key</label>
               <input
                 type="password"
-                {...devRef('102')}
+                {...devRef('i19')}
                 value={ttsApiKey}
                 onChange={(e) => setTtsApiKey(e.target.value)}
                 placeholder="Leave blank to keep using the free built-in browser voices"
@@ -401,7 +401,7 @@ export function LLMProvidersModal({
             <div className="form-group">
               <label>Gemini TTS Model</label>
               <select
-                {...devRef('103')}
+                {...devRef('dr11')}
                 value={googleTtsModel}
                 onChange={(e) => onUpdateTtsModel(e.target.value)}
               >
@@ -413,12 +413,12 @@ export function LLMProvidersModal({
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button className="btn-secondary" {...devRef('104')} onClick={saveTtsKey}>
+              <button className="btn-secondary" {...devRef('b42')} onClick={saveTtsKey}>
                 💾 Save TTS Key
               </button>
               <button
                 className="btn-secondary"
-                {...devRef('105')}
+                {...devRef('b43')}
                 onClick={testTtsKey}
                 disabled={ttsTestStatus === 'testing'}
               >
@@ -442,7 +442,7 @@ export function LLMProvidersModal({
               <button
                 type="button"
                 className="control-btn"
-                {...devRef('106')}
+                {...devRef('b44')}
                 onClick={() => setCategoryFilterOpen((v) => !v)}
               >
                 🏷️ Categories (
@@ -455,7 +455,7 @@ export function LLMProvidersModal({
                       <label>
                         <input
                           type="checkbox"
-                          {...devRef('107')}
+                          {...devRef('ck6')}
                           checked={selectedCategoryFilters.size === 0}
                           onChange={() => setSelectedCategoryFilters(new Set())}
                         />
@@ -467,7 +467,7 @@ export function LLMProvidersModal({
                         <label>
                           <input
                             type="checkbox"
-                            {...devRef('108')}
+                            {...devRef('ck7')}
                             checked={selectedCategoryFilters.has(name)}
                             onChange={() => toggleCategoryFilter(name)}
                           />
@@ -484,7 +484,7 @@ export function LLMProvidersModal({
             </div>
             <div className="bulk-assign-bar">
               <select
-                {...devRef('109')}
+                {...devRef('dr12')}
                 value={bulkConnectionId}
                 onChange={(e) => setBulkConnectionId(e.target.value)}
               >
@@ -495,13 +495,13 @@ export function LLMProvidersModal({
                   </option>
                 ))}
               </select>
-              <button className="control-btn" {...devRef('110')} onClick={applyBulkConnection}>
+              <button className="control-btn" {...devRef('b45')} onClick={applyBulkConnection}>
                 Apply to selected
               </button>
-              <button className="control-btn" {...devRef('111')} onClick={() => applyBulkActive(true)}>
+              <button className="control-btn" {...devRef('b46')} onClick={() => applyBulkActive(true)}>
                 Activate selected
               </button>
-              <button className="control-btn" {...devRef('112')} onClick={() => applyBulkActive(false)}>
+              <button className="control-btn" {...devRef('b47')} onClick={() => applyBulkActive(false)}>
                 Deactivate selected
               </button>
             </div>
@@ -512,7 +512,7 @@ export function LLMProvidersModal({
                     <th>
                       <input
                         type="checkbox"
-                        {...devRef('113')}
+                        {...devRef('ck8')}
                         checked={selectedIds.size === visibleTableAgents.length && visibleTableAgents.length > 0}
                         onChange={toggleSelectAll}
                       />
@@ -535,7 +535,7 @@ export function LLMProvidersModal({
                         <td>
                           <input
                             type="checkbox"
-                            {...devRef('114')}
+                            {...devRef('ck9')}
                             checked={selectedIds.has(agent.id)}
                             onChange={() => toggleSelected(agent.id)}
                           />
@@ -544,7 +544,7 @@ export function LLMProvidersModal({
                         <td>
                           <input
                             type="text"
-                            {...devRef('115')}
+                            {...devRef('i20')}
                             value={agent.name}
                             onChange={(e) =>
                               setTableAgents((prev) =>
@@ -558,7 +558,7 @@ export function LLMProvidersModal({
                         <td>
                           <input
                             type="checkbox"
-                            {...devRef('116')}
+                            {...devRef('ck10')}
                             checked={agent.active}
                             title={agent.active ? 'Active' : 'Not active'}
                             onChange={(e) =>
@@ -584,7 +584,7 @@ export function LLMProvidersModal({
                         </td>
                         <td colSpan={3}>
                           <select
-                            {...devRef('117')}
+                            {...devRef('dr13')}
                             value={agent.connectionId ?? ''}
                             onChange={(e) => updateTableAgent(agent.id, e.target.value || null)}
                           >
@@ -602,14 +602,14 @@ export function LLMProvidersModal({
                 </tbody>
               </table>
             </div>
-            <button className="btn-primary" {...devRef('118')} onClick={saveTable} style={{ marginTop: 8 }}>
+            <button className="btn-primary" {...devRef('b48')} onClick={saveTable} style={{ marginTop: 8 }}>
               💾 Save Changes
             </button>
           </div>
 
           <div className="modal-section">
             <div className="modal-section-title">Backup / Transfer Connections</div>
-            <button className="btn-secondary" {...devRef('119')} onClick={exportConnections}>
+            <button className="btn-secondary" {...devRef('b49')} onClick={exportConnections}>
               📥 Download Backup (.json)
             </button>
             <label className="btn-secondary" style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
@@ -617,7 +617,7 @@ export function LLMProvidersModal({
               <input
                 type="file"
                 accept="application/json"
-                {...devRef('120')}
+                {...devRef('i21')}
                 onChange={importConnections}
                 style={{ display: 'none' }}
               />
