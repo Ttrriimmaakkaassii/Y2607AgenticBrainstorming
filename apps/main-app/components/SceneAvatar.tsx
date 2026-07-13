@@ -3,7 +3,7 @@
 import { Agent } from '@/lib/types';
 import type { TraitDef } from '@/lib/traits';
 import { SPEAKING_COLOR, ADDRESSED_COLOR, type SceneSeat } from '@/lib/scenes';
-import { shadeColor } from '@/lib/color';
+import { shadeColor, contrastTextColor } from '@/lib/color';
 
 function traitValue(agent: Agent, traitDefs: TraitDef[], pattern: RegExp): number {
   const def = traitDefs.find((d) => pattern.test(d.name));
@@ -68,6 +68,9 @@ export function SceneAvatar({
         className="scene-avatar-circle"
         style={{
           background: `radial-gradient(circle at 32% 26%, ${shadeColor(displayColor, 24)} 0%, ${displayColor} 60%)`,
+          // The ref number must stay readable regardless of which color an
+          // agent was assigned — a fixed white fails on pale/light colors.
+          color: contrastTextColor(displayColor),
           boxShadow:
             isSpeaking || isAddressed
               ? `0 0 0 4px ${displayColor}55, 0 0 24px ${displayColor}aa`

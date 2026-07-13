@@ -8,3 +8,18 @@ export function shadeColor(hex: string, percent: number): string {
   const b = Math.max(0, Math.min(255, (num & 0x0000ff) + amt));
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
+
+/** Picks whichever of black/white reads better on top of `hex`, via the
+ * standard relative-luminance heuristic. Falls back to white for non-hex
+ * values (matches the previous fixed-white behavior). */
+export function contrastTextColor(hex: string): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return '#ffffff';
+  const num = parseInt(hex.slice(1), 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  // Perceived brightness (ITU-R BT.601) — cheaper than true relative
+  // luminance, but plenty accurate for a binary light/dark text choice.
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 150 ? '#111111' : '#ffffff';
+}
