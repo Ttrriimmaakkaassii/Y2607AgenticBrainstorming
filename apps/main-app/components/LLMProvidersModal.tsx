@@ -98,6 +98,14 @@ export function LLMProvidersModal({
   const [editLabel, setEditLabel] = useState('');
 
   const [tableAgents, setTableAgents] = useState<Agent[]>(agents);
+  // Without this, tableAgents was a one-time snapshot from mount — any
+  // agent added/changed elsewhere afterward (Agent tab, another tab via
+  // cross-tab sync, etc.) was invisible here, and clicking Save Changes
+  // below would silently overwrite state.agents with that stale snapshot,
+  // reverting or even dropping agents that only ever existed outside it.
+  useEffect(() => {
+    setTableAgents(agents);
+  }, [agents]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConnectionId, setBulkConnectionId] = useState('');
   const [ttsApiKey, setTtsApiKey] = useState(() => loadTtsApiKey());
