@@ -2070,6 +2070,40 @@ export function ChatApp() {
           <button className="icon-btn" {...devRef('b13')} onClick={() => setActiveModal('export')}>
             📥 Export
           </button>
+          {state.settings.maxExchanges != null &&
+            (() => {
+              const latestThread = state.threads[state.threads.length - 1];
+              const remaining = latestThread
+                ? Math.max(state.settings.maxExchanges! - agentExchangeCount(latestThread), 0)
+                : state.settings.maxExchanges;
+              return (
+                <>
+                  <span className="icon-btn" title="Agent replies remaining before the exchange limit is hit" style={{ cursor: 'default' }}>
+                    🔢 {remaining} left
+                  </span>
+                  <button
+                    className="icon-btn"
+                    {...devRef('b63')}
+                    title="Extend the exchange limit by 10, even mid-conversation"
+                    onClick={() => extendExchanges(10)}
+                  >
+                    ➕10
+                  </button>
+                </>
+              );
+            })()}
+          <button
+            className={`icon-btn ${freezeScroll ? 'active' : ''}`}
+            {...devRef('b62')}
+            title={
+              freezeScroll
+                ? 'Scroll is frozen — new messages will not pull the view down'
+                : 'Freeze scroll position so new incoming messages do not auto-scroll the view'
+            }
+            onClick={() => setFreezeScroll((v) => !v)}
+          >
+            {freezeScroll ? '🧊' : '❄️'}
+          </button>
         </div>
       </div>
 
