@@ -187,12 +187,22 @@ export function SceneView({
   // Auto-focus follows whoever's currently composing a reply, and then
   // *stays* on them (rather than snapping back to a wide shot) through the
   // post-speech pause, so their message keeps showing in the center bubble
-  // until the next agent picks up.
+  // until the next agent picks up. `thinking` is a single map shared across
+  // ALL threads, so if two threads' auto-rounds ever overlap, more than one
+  // agent can be thinking at once — requiring thinkingIds.length === 1
+  // would then never fire again, freezing focus (and the speaker/addressee
+  // display) on a stale agent. Detecting whichever agent newly started
+  // thinking since the last render is robust to that regardless of how
+  // many others are thinking concurrently elsewhere.
+  const prevThinkingIdsRef = useRef<string[]>([]);
   useEffect(() => {
-    if (thinkingIds.length === 1) {
-      setAutoFocusId(thinkingIds[0]);
+    const prev = prevThinkingIdsRef.current;
+    const newlyThinking = thinkingIds.filter((id) => !prev.includes(id));
+    if (newlyThinking.length > 0) {
+      setAutoFocusId(newlyThinking[newlyThinking.length - 1]);
       setUserDismissed(false);
     }
+    prevThinkingIdsRef.current = thinkingIds;
   }, [thinkingIds]);
 
   // Auto-advance the replay cursor while playing — a fixed-timer estimate,
@@ -440,11 +450,11 @@ export function SceneView({
         {focusAgent && (
           <div className="scene-flash-card">
             <span className="scene-flash-speaker" style={{ borderColor: SPEAKING_COLOR }}>
-              🗣️ {focusAgent.refNumber} Speaking
+              🗣️ {focusAgent.refNumber} {focusAgent.name} Speaking
             </span>
             {addressedAgent && (
               <span className="scene-flash-addressed" style={{ borderColor: ADDRESSED_COLOR }}>
-                → {addressedAgent.refNumber} Addressed
+                → {addressedAgent.refNumber} {addressedAgent.name} Addressed
               </span>
             )}
           </div>
@@ -529,11 +539,17 @@ export function SceneView({
       </div>
 
       <div className="scene-playback-bar" onClick={(e) => e.stopPropagation()}>
-        <button className="btn-icon" {...devRef('b56')} title="Restart replay" onClick={() => scrubTo(0)} disabled={timeline.length === 0}>
+        <button
+          className="scene-transport-btn"
+          {...devRef('b56')}
+          title="Restart replay"
+          onClick={() => scrubTo(0)}
+          disabled={timeline.length === 0}
+        >
           ⏮️
         </button>
         <button
-          className="btn-icon"
+          className="scene-play-btn"
           {...devRef('b57')}
           title={isPlaying ? 'Pause replay' : 'Play replay'}
           onClick={togglePlayPause}
@@ -542,15 +558,15 @@ export function SceneView({
           {isPlaying ? '⏸️' : '▶️'}
         </button>
         <button
-          className={`btn-icon ${audioEnabled ? 'active' : ''}`}
+          className={`scene-transport-btn scene-mute-btn ${audioEnabled ? 'active' : ''}`}
           {...devRef('b59')}
-          title={audioEnabled ? 'Audio narration on (uses your Audio settings reader)' : 'Read replay aloud with your configured TTS reader'}
+          title={audioEnabled ? 'Audio narration on — click to mute (uses your Audio settings reader)' : 'Muted — click to read replay aloud with your configured TTS reader'}
           onClick={toggleAudio}
         >
           {audioEnabled ? '🔊' : '🔇'}
         </button>
         <button
-          className={`btn-icon ${continuousReplay ? 'active' : ''}`}
+          className={`scene-transport-btn ${continuousReplay ? 'active' : ''}`}
           {...devRef('b60')}
           title={
             continuousReplay
@@ -599,7 +615,7 @@ export function SceneView({
           ))}
         </select>
         {replaying && (
-          <button className="control-btn" {...devRef('b58')} onClick={goLive}>
+          <button className="scene-live-btn" {...devRef('b58')} onClick={goLive}>
             🔴 Live
           </button>
         )}

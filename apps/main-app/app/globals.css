@@ -2304,6 +2304,10 @@ body.dev-mode [data-devref]::after {
   scroll-behavior: smooth;
   word-break: break-word;
   transition: font-size 0.3s ease;
+  /* .scene-stage disables selection globally so dragging avatars doesn't
+     select text — re-enable it here so the bubble's own text is selectable. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .scene-central-actions {
@@ -2360,27 +2364,125 @@ body.dev-mode [data-devref]::after {
   100% { transform: translateX(250%); }
 }
 
-/* Persistent media-player-style replay control bar. */
+/* Persistent media-player-style replay control bar — glass toolbar with
+   glowing circular transport buttons, aiming for a modern "always-on
+   HUD" feel rather than plain form controls. */
 .scene-playback-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border-color);
-  background: var(--bg-panel);
+  background: linear-gradient(180deg, var(--bg-panel) 0%, color-mix(in srgb, var(--bg-panel) 92%, #7c5cff 8%) 100%);
   flex-wrap: wrap;
 }
 
-.scene-playback-bar select {
-  padding: 4px 8px;
+.scene-transport-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  background: var(--bg-input);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.scene-transport-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: 0 2px 10px rgba(124, 92, 255, 0.35);
+}
+
+.scene-transport-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.scene-transport-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.scene-transport-btn.active {
+  background: linear-gradient(135deg, #7c5cff 0%, #5b8cff 100%);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.25);
+}
+
+.scene-mute-btn.active {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+}
+
+/* The hero control — bigger, gradient-filled, glowing while active. */
+.scene-play-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #7c5cff 0%, #5b8cff 100%);
+  color: white;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(124, 92, 255, 0.45);
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.scene-play-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(124, 92, 255, 0.6);
+}
+
+.scene-play-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.scene-play-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+
+.scene-live-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #ff5c5c 0%, #e11d48 100%);
+  color: white;
   font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: scene-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes scene-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(225, 29, 72, 0); }
+}
+
+.scene-playback-bar select {
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-input);
+  font-size: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.scene-playback-bar select:hover {
+  border-color: #7c5cff;
 }
 
 .scene-scrubber {
   flex: 1;
   min-width: 120px;
+  accent-color: #7c5cff;
 }
 
 .scene-playback-label {
