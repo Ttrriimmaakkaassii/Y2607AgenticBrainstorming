@@ -90,6 +90,13 @@ export function LLMProvidersModal({
   const [apiKey, setApiKey] = useState('');
   const [label, setLabel] = useState('');
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editProvider, setEditProvider] = useState<LLMProvider>('openai');
+  const [editModel, setEditModel] = useState('');
+  const [editEffort, setEditEffort] = useState<Effort>('medium');
+  const [editApiKey, setEditApiKey] = useState('');
+  const [editLabel, setEditLabel] = useState('');
+
   const [tableAgents, setTableAgents] = useState<Agent[]>(agents);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConnectionId, setBulkConnectionId] = useState('');
@@ -217,6 +224,8 @@ export function LLMProvidersModal({
 
   const selectedProviderInfo = getProvider(provider);
   const selectedModelInfo = selectedProviderInfo?.models.find((m) => m.id === model);
+  const editProviderInfo = getProvider(editProvider);
+  const editModelInfo = editProviderInfo?.models.find((m) => m.id === editModel);
 
   function handleProviderChange(next: LLMProvider) {
     setProvider(next);
@@ -246,6 +255,50 @@ export function LLMProvidersModal({
   function deleteConnection(id: string) {
     onChange(connections.filter((c) => c.id !== id));
     onToast('🗑️ LLM connection removed');
+  }
+
+  function startEditConnection(c: LLMConnection) {
+    setEditingId(c.id);
+    setEditProvider(c.provider);
+    setEditModel(c.model);
+    setEditEffort(c.effort);
+    setEditApiKey(c.apiKey);
+    setEditLabel(c.label);
+  }
+
+  function cancelEditConnection() {
+    setEditingId(null);
+  }
+
+  function handleEditProviderChange(next: LLMProvider) {
+    setEditProvider(next);
+    const firstModel = getProvider(next)?.models[0];
+    if (firstModel) setEditModel(firstModel.id);
+  }
+
+  function saveEditConnection(id: string) {
+    if (!editApiKey.trim()) {
+      onToast('Enter an API key first.');
+      return;
+    }
+    const providerInfo = getProvider(editProvider);
+    const modelInfo = providerInfo?.models.find((m) => m.id === editModel);
+    onChange(
+      connections.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              provider: editProvider,
+              model: editModel,
+              effort: editEffort,
+              apiKey: editApiKey.trim(),
+              label: editLabel.trim() || `${providerInfo?.name} · ${modelInfo?.label}`,
+            }
+          : c
+      )
+    );
+    setEditingId(null);
+    onToast('✅ LLM connection updated');
   }
 
   function exportConnections() {
@@ -416,32 +469,102 @@ export function LLMProvidersModal({
             {connections.length === 0 && (
               <div className="empty-state">No LLMs added yet.</div>
             )}
-            {connections.map((c, ci) => (
-              <div className="agent-list-item" key={c.id}>
-                <StatusDot status={connectionTestStatus[c.id] ?? 'idle'} />
-                <div className="agent-info">
-                  <div className="agent-name">{c.label}</div>
-                  <div className="agent-instructions">
-                    {getProvider(c.provider)?.name} · {c.model} · effort: {c.effort} · key {maskKey(c.apiKey)}
+            {connections.map((c, ci) =>
+              editingId === c.id ? (
+                <div className="agent-list-item edit-connection-row" key={c.id} style={{ flexWrap: 'wrap' }}>
+                  <div className="form-group compact-field">
+                    <label>Provider</label>
+                    <select
+                      {...devRef('dr25', ci)}
+                      value={editProvider}
+                      onChange={(e) => handleEditProviderChange(e.target.value as LLMProvider)}
+                    >
+                      {LLM_CATALOG.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group compact-field">
+                    <label>Model</label>
+                    <select {...devRef('dr26', ci)} value={editModel} onChange={(e) => setEditModel(e.target.value)}>
+                      {editProviderInfo?.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {editModelInfo?.supportsEffort && (
+                    <div className="form-group compact-field">
+                      <label>Effort</label>
+                      <select {...devRef('dr27', ci)} value={editEffort} onChange={(e) => setEditEffort(e.target.value as Effort)}>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  )}
+                  <div className="form-group compact-field">
+                    <label>API Key</label>
+                    <input
+                      type="password"
+                      {...devRef('i27', ci)}
+                      value={editApiKey}
+                      onChange={(e) => setEditApiKey(e.target.value)}
+                      placeholder={`${editProviderInfo?.name} API key`}
+                    />
+                  </div>
+                  <div className="form-group compact-field">
+                    <label>Label</label>
+                    <input
+                      type="text"
+                      {...devRef('i28', ci)}
+                      value={editLabel}
+                      onChange={(e) => setEditLabel(e.target.value)}
+                      placeholder={`${editProviderInfo?.name} · ${editModelInfo?.label}`}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn-primary" {...devRef('b65', ci)} onClick={() => saveEditConnection(c.id)}>
+                      💾 Save
+                    </button>
+                    <button className="btn-secondary" {...devRef('b66', ci)} onClick={cancelEditConnection}>
+                      Cancel
+                    </button>
                   </div>
                 </div>
-                <button
-                  className="btn-secondary"
-                  {...devRef('b40')}
-                  onClick={() => testLlmConnection(c)}
-                  disabled={connectionTestStatus[c.id] === 'testing'}
-                >
-                  {connectionTestStatus[c.id] === 'testing' ? 'Testing…' : 'Test'}
-                </button>
-                <button
-                  className="btn-icon delete"
-                  {...devRef('b41')}
-                  onClick={() => deleteConnection(c.id)}
-                >
-                  🗑️
-                </button>
-              </div>
-            ))}
+              ) : (
+                <div className="agent-list-item" key={c.id}>
+                  <StatusDot status={connectionTestStatus[c.id] ?? 'idle'} />
+                  <div className="agent-info">
+                    <div className="agent-name">{c.label}</div>
+                    <div className="agent-instructions">
+                      {getProvider(c.provider)?.name} · {c.model} · effort: {c.effort} · key {maskKey(c.apiKey)}
+                    </div>
+                  </div>
+                  <button
+                    className="btn-secondary"
+                    {...devRef('b40')}
+                    onClick={() => testLlmConnection(c)}
+                    disabled={connectionTestStatus[c.id] === 'testing'}
+                  >
+                    {connectionTestStatus[c.id] === 'testing' ? 'Testing…' : 'Test'}
+                  </button>
+                  <button className="btn-icon" {...devRef('b64')} onClick={() => startEditConnection(c)} title="Edit this connection">
+                    ✏️
+                  </button>
+                  <button
+                    className="btn-icon delete"
+                    {...devRef('b41')}
+                    onClick={() => deleteConnection(c.id)}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              )
+            )}
           </div>
 
           <div className="modal-section">
