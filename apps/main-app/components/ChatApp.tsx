@@ -387,6 +387,15 @@ export function ChatApp() {
   useEffect(() => {
     settingsRef.current = state.settings;
   }, [state.settings]);
+  // runAgentRound is a long-running async loop that only reads its
+  // `respondingAgents` snapshot once, at round start — without this, an
+  // agent deactivated (or disconnected) mid-round would still get called on
+  // its next turn, since the loop never re-checked. Read live per-turn
+  // instead, matching the settingsRef/statusRef pattern above.
+  const agentsRef = useRef(state.agents);
+  useEffect(() => {
+    agentsRef.current = state.agents;
+  }, [state.agents]);
   const [showAudioRail, setShowAudioRail] = useState(false);
   const [sceneViewOpen, setSceneViewOpen] = useState(false);
   // How long the conversation engine pauses after an agent finishes replying
@@ -653,6 +662,36 @@ export function ChatApp() {
     return !!agent.connectionId && connections.some((c) => c.id === agent.connectionId);
   }
 
+  // Real, code-level enforcement rather than just trusting the system
+  // prompt's NO_FABRICATION_INSTRUCTION — a model can still ignore an
+  // instruction (this is exactly what happened with the reported OpenClaw
+  // fetch fabrication). Checks the ACTUAL recorded tool-call evidence
+  // (reply.webSearches, populated only by a real successful web_search
+  // round-trip — see lib/llm-client.ts's runWithTools-equivalent loop)
+  // against what the reply text claims, and rejects the reply outright
+  // (never posted) instead of merely flagging it after the fact.
+  const TOOL_USE_CLAIM_PATTERN =
+    /\b(i searched|i found (?:this|that|the following)|according to (?:my|the) search|search results? (?:show|indicate|reveal)|i looked (?:this|that|it) up|based on (?:my|a) (?:web )?search|i (?:just )?checked (?:the|their) (?:website|site|repo|repository|documentation)|fetching|i retrieved|retrieved from)\b/i;
+  const URL_CITATION_PATTERN = /https?:\/\/[^\s)]+/;
+
+  function validateAgentReply(agent: Agent, reply: AgentReplyResult): string | null {
+    const claimsToolUse = TOOL_USE_CLAIM_PATTERN.test(reply.content) || URL_CITATION_PATTERN.test(reply.content);
+    const searchedAtAll = (reply.webSearches?.length ?? 0) > 0;
+    const totalSources = (reply.webSearches ?? []).reduce((n, s) => n + s.sources.length, 0);
+
+    if (claimsToolUse && !searchedAtAll) {
+      // Claims to have searched/fetched/retrieved/cited a URL, but no
+      // web_search tool call was actually recorded this turn at all.
+      return 'FABRICATED_TOOL_USE';
+    }
+    if (agent.webSearchEnabled && claimsToolUse && totalSources === 0) {
+      // A search did happen, but returned zero sources — the reply still
+      // asserts an external claim anyway instead of saying so.
+      return 'RESEARCH_WITHOUT_SOURCE';
+    }
+    return null;
+  }
+
   function agentExchangeCount(thread: Thread): number {
     return thread.messages.filter((m) => m.agentId !== 'user').length;
   }
@@ -850,6 +889,16 @@ export function ChatApp() {
 
       const agent = connected[turn % connected.length];
       turn += 1;
+
+      // Re-check against LIVE state, not the `connected` snapshot taken at
+      // round start — the user may have deactivated or disconnected this
+      // agent since the round began. Skip its turn rather than calling an
+      // LLM it's no longer authorized to speak for.
+      const liveAgent = agentsRef.current.find((a) => a.id === agent.id);
+      if (!liveAgent || !liveAgent.active || !agentIsConnected(liveAgent)) {
+        continue;
+      }
+
       startThinking(agent.id, updatedThread.id, conversationId);
       const reply = await getReply(agent, updatedThread.messages);
       stopThinking(agent.id);
@@ -859,6 +908,13 @@ export function ChatApp() {
         // Only abort the whole round once every agent in rotation has failed
         // back-to-back — one agent's bad key/CORS issue shouldn't silence
         // the others.
+        if (consecutiveFailures >= connected.length) break;
+        continue;
+      }
+      const rejectionReason = validateAgentReply(agent, reply);
+      if (rejectionReason) {
+        showToast(`⚠️ ${agent.refNumber}'s reply was rejected: ${rejectionReason}`);
+        consecutiveFailures += 1;
         if (consecutiveFailures >= connected.length) break;
         continue;
       }
@@ -934,6 +990,11 @@ export function ChatApp() {
       showToast(`⚠️ ${opener.refNumber} failed to respond — check its LLM connection.`);
       return;
     }
+    const openingRejection = validateAgentReply(opener, openingLine);
+    if (openingRejection) {
+      showToast(`⚠️ ${opener.refNumber}'s reply was rejected: ${openingRejection}`);
+      return;
+    }
     const thread = createThread(opener.id, openingLine);
     setState((prev) => ({
       ...prev,
@@ -959,6 +1020,11 @@ export function ChatApp() {
     stopThinking(agent.id);
     if (!openingLine) {
       showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
+      return;
+    }
+    const openingRejection = validateAgentReply(agent, openingLine);
+    if (openingRejection) {
+      showToast(`⚠️ ${agent.refNumber}'s reply was rejected: ${openingRejection}`);
       return;
     }
     const thread = createThread(agentId, openingLine);
@@ -1181,6 +1247,11 @@ export function ChatApp() {
     stopThinking(author.id);
     if (!reply) {
       showToast(`⚠️ ${author.refNumber} failed to respond — check its LLM connection.`);
+      return;
+    }
+    const reactionRejection = validateAgentReply(author, reply);
+    if (reactionRejection) {
+      showToast(`⚠️ ${author.refNumber}'s reply was rejected: ${reactionRejection}`);
       return;
     }
 
