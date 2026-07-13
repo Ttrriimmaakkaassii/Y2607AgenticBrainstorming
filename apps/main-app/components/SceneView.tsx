@@ -482,6 +482,23 @@ export function SceneView({
   const arrowOriginSeat = focusSpeakingNow ? SPEAKER_FLANK_SEAT : focusSeat;
   const addressedSeat = addressedAgent ? ADDRESSEE_FLANK_SEAT : null;
 
+  // Deactivating an agent removes them from `activeAgents` (and thus their
+  // stage seat) entirely — fine for someone who never spoke, but a real
+  // participant from earlier in the conversation would just vanish from
+  // Scene View the moment they're toggled off, even while replay is
+  // actively showing (or they're being addressed in) one of their own past
+  // messages. Whoever's currently focused/addressed always gets a slot —
+  // at their flanking seat, so they show up "as if" still active for now —
+  // regardless of their current participation toggle.
+  const agentsToRender = useMemo(() => {
+    const extras = [focusAgent, addressedAgent].filter(
+      (a): a is Agent => a != null && !activeAgents.some((active) => active.id === a.id)
+    );
+    if (extras.length === 0) return activeAgents;
+    const seen = new Set<string>();
+    return [...activeAgents, ...extras].filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
+  }, [activeAgents, focusAgent, addressedAgent]);
+
   return (
     <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
       {/* Floats right next to the main conversation Play/Resume button
@@ -553,16 +570,20 @@ export function SceneView({
             '--zoom': zoom,
           }}
         >
-          {activeAgents.map((agent) => {
-            const baseSeat = seatByAgentId.get(agent.id)!;
+          {agentsToRender.map((agent) => {
+            // A deactivated agent pulled in only because they're currently
+            // focused/addressed (see agentsToRender) has no real stage seat
+            // — harmless, since such an agent is always in one of the two
+            // flanking branches below, which don't need it.
+            const baseSeat = seatByAgentId.get(agent.id);
             const speakingNow = replaying ? replayFocusAgentId === agent.id : focusId === agent.id;
             const isAddressedNow = addressedAgent?.id === agent.id;
             // The speaker and whoever they're addressing jump to fixed seats
             // right beside the bubble — guaranteed visible — instead of their
             // regular stage position, which could drift behind/under the
             // (much larger) bubble box and effectively disappear there.
-            const seat = speakingNow ? SPEAKER_FLANK_SEAT : isAddressedNow ? ADDRESSEE_FLANK_SEAT : baseSeat;
-            const gazeAngleDeg = focusSeat && focusId !== agent.id ? angleBetween(baseSeat, focusSeat) : 0;
+            const seat = speakingNow ? SPEAKER_FLANK_SEAT : isAddressedNow ? ADDRESSEE_FLANK_SEAT : baseSeat!;
+            const gazeAngleDeg = baseSeat && focusSeat && focusId !== agent.id ? angleBetween(baseSeat, focusSeat) : 0;
             return (
               <SceneAvatar
                 key={agent.id}
@@ -579,7 +600,7 @@ export function SceneView({
               />
             );
           })}
-          {activeAgents.length === 0 && (
+          {agentsToRender.length === 0 && (
             <div className="empty-state" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
               No active agents to seat in this scene.
             </div>
