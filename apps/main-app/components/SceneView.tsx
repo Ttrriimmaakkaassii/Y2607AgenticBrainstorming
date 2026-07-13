@@ -622,6 +622,11 @@ export function SceneView({
                 isFocused={focusId === agent.id}
                 isDimmed={focusId != null && focusId !== agent.id}
                 isDragging={draggingId === agent.id}
+                // Anyone actively composing a reply gets a thinking cue, not
+                // just whoever happens to be the current focus — overlapping
+                // threads can have more than one agent "about to speak" at
+                // once, and previously only the focused one showed anything.
+                isThinking={!speakingNow && !replaying && thinkingIds.includes(agent.id)}
                 gazeAngleDeg={gazeAngleDeg}
                 onPointerDown={(e) => handleAvatarPointerDown(agent.id, e)}
               />
@@ -652,6 +657,7 @@ export function SceneView({
               onSwipeNext={swipeToNext}
               onSwipePrev={swipeToPrev}
               onSelectSeek={(offset) => playFromSelection(centralMessage.id, offset)}
+              messageNumber={timeline.findIndex((m) => m.id === centralMessage.id) + 1}
             />
           </div>
         )}
@@ -760,6 +766,8 @@ interface CentralBubbleProps {
   onSwipePrev: () => void;
   /** Selecting/highlighting a word or phrase in the text starts the reader from that character offset. */
   onSelectSeek: (charOffset: number) => void;
+  /** This message's 1-based position in the full conversation timeline. */
+  messageNumber: number;
 }
 
 function renderSpokenHighlight(text: string, range: { charIndex: number; charLength: number }) {
@@ -793,6 +801,7 @@ function CentralBubble({
   onSwipeNext,
   onSwipePrev,
   onSelectSeek,
+  messageNumber,
 }: CentralBubbleProps) {
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_FEEDBACK_RANGE = 100;
@@ -878,6 +887,7 @@ function CentralBubble({
   return (
     <div
       className="scene-central-box"
+      {...devRef('s29')}
       style={{ borderTopColor: agent.color }}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={handleSwipeStart}
@@ -899,7 +909,7 @@ function CentralBubble({
       />
       <div className="scene-central-speaker">
         <span className="scene-central-dot" style={{ background: agent.color }} />
-        {agent.refNumber} {agent.name} is speaking
+        {agent.refNumber} {agent.name} · Msg #{messageNumber} is speaking
       </div>
       <div className="scene-central-text" ref={scrollRef} onMouseUp={handleTextSelectionSeek}>
         {spokenRange ? (

@@ -18,6 +18,8 @@ interface SceneAvatarProps {
   isSpeaking: boolean;
   /** This agent is who the current speaker's message is addressing. */
   isAddressed: boolean;
+  /** Actively composing a reply but not (yet) the one shown in the central bubble — e.g. a second thread's agent thinking while another agent is focused. */
+  isThinking: boolean;
   isFocused: boolean;
   isDimmed: boolean;
   isDragging: boolean;
@@ -35,6 +37,7 @@ export function SceneAvatar({
   traitDefs,
   isSpeaking,
   isAddressed,
+  isThinking,
   isFocused,
   isDimmed,
   isDragging,
@@ -54,7 +57,7 @@ export function SceneAvatar({
     <div
       className={`scene-avatar-slot ${isFocused ? 'focused' : ''} ${isSpeaking ? 'speaking' : ''} ${
         isAddressed ? 'addressed' : ''
-      } ${isDimmed ? 'dimmed' : ''} ${isDragging ? 'dragging' : ''}`}
+      } ${isThinking ? 'thinking' : ''} ${isDimmed ? 'dimmed' : ''} ${isDragging ? 'dragging' : ''}`}
       style={{
         left: `${seat.xPct}%`,
         top: `${seat.yPct}%`,
@@ -74,6 +77,8 @@ export function SceneAvatar({
           boxShadow:
             isSpeaking || isAddressed
               ? `0 0 0 4px ${displayColor}55, 0 0 24px ${displayColor}aa`
+              : isThinking
+              ? '0 0 0 3px #f59e0b55, 0 0 14px #f59e0b88'
               : 'none',
           animationDuration: isSpeaking ? `${pulseSpeed}s` : undefined,
         }}
@@ -89,8 +94,12 @@ export function SceneAvatar({
           <span key={i}>{word}</span>
         ))}
       </div>
-      {(isSpeaking || isAddressed) && (
-        <div className={`scene-talking-indicator ${!isSpeaking && isAddressed ? 'addressed' : ''}`}>
+      {(isSpeaking || isAddressed || isThinking) && (
+        <div
+          className={`scene-talking-indicator ${!isSpeaking && isAddressed ? 'addressed' : ''} ${
+            !isSpeaking && !isAddressed && isThinking ? 'thinking' : ''
+          }`}
+        >
           <span />
           <span />
           <span />

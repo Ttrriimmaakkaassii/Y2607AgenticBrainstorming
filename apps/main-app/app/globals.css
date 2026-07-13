@@ -1157,6 +1157,14 @@ body.dev-mode [data-devref]::after {
   background: #f0c040;
 }
 
+.quick-action-bar {
+  padding: 6px 12px 0;
+  background: var(--bg-panel);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .input-area {
   padding: 8px 12px;
   background: var(--bg-panel);
@@ -2399,6 +2407,12 @@ body.dev-mode [data-devref]::after {
  * the avatar, not just in the top flash card. */
 .scene-talking-indicator.addressed span {
   background: #ef4444;
+}
+
+/* A second (or third...) agent composing a reply concurrently, while a
+ * different agent is the one currently shown in the central bubble. */
+.scene-talking-indicator.thinking span {
+  background: #f59e0b;
 }
 
 .scene-talking-indicator span:nth-child(2) {

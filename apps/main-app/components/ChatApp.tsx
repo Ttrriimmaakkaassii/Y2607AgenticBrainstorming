@@ -1103,6 +1103,27 @@ export function ChatApp() {
     runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.active));
   }
 
+  /** Quick-action shortcuts for steering an in-progress discussion, sent
+   * exactly like a typed message so every active agent sees and responds to
+   * them (and, per the "always prioritize the user" system-prompt rule,
+   * treats them as a direct redirect rather than just another talking point). */
+  function nextSubject() {
+    const subject = window.prompt('New subject to move the discussion to:', '');
+    if (subject === null) return;
+    const trimmed = subject.trim();
+    if (!trimmed) return;
+    updateSettings({ topic: trimmed });
+    sendMessage(`Let's move on to a new subject: ${trimmed}. Please shift the discussion to focus on this now.`);
+  }
+
+  function changeDirection() {
+    sendMessage("I don't like the direction this is going — please change your approach and reconsider.");
+  }
+
+  function continueElaborate() {
+    sendMessage('Please continue and elaborate further on the current subject.');
+  }
+
   async function handleReaction(threadId: string, message: Message, type: ReactionType) {
     if (type === 'mindmap') {
       const markdown = buildMessageMindmapMarkdown(state.agents, message);
@@ -3396,6 +3417,36 @@ export function ChatApp() {
           </button>
         </div>
       )}
+
+      <div className="quick-action-bar" {...devRef('s30')}>
+        <button
+          className="control-btn"
+          {...devRef('b91')}
+          onClick={nextSubject}
+          disabled={state.status === 'stopped'}
+          title="Move the discussion to a new subject"
+        >
+          🔀 Next Subject
+        </button>
+        <button
+          className="control-btn"
+          {...devRef('b92')}
+          onClick={changeDirection}
+          disabled={state.status === 'stopped'}
+          title="Tell the agents you don't like the current direction and to change approach"
+        >
+          🚫 Change Direction
+        </button>
+        <button
+          className="control-btn"
+          {...devRef('b93')}
+          onClick={continueElaborate}
+          disabled={state.status === 'stopped'}
+          title="Ask the agents to continue and go deeper on the current subject"
+        >
+          ▶️ Continue / Elaborate
+        </button>
+      </div>
 
       <div className="input-area" {...devRef('s9')}>
         <textarea

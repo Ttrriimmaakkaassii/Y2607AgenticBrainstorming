@@ -67,6 +67,9 @@ function traitsInstruction(traits: { name: string; value: number }[]): string {
   return ` Your character traits (0-100 scale, purely descriptive, no direction is inherently better) are: ${traits.map((t) => `${t.name} ${t.value}/100`).join(', ')} — let these visibly shape your personality and word choice.`;
 }
 
+const USER_PRIORITY_INSTRUCTION =
+  " If the user (not another agent) has posted a message — including a direction change, a correction, or a request to move to a new subject — treat it as the top priority: address it directly and steer your reply accordingly, even if it interrupts or redirects the discussion agents were just having.";
+
 function buildSystemPrompt(
   agent: Agent,
   moods: Mood[],
@@ -77,7 +80,7 @@ function buildSystemPrompt(
   guidelines: string[],
   traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(
