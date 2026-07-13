@@ -65,13 +65,16 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Finds another seated agent the speaker's message is addressing — either
- * by "@Agt3"-style reference or by mentioning that agent's name outright —
- * so the stage can draw a directional arrow at them. Matches the agent's
- * first name alone too (e.g. "Sarah, what do you think?"), not just their
- * full configured name — real dialogue almost always addresses people by
- * first name, not their full "Dr. Sarah Chen"-style display name. */
-function findAddressedAgent(content: string, speakerId: string, agents: Agent[]): Agent | null {
+/** Finds every other seated agent the speaker's message is addressing —
+ * either by "@Agt3"-style reference or by mentioning their name outright —
+ * so the stage can draw a directional arrow at each of them. A single
+ * message can address more than one agent at once (e.g. "Sarah and Tom,
+ * what do you think?"), so this returns every match, not just the first.
+ * Matches the agent's first name alone too, not just their full configured
+ * name — real dialogue almost always addresses people by first name, not
+ * their full "Dr. Sarah Chen"-style display name. */
+function findAddressedAgents(content: string, speakerId: string, agents: Agent[]): Agent[] {
+  const found: Agent[] = [];
   for (const a of agents) {
     if (a.id === speakerId) continue;
     const refPattern = new RegExp(`@?\\b${escapeRegExp(a.refNumber)}\\b`, 'i');
@@ -79,9 +82,19 @@ function findAddressedAgent(content: string, speakerId: string, agents: Agent[])
     const firstName = fullName.split(/\s+/)[0] ?? '';
     const namePattern = fullName.length > 1 ? new RegExp(`\\b${escapeRegExp(fullName)}\\b`, 'i') : null;
     const firstNamePattern = firstName.length > 1 ? new RegExp(`\\b${escapeRegExp(firstName)}\\b`, 'i') : null;
-    if (refPattern.test(content) || namePattern?.test(content) || firstNamePattern?.test(content)) return a;
+    if (refPattern.test(content) || namePattern?.test(content) || firstNamePattern?.test(content)) found.push(a);
   }
-  return null;
+  return found;
+}
+
+/** Spreads N addressed-agent seats evenly around the vertical center of the
+ * left flank, so two+ simultaneously-addressed agents don't stack exactly
+ * on top of one another. */
+function addresseeFlankSeat(index: number, total: number): SceneSeat {
+  if (total <= 1) return ADDRESSEE_FLANK_SEAT;
+  const spread = Math.min(30, 12 * (total - 1));
+  const yPct = 50 - spread / 2 + (spread * index) / (total - 1);
+  return { ...ADDRESSEE_FLANK_SEAT, yPct };
 }
 
 interface SceneViewProps {
@@ -472,12 +485,12 @@ export function SceneView({
 
   const centralMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
 
-  const addressedAgent = useMemo(() => {
-    if (!focusAgent || !centralMessage) return null;
+  const addressedAgents = useMemo(() => {
+    if (!focusAgent || !centralMessage) return [];
     // Search the full roster, not just activeAgents — a message can still
     // name someone who's since been deactivated, and they can still be
     // shown (see agentsToRender) at their flanking seat for this moment.
-    return findAddressedAgent(centralMessage.content, focusAgent.id, agents);
+    return findAddressedAgents(centralMessage.content, focusAgent.id, agents);
   }, [focusAgent, centralMessage, agents]);
   // Tied to `focusId` (same thing driving the bubble) rather than the raw
   // `thinking` map — thinking only covers the brief network round-trip, so
@@ -485,11 +498,15 @@ export function SceneView({
   // reply arrived, even while it was still typing out in the bubble.
   const focusSpeakingNow = focusId != null;
   // Both the speaker and whoever they're addressing get a fixed seat right
-  // beside the bubble (see SPEAKER_FLANK_SEAT/ADDRESSEE_FLANK_SEAT) instead
+  // beside the bubble (see SPEAKER_FLANK_SEAT/addresseeFlankSeat) instead
   // of their normal stage position, so the arrow always runs between those
   // two fixed points rather than the agents' regular seats.
   const arrowOriginSeat = focusSpeakingNow ? SPEAKER_FLANK_SEAT : focusSeat;
-  const addressedSeat = addressedAgent ? ADDRESSEE_FLANK_SEAT : null;
+  const addresseeSeats = useMemo(
+    () =>
+      new Map(addressedAgents.map((a, i) => [a.id, addresseeFlankSeat(i, addressedAgents.length)])),
+    [addressedAgents]
+  );
 
   // Deactivating an agent removes them from `activeAgents` (and thus their
   // stage seat) entirely — fine for someone who never spoke, but a real
@@ -500,13 +517,13 @@ export function SceneView({
   // at their flanking seat, so they show up "as if" still active for now —
   // regardless of their current participation toggle.
   const agentsToRender = useMemo(() => {
-    const extras = [focusAgent, addressedAgent].filter(
+    const extras = [focusAgent, ...addressedAgents].filter(
       (a): a is Agent => a != null && !activeAgents.some((active) => active.id === a.id)
     );
     if (extras.length === 0) return activeAgents;
     const seen = new Set<string>();
     return [...activeAgents, ...extras].filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
-  }, [activeAgents, focusAgent, addressedAgent]);
+  }, [activeAgents, focusAgent, addressedAgents]);
 
   return (
     <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
@@ -563,9 +580,9 @@ export function SceneView({
             <span className="scene-flash-speaker" style={{ borderColor: SPEAKING_COLOR }}>
               🗣️ {focusAgent.refNumber} {focusAgent.name} Speaking
             </span>
-            {addressedAgent && (
+            {addressedAgents.length > 0 && (
               <span className="scene-flash-addressed" style={{ borderColor: ADDRESSED_COLOR }}>
-                → {addressedAgent.refNumber} {addressedAgent.name} Addressed
+                → {addressedAgents.map((a) => `${a.refNumber} ${a.name}`).join(', ')} Addressed
               </span>
             )}
           </div>
@@ -586,12 +603,13 @@ export function SceneView({
             // flanking branches below, which don't need it.
             const baseSeat = seatByAgentId.get(agent.id);
             const speakingNow = replaying ? replayFocusAgentId === agent.id : focusId === agent.id;
-            const isAddressedNow = addressedAgent?.id === agent.id;
+            const addresseeSeat = addresseeSeats.get(agent.id);
+            const isAddressedNow = addresseeSeat != null;
             // The speaker and whoever they're addressing jump to fixed seats
             // right beside the bubble — guaranteed visible — instead of their
             // regular stage position, which could drift behind/under the
             // (much larger) bubble box and effectively disappear there.
-            const seat = speakingNow ? SPEAKER_FLANK_SEAT : isAddressedNow ? ADDRESSEE_FLANK_SEAT : baseSeat!;
+            const seat = speakingNow ? SPEAKER_FLANK_SEAT : isAddressedNow ? addresseeSeat! : baseSeat!;
             const gazeAngleDeg = baseSeat && focusSeat && focusId !== agent.id ? angleBetween(baseSeat, focusSeat) : 0;
             return (
               <SceneAvatar
@@ -600,7 +618,7 @@ export function SceneView({
                 seat={seat}
                 traitDefs={traitDefs}
                 isSpeaking={speakingNow}
-                isAddressed={addressedAgent?.id === agent.id}
+                isAddressed={isAddressedNow}
                 isFocused={focusId === agent.id}
                 isDimmed={focusId != null && focusId !== agent.id}
                 isDragging={draggingId === agent.id}
@@ -620,21 +638,26 @@ export function SceneView({
               outside caused the endpoints to drift out of alignment with
               the actual avatar positions whenever the camera was zoomed in
               on a focused speaker. */}
-          {addressedSeat && arrowOriginSeat && (
+          {addressedAgents.length > 0 && arrowOriginSeat && (
             <svg className="scene-address-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
               <defs>
                 <marker id="scene-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
                   <path d="M0,0 L8,4 L0,8 Z" fill={SPEAKING_COLOR} />
                 </marker>
               </defs>
-              <path
-                key={`${focusAgent!.id}-${addressedAgent!.id}`}
-                className="scene-address-line"
-                d={buildArrowPath(arrowOriginSeat.xPct, arrowOriginSeat.yPct, addressedSeat.xPct, addressedSeat.yPct)}
-                fill="none"
-                stroke={SPEAKING_COLOR}
-                markerEnd="url(#scene-arrowhead)"
-              />
+              {addressedAgents.map((a) => {
+                const seat = addresseeSeats.get(a.id)!;
+                return (
+                  <path
+                    key={`${focusAgent!.id}-${a.id}`}
+                    className="scene-address-line"
+                    d={buildArrowPath(arrowOriginSeat.xPct, arrowOriginSeat.yPct, seat.xPct, seat.yPct)}
+                    fill="none"
+                    stroke={SPEAKING_COLOR}
+                    markerEnd="url(#scene-arrowhead)"
+                  />
+                );
+              })}
             </svg>
           )}
         </div>
