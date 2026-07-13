@@ -1127,7 +1127,9 @@ body.dev-mode .selection-action-bar[data-devref] {
  * trades a little corner overlap for never being clipped.
  */
 body.dev-mode [data-devref]::after {
-  content: attr(data-devref);
+  /* Just the base code (e.g. "b55"), never the "-index"/"-agentId" suffix
+     data-devref carries for looped elements — see lib/devref.ts. */
+  content: attr(data-devref-label);
   position: absolute;
   top: 0;
   right: 0;

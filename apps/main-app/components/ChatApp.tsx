@@ -610,6 +610,11 @@ export function ChatApp() {
       .filter((t) => t.messages.length > 0);
   }, [state.threads, searchQuery, filterStarredOnly, filterCategory]);
 
+  // A brand-new tab starts with nobody active (see
+  // freshConversationWithCurrentAgents) — the Participants bar shows a
+  // category picker in that state instead of an empty/degenerate chip row.
+  const noActiveParticipants = state.agents.length > 0 && state.agents.every((a) => !a.active);
+
   function agentIsConnected(agent: Agent): boolean {
     return !!agent.connectionId && connections.some((c) => c.id === agent.connectionId);
   }
@@ -1801,10 +1806,11 @@ export function ChatApp() {
       ...base,
       id: id ?? base.id,
       // Agent identity/LLM assignment carries over, but participation
-      // (`active`) is each tab's own — a brand-new tab starts with
-      // everyone active rather than inheriting whichever subset happened
-      // to be toggled on in the tab it was opened from.
-      agents: state.agents.map((a) => ({ ...a, active: true })),
+      // (`active`) is each tab's own — a brand-new tab starts with nobody
+      // active, prompting a category pick in the Participants bar (see
+      // ChatApp's `s5` block) rather than inheriting whichever subset
+      // happened to be toggled on in the tab it was opened from.
+      agents: state.agents.map((a) => ({ ...a, active: false })),
       nextAgentNumber: state.nextAgentNumber,
     };
   }
@@ -2547,7 +2553,36 @@ export function ChatApp() {
 
       <div className="participants-bar" {...devRef('s5')}>
         <span className="control-label">Participants:</span>
-        {state.agents
+        {noActiveParticipants ? (
+          <>
+            <span style={{ opacity: 0.8, fontSize: 13 }}>Pick a category to activate its agents:</span>
+            {[...new Set([...AGENT_LIBRARY.map((c) => c.name), ...participantsCustomCategories.map((c) => c.name)])].map(
+              (category, ci) => {
+                const count = state.agents.filter((a) => categoriesForParticipant(a.name).includes(category)).length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    key={category}
+                    className="control-btn"
+                    {...devRef('b88', ci)}
+                    onClick={() =>
+                      setState((prev) => ({
+                        ...prev,
+                        agents: prev.agents.map((a) =>
+                          categoriesForParticipant(a.name).includes(category) ? { ...a, active: true } : a
+                        ),
+                      }))
+                    }
+                    title={`Activate every agent in "${category}" — everyone else stays out of this conversation`}
+                  >
+                    🏷️ {category} ({count})
+                  </button>
+                );
+              }
+            )}
+          </>
+        ) : (
+          state.agents
           .filter((agent) => chipBarShowAll || agent.active)
           .map((agent) => {
             const connected = agentIsConnected(agent);
@@ -2596,8 +2631,9 @@ export function ChatApp() {
                 {!connected && ' ⚠'}
               </button>
             );
-          })}
-        {state.agents.some((a) => !a.active) && (
+          })
+        )}
+        {!noActiveParticipants && state.agents.some((a) => !a.active) && (
           <button
             className="control-btn"
             {...devRef('b86')}
@@ -2660,8 +2696,14 @@ export function ChatApp() {
                   ...participantsCustomCategories.map((c) => c.name),
                 ];
                 const q = participantFilter.trim().toLowerCase();
+                // Only hide inactive agents when there's at least one active
+                // one to show instead — a brand-new tab starts with nobody
+                // active (see freshConversationWithCurrentAgents), and
+                // filtering THAT down to active-only would show a
+                // confusingly empty list instead of the full roster.
+                const hasAnyActiveAgent = state.agents.some((a) => a.active);
                 const filtered = state.agents.filter((a) => {
-                  if (!showInactiveParticipants && !a.active) return false;
+                  if (!showInactiveParticipants && hasAnyActiveAgent && !a.active) return false;
                   const categories = categoriesForParticipant(a.name);
                   if (
                     participantCategoryFilters.size > 0 &&

@@ -21,13 +21,19 @@
  *   r  = Row (a list-item / table-row container)
  *
  * For a call site inside a list (.map()), pass the loop index as the
- * second argument so each rendered instance still gets a distinct code
- * ("b12-0", "b12-1", ...) while the base code stays traceable to that one
- * call site in the source.
+ * second argument so each rendered instance still gets a distinct
+ * `data-devref` ("b12-0", "b12-1", ...) while the base code stays traceable
+ * to that one call site in the source. The visible badge only ever shows
+ * the base code (`data-devref-label`), never the "-index"/"-agentId" suffix
+ * — that suffix can be a long id, and reading it out loud isn't the point;
+ * tracing back to the call site is.
  *
  * Visibility is gated purely by CSS (`body.dev-mode [data-devref]` in
  * globals.css), toggled by ChatApp when the user enables Dev Mode.
  */
-export function devRef(code: string, index?: number | string): { 'data-devref': string } {
-  return { 'data-devref': index != null ? `${code}-${index}` : code };
+export function devRef(code: string, index?: number | string): { 'data-devref': string; 'data-devref-label': string } {
+  return {
+    'data-devref': index != null ? `${code}-${index}` : code,
+    'data-devref-label': code,
+  };
 }
