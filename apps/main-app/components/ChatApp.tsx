@@ -1884,6 +1884,28 @@ export function ChatApp() {
     updateSettings({ maxTokens: v })
   );
 
+  /**
+   * Propagates the full agent roster — including which LLM connection each
+   * agent is assigned — to every OTHER open tab's persisted conversation.
+   * Per explicit instruction, agents (identity AND LLM choice) are fully
+   * shared across tabs: whichever tab last changed something wins
+   * everywhere. Fire-and-forget — never blocks the caller, never touches
+   * `archives` (an archive is a frozen historical snapshot, not a live tab).
+   */
+  async function syncAgentIdentityAcrossTabs(nextAgents: Agent[]) {
+    const nextNumber = state.nextAgentNumber;
+    for (const tab of tabs) {
+      if (tab.id === state.id) continue;
+      const loaded = await loadConversation(tab.id);
+      if (!loaded) continue;
+      await saveConversation({
+        ...loaded,
+        agents: nextAgents,
+        nextAgentNumber: Math.max(loaded.nextAgentNumber, nextNumber),
+      });
+    }
+  }
+
   function saveAgent(id: string, updates: Partial<Agent>) {
     const before = state.agents.find((a) => a.id === id);
     if (before) {
@@ -1892,10 +1914,12 @@ export function ChatApp() {
         ...updates,
       });
     }
+    const nextAgents = state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a));
     setState((prev) => ({
       ...prev,
       agents: prev.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     }));
+    void syncAgentIdentityAcrossTabs(nextAgents);
     const updated = { ...state.agents.find((a) => a.id === id), ...updates } as Agent;
     // Renaming must update the existing library entry in place — upserting
     // straight under the new name would create a fresh entry and silently
@@ -1918,12 +1942,14 @@ export function ChatApp() {
 
   function updateAgentsBulk(nextAgents: Agent[]) {
     setState((prev) => ({ ...prev, agents: nextAgents }));
+    void syncAgentIdentityAcrossTabs(nextAgents);
   }
 
   /** Reorders agents and renumbers Agt## sequentially to match the new order. */
   function reorderAgents(nextAgents: Agent[]) {
     const renumbered = nextAgents.map((a, i) => ({ ...a, refNumber: `Agt${i + 1}` }));
     setState((prev) => ({ ...prev, agents: renumbered }));
+    void syncAgentIdentityAcrossTabs(renumbered);
   }
 
   function addAgent() {
@@ -1947,6 +1973,7 @@ export function ChatApp() {
       agents: [...prev.agents, newAgent],
       nextAgentNumber: prev.nextAgentNumber + 1,
     }));
+    void syncAgentIdentityAcrossTabs([...state.agents, newAgent]);
     setCurrentAgentId(newAgent.id);
     upsertCustomAgent({
       name: newAgent.name,
@@ -1978,6 +2005,7 @@ export function ChatApp() {
       agents: [...prev.agents, newAgent],
       nextAgentNumber: prev.nextAgentNumber + 1,
     }));
+    void syncAgentIdentityAcrossTabs([...state.agents, newAgent]);
     setCurrentAgentId(newAgent.id);
     upsertCustomAgent(preset);
     showToast(`➕ Added ${preset.name} (${refNumber})`);
@@ -1985,9 +2013,13 @@ export function ChatApp() {
 
   function deleteAgent(id: string) {
     if (state.agents.length <= 1) return;
-    // Only removed from this conversation — its definition stays in the
-    // agent library (custom-agents.ts) so it can be re-added later.
+    // The agent roster is shared across tabs (see syncAgentIdentityAcrossTabs)
+    // — deleting here removes it from every open tab, not just this one.
+    // Its definition still stays in the agent library (custom-agents.ts) so
+    // it can be re-added later.
+    const nextAgents = state.agents.filter((a) => a.id !== id);
     setState((prev) => ({ ...prev, agents: prev.agents.filter((a) => a.id !== id) }));
+    void syncAgentIdentityAcrossTabs(nextAgents);
     if (currentAgentId === id) {
       setCurrentAgentId(state.agents.find((a) => a.id !== id)?.id ?? '');
     }
@@ -3172,12 +3204,14 @@ export function ChatApp() {
           onGuidelinesChange={setGuidelines}
           traitDefs={traitDefs}
           onTraitDefsChange={setTraitDefs}
-          onUpdateAgentTraits={(id, traits) =>
+          onUpdateAgentTraits={(id, traits) => {
+            const nextAgents = state.agents.map((a) => (a.id === id ? { ...a, traits } : a));
             setState((prev) => ({
               ...prev,
               agents: prev.agents.map((a) => (a.id === id ? { ...a, traits } : a)),
-            }))
-          }
+            }));
+            void syncAgentIdentityAcrossTabs(nextAgents);
+          }}
           wikiEnabled={state.settings.wikiEnabled}
           wikiKeeperConnectionId={state.settings.wikiKeeperConnectionId}
           wikiRefreshInterval={state.settings.wikiRefreshInterval}

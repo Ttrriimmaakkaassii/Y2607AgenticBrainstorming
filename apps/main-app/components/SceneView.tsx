@@ -688,14 +688,26 @@ function CentralBubble({
   onSwipePrev,
 }: CentralBubbleProps) {
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const SWIPE_FEEDBACK_RANGE = 100;
+  // Live horizontal drag offset, purely for the nub feedback below — reset
+  // once the gesture ends (committed or not). Positive = dragging right
+  // (green, previous message), negative = dragging left (red, next message).
+  const [dragDx, setDragDx] = useState(0);
 
   function handleSwipeStart(e: React.PointerEvent) {
     swipeStartRef.current = { x: e.clientX, y: e.clientY };
   }
 
+  function handleSwipeMove(e: React.PointerEvent) {
+    const start = swipeStartRef.current;
+    if (!start) return;
+    setDragDx(e.clientX - start.x);
+  }
+
   function handleSwipeEnd(e: React.PointerEvent) {
     const start = swipeStartRef.current;
     swipeStartRef.current = null;
+    setDragDx(0);
     if (!start) return;
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
@@ -704,6 +716,11 @@ function CentralBubble({
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     if (dx < 0) onSwipeNext();
     else onSwipePrev();
+  }
+
+  function handleSwipeCancel() {
+    swipeStartRef.current = null;
+    setDragDx(0);
   }
   // While the reader is actively on this message, the real spoken-word
   // position drives what's shown/highlighted, so the bubble text stays in
@@ -723,16 +740,31 @@ function CentralBubble({
     marked?.scrollIntoView({ block: 'nearest' });
   }, [spokenRange?.charIndex]);
 
+  const rightNubOpacity = dragDx > 0 ? Math.min(0.9, 0.18 + dragDx / SWIPE_FEEDBACK_RANGE) : 0.18;
+  const leftNubOpacity = dragDx < 0 ? Math.min(0.9, 0.18 + -dragDx / SWIPE_FEEDBACK_RANGE) : 0.18;
+
   return (
     <div
       className="scene-central-box"
       style={{ borderTopColor: agent.color }}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={handleSwipeStart}
+      onPointerMove={handleSwipeMove}
       onPointerUp={handleSwipeEnd}
+      onPointerCancel={handleSwipeCancel}
+      onPointerLeave={handleSwipeCancel}
     >
-      <span className="scene-swipe-hint left">‹</span>
-      <span className="scene-swipe-hint right">›</span>
+      {/* Swipe hints: a sliver of a circle poking out each edge — right
+          (green) for the previous message, left (red) for the next one —
+          brightening live as the user actually drags in that direction. */}
+      <span
+        className="scene-swipe-nub left"
+        style={{ opacity: leftNubOpacity, transform: `translateY(-50%) scale(${dragDx < 0 ? 1 + Math.min(-dragDx, SWIPE_FEEDBACK_RANGE) / 400 : 1})` }}
+      />
+      <span
+        className="scene-swipe-nub right"
+        style={{ opacity: rightNubOpacity, transform: `translateY(-50%) scale(${dragDx > 0 ? 1 + Math.min(dragDx, SWIPE_FEEDBACK_RANGE) / 400 : 1})` }}
+      />
       <div className="scene-central-speaker">
         <span className="scene-central-dot" style={{ background: agent.color }} />
         {agent.refNumber} {agent.name} is speaking

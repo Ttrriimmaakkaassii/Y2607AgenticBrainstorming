@@ -2674,30 +2674,36 @@ body.dev-mode [data-devref]::after {
     font-size: 18px;
   }
 
-  .scene-swipe-hint {
-    display: flex;
+  .scene-swipe-nub {
+    width: 34px;
+    height: 68px;
   }
 }
 
-/* Swipe-to-navigate hint arrows either side of the central bubble — shown
-   only on touch/narrow screens, where a swipe gesture (not a scrubber
-   drag) is the natural way to step through replay. Pure decoration; the
-   actual gesture is handled by pointer events on .scene-central-anchor. */
-.scene-swipe-hint {
-  display: none;
+/* Swipe-to-navigate nubs either side of the central bubble — just the
+   sliver of a circle poking past each edge, not a full button. Right
+   (green) steps to the previous message, left (red) to the next one;
+   opacity/scale track the live drag distance (see CentralBubble's
+   dragDx), so the color visibly builds as you actually drag rather than
+   only reacting after the gesture completes. Pure visual feedback — the
+   real gesture is handled by pointer events on .scene-central-box. */
+.scene-swipe-nub {
   position: absolute;
   top: 50%;
-  transform: translateY(-50%);
-  font-size: 22px;
-  opacity: 0.35;
+  width: 26px;
+  height: 56px;
+  border-radius: 50%;
   pointer-events: none;
   z-index: 29;
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-.scene-swipe-hint.left {
-  left: 6px;
+.scene-swipe-nub.left {
+  left: -13px;
+  background: #ef4444;
 }
 
-.scene-swipe-hint.right {
-  right: 6px;
+.scene-swipe-nub.right {
+  right: -13px;
+  background: #22c55e;
 }
