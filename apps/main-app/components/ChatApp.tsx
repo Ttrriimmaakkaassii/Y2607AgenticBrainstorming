@@ -129,12 +129,13 @@ function defaultState(): ConversationState {
       ttsProvider: 'browser',
       googleTtsModel: GEMINI_TTS_MODELS[0].id,
       whatsappNumber: '',
-      wikiEnabled: false,
+      wikiEnabled: true,
       wikiKeeperConnectionId: null,
       wikiRefreshInterval: 10,
       wikiDigest: '',
       wikiUpdatedAt: 0,
       wikiMessageCountAtLastUpdate: 0,
+      wikiHistory: [],
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -187,12 +188,13 @@ function migrateState(state: ConversationState): ConversationState {
       ttsProvider: state.settings.ttsProvider ?? 'browser',
       googleTtsModel: state.settings.googleTtsModel ?? GEMINI_TTS_MODELS[0].id,
       whatsappNumber: state.settings.whatsappNumber ?? '',
-      wikiEnabled: state.settings.wikiEnabled ?? false,
+      wikiEnabled: state.settings.wikiEnabled ?? true,
       wikiKeeperConnectionId: state.settings.wikiKeeperConnectionId ?? null,
       wikiRefreshInterval: state.settings.wikiRefreshInterval ?? 10,
       wikiDigest: state.settings.wikiDigest ?? '',
       wikiUpdatedAt: state.settings.wikiUpdatedAt ?? 0,
       wikiMessageCountAtLastUpdate: state.settings.wikiMessageCountAtLastUpdate ?? 0,
+      wikiHistory: state.settings.wikiHistory ?? [],
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
@@ -320,6 +322,12 @@ export function ChatApp() {
     setModalReturnTo(null);
   }
   const [mindmapData, setMindmapData] = useState<{ markdown: string; title: string } | null>(null);
+
+  function openMindmapFromSettings(markdown: string, title: string) {
+    setModalReturnTo('settings');
+    setMindmapData({ markdown, title });
+    setActiveModal('mindmap');
+  }
   const [hydrated, setHydrated] = useState(false);
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
   const [connections, setConnections] = useState<LLMConnection[]>([]);
@@ -682,10 +690,18 @@ export function ChatApp() {
         .join('\n');
       const digest = await fetchWikiDigest(connection, live.wikiDigest, transcript);
       if (!digest) return;
+      const updatedAt = Date.now();
+      // Newest first, capped — enough to browse how the wiki evolved without
+      // the settings blob growing unbounded over a long conversation.
+      const history = [
+        { digest, updatedAt, messageCount: snapshotCount },
+        ...live.wikiHistory,
+      ].slice(0, 20);
       updateSettings({
         wikiDigest: digest,
-        wikiUpdatedAt: Date.now(),
+        wikiUpdatedAt: updatedAt,
         wikiMessageCountAtLastUpdate: snapshotCount,
+        wikiHistory: history,
       });
     } finally {
       wikiRefreshInFlightRef.current = false;
@@ -697,10 +713,19 @@ export function ChatApp() {
     [state.threads]
   );
 
+  const wikiNoKeeperNotifiedRef = useRef(false);
+
   useEffect(() => {
     const live = settingsRef.current;
-    if (!live.wikiEnabled || !live.wikiKeeperConnectionId) return;
+    if (!live.wikiEnabled) return;
     if (totalMessageCount - live.wikiMessageCountAtLastUpdate < live.wikiRefreshInterval) return;
+    if (!live.wikiKeeperConnectionId) {
+      if (!wikiNoKeeperNotifiedRef.current) {
+        wikiNoKeeperNotifiedRef.current = true;
+        showToast('📚 The shared wiki is on but has no Wiki Keeper — pick a connection in Settings → Wiki.');
+      }
+      return;
+    }
     refreshWikiDigest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalMessageCount]);
@@ -2872,8 +2897,10 @@ export function ChatApp() {
           wikiRefreshInterval={state.settings.wikiRefreshInterval}
           wikiDigest={state.settings.wikiDigest}
           wikiUpdatedAt={state.settings.wikiUpdatedAt}
+          wikiHistory={state.settings.wikiHistory}
           onUpdateWiki={(updates) => updateSettings(updates)}
           onRefreshWikiNow={refreshWikiDigest}
+          onOpenMindmap={openMindmapFromSettings}
         />
       )}
       {activeModal === 'library' && (
@@ -2906,7 +2933,7 @@ export function ChatApp() {
         <MindmapModal
           markdown={mindmapData.markdown}
           title={mindmapData.title}
-          onClose={() => setActiveModal(null)}
+          onClose={closeSubModal}
         />
       )}
     </div>

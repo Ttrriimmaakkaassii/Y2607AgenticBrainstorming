@@ -21,6 +21,7 @@ import {
   loadTraitCategories,
 } from '@/lib/traits';
 import { GEMINI_TTS_VOICES } from '@/lib/google-tts';
+import { downloadHtmlAsJpeg } from '@/lib/rasterize-svg';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
@@ -32,6 +33,49 @@ import { ChangeLogPanel } from './ChangeLogPanel';
 import { AccountSettingsPanel } from './AccountSettingsPanel';
 
 type SettingsTab = 'agent' | 'llm' | 'audio' | 'wiki' | 'archives' | 'log' | 'account';
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Turns the wiki digest's "## Heading" + "- bullet" markdown (the exact
+ * shape fetchWikiDigest's system prompt asks for) into simple HTML, for the
+ * Bullet view and its JPEG export. */
+function renderWikiHtml(markdown: string): string {
+  const lines = markdown.split('\n');
+  const parts: string[] = [];
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      parts.push('</ul>');
+      inList = false;
+    }
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    const heading = /^#{1,6}\s+(.*)/.exec(line);
+    const bullet = /^[-*]\s+(.*)/.exec(line);
+    if (heading) {
+      closeList();
+      parts.push(`<h4 style="margin:16px 0 6px;">${escapeHtml(heading[1])}</h4>`);
+    } else if (bullet) {
+      if (!inList) {
+        parts.push('<ul style="margin:0 0 8px;padding-left:20px;">');
+        inList = true;
+      }
+      parts.push(`<li style="margin-bottom:4px;">${escapeHtml(bullet[1])}</li>`);
+    } else {
+      closeList();
+      parts.push(`<p style="margin:0 0 8px;">${escapeHtml(line)}</p>`);
+    }
+  }
+  closeList();
+  return parts.join('');
+}
 
 /** A real dropdown for freeform-tag category fields, with a "+ New category…" escape hatch. */
 function CategorySelect({
@@ -107,12 +151,14 @@ interface SettingsModalProps {
   wikiRefreshInterval: number;
   wikiDigest: string;
   wikiUpdatedAt: number;
+  wikiHistory: { digest: string; updatedAt: number; messageCount: number }[];
   onUpdateWiki: (updates: {
     wikiEnabled?: boolean;
     wikiKeeperConnectionId?: string | null;
     wikiRefreshInterval?: number;
   }) => void;
   onRefreshWikiNow: () => void;
+  onOpenMindmap: (markdown: string, title: string) => void;
 }
 
 export function SettingsModal({
@@ -150,13 +196,19 @@ export function SettingsModal({
   wikiRefreshInterval,
   wikiDigest,
   wikiUpdatedAt,
+  wikiHistory,
   onUpdateWiki,
   onRefreshWikiNow,
+  onOpenMindmap,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
   const configureAgentRef = useRef<HTMLDivElement>(null);
   const overlayClose = useOverlayClose(onClose);
+  // null = viewing the current digest; otherwise an index into wikiHistory.
+  const [wikiViewIndex, setWikiViewIndex] = useState<number | null>(null);
+  const [wikiViewMode, setWikiViewMode] = useState<'raw' | 'bullets'>('bullets');
+  const [wikiJpegExporting, setWikiJpegExporting] = useState(false);
 
   const [name, setName] = useState(currentAgent?.name ?? '');
   const [role, setRole] = useState(currentAgent?.role ?? '');
@@ -1182,17 +1234,118 @@ export function SettingsModal({
                 <button className="btn-secondary" {...devRef('b61')} onClick={onRefreshWikiNow}>
                   🔄 Regenerate now
                 </button>
-                <div className="form-group">
-                  <label>
-                    Current digest{wikiUpdatedAt ? ` — last updated ${new Date(wikiUpdatedAt).toLocaleString()}` : ' — not generated yet'}
-                  </label>
-                  <textarea
-                    readOnly
-                    {...devRef('t6')}
-                    value={wikiDigest || '(empty — enable the wiki and pick a keeper connection, then send a few messages)'}
-                    rows={12}
-                  />
-                </div>
+
+                {(() => {
+                  const selected = wikiViewIndex == null
+                    ? { digest: wikiDigest, updatedAt: wikiUpdatedAt, messageCount: null as number | null }
+                    : wikiHistory[wikiViewIndex] ?? { digest: wikiDigest, updatedAt: wikiUpdatedAt, messageCount: null };
+                  const selectedDigest = selected.digest;
+                  const totalRawChars = threads.reduce(
+                    (n, t) => n + t.messages.reduce((m, msg) => m + msg.content.length, 0),
+                    0
+                  );
+                  const estRawTokens = Math.round(totalRawChars / 4);
+                  const estDigestTokens = Math.round(selectedDigest.length / 4);
+                  const savedPct =
+                    estRawTokens > 0 ? Math.round((1 - estDigestTokens / Math.max(estRawTokens, 1)) * 100) : 0;
+
+                  async function downloadJpeg() {
+                    if (!selectedDigest) return;
+                    setWikiJpegExporting(true);
+                    try {
+                      const html =
+                        wikiViewMode === 'bullets'
+                          ? renderWikiHtml(selectedDigest)
+                          : `<pre style="white-space:pre-wrap;font-family:inherit;">${escapeHtml(selectedDigest)}</pre>`;
+                      const wrapped = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5;color:#111;padding:32px;">${html}</div>`;
+                      await downloadHtmlAsJpeg(wrapped, 1000, 1400, 'shared-wiki.jpg');
+                    } finally {
+                      setWikiJpegExporting(false);
+                    }
+                  }
+
+                  return (
+                    <>
+                      <div className="form-group compact-field" style={{ marginTop: 12 }}>
+                        <label>Version</label>
+                        <select
+                          value={wikiViewIndex == null ? 'current' : String(wikiViewIndex)}
+                          onChange={(e) =>
+                            setWikiViewIndex(e.target.value === 'current' ? null : Number(e.target.value))
+                          }
+                        >
+                          <option value="current">
+                            Current{wikiUpdatedAt ? ` (${new Date(wikiUpdatedAt).toLocaleString()})` : ' (not generated yet)'}
+                          </option>
+                          {wikiHistory.map((h, i) => (
+                            <option key={h.updatedAt} value={i}>
+                              {new Date(h.updatedAt).toLocaleString()} — {h.messageCount} messages
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <p style={{ fontSize: 12, opacity: 0.7, margin: '4px 0 12px' }}>
+                        Full conversation so far: ~{estRawTokens.toLocaleString()} tokens (est.) · this digest: ~
+                        {estDigestTokens.toLocaleString()} tokens (est.) ·{' '}
+                        {savedPct > 0 ? `~${savedPct}% smaller` : 'no reduction yet'}
+                      </p>
+
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                        <button
+                          className={`btn-secondary ${wikiViewMode === 'bullets' ? 'active' : ''}`}
+                          style={{ width: 'auto' }}
+                          onClick={() => setWikiViewMode('bullets')}
+                        >
+                          • Bullets
+                        </button>
+                        <button
+                          className={`btn-secondary ${wikiViewMode === 'raw' ? 'active' : ''}`}
+                          style={{ width: 'auto' }}
+                          onClick={() => setWikiViewMode('raw')}
+                        >
+                          📄 Raw
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          style={{ width: 'auto' }}
+                          disabled={!selectedDigest}
+                          onClick={() => onOpenMindmap(selectedDigest, 'Shared Wiki')}
+                        >
+                          🗺️ Mind Map
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          style={{ width: 'auto' }}
+                          disabled={!selectedDigest || wikiJpegExporting}
+                          onClick={downloadJpeg}
+                        >
+                          🖼️ {wikiJpegExporting ? 'Exporting…' : 'Download JPEG'}
+                        </button>
+                      </div>
+
+                      <div className="form-group">
+                        {wikiViewMode === 'raw' ? (
+                          <textarea
+                            readOnly
+                            {...devRef('t6')}
+                            value={selectedDigest || '(empty — enable the wiki and pick a keeper connection, then send a few messages)'}
+                            rows={14}
+                          />
+                        ) : selectedDigest ? (
+                          <div
+                            className="wiki-bullet-view"
+                            dangerouslySetInnerHTML={{ __html: renderWikiHtml(selectedDigest) }}
+                          />
+                        ) : (
+                          <p style={{ opacity: 0.7 }}>
+                            (empty — enable the wiki and pick a keeper connection, then send a few messages)
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}

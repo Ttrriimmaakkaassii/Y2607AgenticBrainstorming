@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Transformer } from 'markmap-lib';
 import { Markmap } from 'markmap-view';
 import { useOverlayClose } from '@/lib/use-overlay-close';
+import { rasterizeSvg } from '@/lib/rasterize-svg';
 
 interface MindmapModalProps {
   markdown: string;
@@ -21,32 +22,6 @@ const SIZE_PRESETS = [
 
 function fileBase(title: string): string {
   return title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'mindmap';
-}
-
-async function rasterize(svg: SVGSVGElement, width: number, height: number): Promise<HTMLCanvasElement> {
-  const serializer = new XMLSerializer();
-  const source = serializer.serializeToString(svg);
-  const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(svgBlob);
-  try {
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('Failed to rasterize mind map'));
-      img.src = url;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas not supported');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(img, 0, 0, width, height);
-    return canvas;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 export function MindmapModal({ markdown, title, onClose }: MindmapModalProps) {
@@ -101,13 +76,13 @@ export function MindmapModal({ markdown, title, onClose }: MindmapModalProps) {
     if (!svgRef.current) return;
     setExporting(true);
     try {
-      const canvas = await rasterize(svgRef.current, exportWidth, exportHeight);
+      const canvas = await rasterizeSvg(svgRef.current, exportWidth, exportHeight);
       const link = document.createElement('a');
       link.href = canvas.toDataURL('image/jpeg', 0.92);
       link.download = `${fileBase(title)}.jpg`;
       link.click();
     } catch {
-      // rasterize() already narrows failure causes; nothing else to add here
+      // rasterizeSvg() already narrows failure causes; nothing else to add here
     } finally {
       setExporting(false);
     }
@@ -117,7 +92,7 @@ export function MindmapModal({ markdown, title, onClose }: MindmapModalProps) {
     if (!svgRef.current) return;
     setExporting(true);
     try {
-      const canvas = await rasterize(svgRef.current, exportWidth, exportHeight);
+      const canvas = await rasterizeSvg(svgRef.current, exportWidth, exportHeight);
       const { jsPDF } = await import('jspdf');
       const orientation = exportWidth >= exportHeight ? 'landscape' : 'portrait';
       const pdf = new jsPDF({ orientation, unit: 'px', format: [exportWidth, exportHeight] });

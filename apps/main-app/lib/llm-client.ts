@@ -325,12 +325,14 @@ export async function fetchWikiDigest(
   const systemPrompt =
     'You maintain a compact shared "wiki" for a multi-agent discussion made of several ' +
     'independent threads. The wiki is the ONLY cross-thread memory every agent gets — keep it ' +
-    'dense, factual, and organized as short bullet sections (e.g. "Established facts", ' +
-    '"Decisions", "Open questions", "Per-thread notes"). Merge the new messages into the existing ' +
-    'wiki: add new facts, update anything superseded, remove stale/resolved items, and preserve ' +
-    'everything still relevant. Keep the WHOLE wiki under roughly 600 words — prioritize the most ' +
-    'important and most recent material over exhaustive detail. Respond with ONLY the updated ' +
-    'wiki text, no preamble, no markdown code fences.';
+    'dense and factual. Format it as real markdown: "##" section headings (e.g. "## Established ' +
+    'facts", "## Decisions", "## Open questions", "## Per-thread notes") each followed by "-" ' +
+    'bullet items — not prose paragraphs. This structure matters: the same text is later rendered ' +
+    'both as plain bullets and as a mind map, so headings and bullets must be real markdown, not ' +
+    'just implied by wording. Merge the new messages into the existing wiki: add new facts, update ' +
+    'anything superseded, remove stale/resolved items, and preserve everything still relevant. Keep ' +
+    'the WHOLE wiki under roughly 600 words — prioritize the most important and most recent material ' +
+    'over exhaustive detail. Respond with ONLY the updated wiki markdown, no preamble, no code fences.';
   const userPrompt = previousDigest
     ? `Current wiki:\n${previousDigest}\n\nNew messages since last update:\n${newTranscript}`
     : `New messages:\n${newTranscript}\n\nWrite the initial wiki.`;
