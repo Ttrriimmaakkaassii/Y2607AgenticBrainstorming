@@ -348,12 +348,13 @@ span.icon-badge {
   filter: brightness(1.1);
 }
 
-/* Sits immediately to the left of .floating-play-btn (bottom:90px; right:16px;
-   width:52px) so the two read as one paired control in the same corner. */
+/* Stacked directly above .floating-play-btn (bottom:90px; right:16px;
+   width/height:52px) so the two read as one paired control in the same
+   corner instead of side by side. */
 .scene-play-audio-floating {
   position: fixed;
-  bottom: 90px;
-  right: 76px;
+  bottom: 150px;
+  right: 16px;
   z-index: 25;
   width: 52px;
   height: 52px;
@@ -496,6 +497,14 @@ mark.search-match {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+/* Default view: just the active participants, kept to one scrollable line
+   instead of wrapping — the "+N inactive" button reveals everyone (wrapping
+   normally) on demand. */
+.participants-bar.collapsed {
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 
 .participant-chip {
@@ -2284,16 +2293,17 @@ body.dev-mode [data-devref]::after {
 }
 
 .scene-avatar-circle {
-  width: 44px;
-  height: 44px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-weight: 700;
-  /* Fits a whole ref number (e.g. "Agt12"), not just one initial letter. */
-  font-size: 11px;
+  font-weight: 800;
+  /* Just the bare number (the "Agt" prefix is dropped for display), sized
+     to read clearly at a glance rather than fitting a whole "Agt12". */
+  font-size: 20px;
   z-index: 2;
   position: relative;
   transition: box-shadow 0.3s ease;
@@ -2759,9 +2769,9 @@ body.dev-mode [data-devref]::after {
   }
 
   .scene-avatar-circle {
-    width: 52px;
-    height: 52px;
-    font-size: 13px;
+    width: 64px;
+    height: 64px;
+    font-size: 22px;
   }
 
   .scene-avatar-nametag {

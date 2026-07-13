@@ -298,6 +298,9 @@ export function ChatApp() {
   const [participantFilter, setParticipantFilter] = useState('');
   const [participantCategoryFilters, setParticipantCategoryFilters] = useState<Set<string>>(new Set());
   const [showInactiveParticipants, setShowInactiveParticipants] = useState(false);
+  /** Collapses the participant chip row to active-only (one compact line) by default; a button reveals the inactive ones too. */
+  const [chipBarShowAll, setChipBarShowAll] = useState(false);
+  const [searchBarOpen, setSearchBarOpen] = useState(false);
   const [participantsCustomAgents, setParticipantsCustomAgents] = useState<AgentPreset[]>([]);
   const [participantsCustomCategories, setParticipantsCustomCategories] = useState<CustomCategory[]>([]);
   const [manageBulkConnectionId, setManageBulkConnectionId] = useState('');
@@ -2463,42 +2466,55 @@ export function ChatApp() {
       </div>
 
       <div className="search-bar" {...devRef('s4')}>
-        <input
-          type="text"
-          className="select-input"
-          {...devRef('i3')}
-          style={{ flex: 1 }}
-          placeholder="🔎 Search discussion... (filters live as you type)"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        {searchQuery.trim() && (
-          <span className="search-result-count">
+        <button
+          className={`control-btn ${searchBarOpen ? 'active' : ''}`}
+          {...devRef('b87')}
+          onClick={() => setSearchBarOpen((v) => !v)}
+          title={searchBarOpen ? 'Hide search' : 'Search this discussion'}
+        >
+          🔎 Search
+        </button>
+        {(searchQuery || filterStarredOnly || filterCategory) && (
+          <span className="search-result-count" {...devRef('s26')}>
             {visibleThreads.reduce((n, t) => n + t.messages.length, 0)} found
           </span>
         )}
-        <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <input
-            type="checkbox"
-            {...devRef('ck2')}
-            checked={filterStarredOnly}
-            onChange={(e) => setFilterStarredOnly(e.target.checked)}
-          />
-          ⭐ Starred only
-        </label>
-        <select
-          className="select-input"
-          {...devRef('dr1')}
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-        >
-          <option value="">All categories</option>
-          {messageCategories.map((c) => (
-            <option key={c} value={c}>
-              🏷️ {c}
-            </option>
-          ))}
-        </select>
+        {searchBarOpen && (
+          <>
+            <input
+              type="text"
+              className="select-input"
+              {...devRef('i3')}
+              style={{ flex: 1 }}
+              autoFocus
+              placeholder="🔎 Search discussion... (filters live as you type)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="checkbox"
+                {...devRef('ck2')}
+                checked={filterStarredOnly}
+                onChange={(e) => setFilterStarredOnly(e.target.checked)}
+              />
+              ⭐ Starred only
+            </label>
+            <select
+              className="select-input"
+              {...devRef('dr1')}
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {messageCategories.map((c) => (
+                <option key={c} value={c}>
+                  🏷️ {c}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         {(searchQuery || filterStarredOnly || filterCategory) && (
           <button
             className="btn-icon"
@@ -2515,15 +2531,16 @@ export function ChatApp() {
         )}
       </div>
 
-      <div className="participants-bar" {...devRef('s5')}>
+      <div className={`participants-bar ${chipBarShowAll ? '' : 'collapsed'}`} {...devRef('s5')}>
         <span className="control-label">Participants:</span>
         {state.agents
-          .map((agent, agentIndex) => {
+          .filter((agent) => chipBarShowAll || agent.active)
+          .map((agent) => {
             const connected = agentIsConnected(agent);
             return (
               <button
                 key={agent.id}
-                {...devRef('b15', agentIndex)}
+                {...devRef('b15', agent.id)}
                 // Every agent always renders here, in stable state.agents
                 // order — only styling (not presence/position) reflects
                 // active/connected, so toggling one never reflows/reorders
@@ -2566,6 +2583,18 @@ export function ChatApp() {
               </button>
             );
           })}
+        {state.agents.some((a) => !a.active) && (
+          <button
+            className="control-btn"
+            {...devRef('b86')}
+            onClick={() => setChipBarShowAll((v) => !v)}
+            title={chipBarShowAll ? 'Collapse to active participants only' : 'Show deactivated agents too'}
+          >
+            {chipBarShowAll
+              ? '▲ Active only'
+              : `▼ +${state.agents.filter((a) => !a.active).length} inactive`}
+          </button>
+        )}
         <button
           className="control-btn"
           {...devRef('b75')}

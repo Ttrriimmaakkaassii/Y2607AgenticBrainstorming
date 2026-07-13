@@ -78,7 +78,7 @@ export function SceneAvatar({
           animationDuration: isSpeaking ? `${pulseSpeed}s` : undefined,
         }}
       >
-        {agent.refNumber}
+        {agent.refNumber.replace(/^Agt/i, '')}
         <div className="scene-avatar-eyes">
           <span style={{ transform: `translate(${eyeOffsetX}px, ${eyeOffsetY}px)` }} />
           <span style={{ transform: `translate(${eyeOffsetX}px, ${eyeOffsetY}px)` }} />

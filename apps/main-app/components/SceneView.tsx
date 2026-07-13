@@ -438,7 +438,6 @@ export function SceneView({
   const focusY = focusSeat?.yPct ?? 50;
 
   const centralMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
-  const isLiveSpeaking = (agentId: string) => !replaying && thinkingIds.includes(agentId);
 
   const addressedAgent = useMemo(() => {
     if (!focusAgent || !centralMessage) return null;
@@ -451,7 +450,11 @@ export function SceneView({
   // The speaker's own seat, including the same toward-center drift applied
   // to their avatar while they're actively speaking, so the arrow visibly
   // starts at the speaker rather than the bubble's fixed center point.
-  const focusSpeakingNow = focusId != null && (isLiveSpeaking(focusId) || replayFocusAgentId === focusId);
+  // Tied to `focusId` (same thing driving the bubble) rather than the raw
+  // `thinking` map — thinking only covers the brief network round-trip, so
+  // keying drift/pulse off it alone snapped the avatar back the instant a
+  // reply arrived, even while it was still typing out in the bubble.
+  const focusSpeakingNow = focusId != null;
   const arrowOriginSeat = focusSeat ? (focusSpeakingNow ? moveTowardCenter(focusSeat, SPEAKER_CENTER_PULL) : focusSeat) : null;
 
   return (
@@ -527,7 +530,7 @@ export function SceneView({
         >
           {activeAgents.map((agent) => {
             const baseSeat = seatByAgentId.get(agent.id)!;
-            const speakingNow = isLiveSpeaking(agent.id) || replayFocusAgentId === agent.id;
+            const speakingNow = replaying ? replayFocusAgentId === agent.id : focusId === agent.id;
             const seat = speakingNow ? moveTowardCenter(baseSeat, SPEAKER_CENTER_PULL) : baseSeat;
             const gazeAngleDeg = focusSeat && focusId !== agent.id ? angleBetween(baseSeat, focusSeat) : 0;
             return (
@@ -740,6 +743,13 @@ function CentralBubble({
 
   function handleSwipeStart(e: React.PointerEvent) {
     swipeStartRef.current = { x: e.clientX, y: e.clientY };
+    // A real swipe naturally drags the pointer past the box's edge (right
+    // where the nub sits) before it's released — without capture, that
+    // crossing fires pointerleave (see handleSwipeCancel) and aborts the
+    // gesture before pointerup ever arrives, so the swipe silently never
+    // completes. Capturing keeps move/up routed to this element regardless
+    // of where the pointer physically is.
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   function handleSwipeMove(e: React.PointerEvent) {
@@ -752,6 +762,9 @@ function CentralBubble({
     const start = swipeStartRef.current;
     swipeStartRef.current = null;
     setDragDx(0);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     if (!start) return;
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
@@ -762,9 +775,12 @@ function CentralBubble({
     else onSwipePrev();
   }
 
-  function handleSwipeCancel() {
+  function handleSwipeCancel(e: React.PointerEvent) {
     swipeStartRef.current = null;
     setDragDx(0);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
   }
   // While the reader is actively on this message, the real spoken-word
   // position drives what's shown/highlighted, so the bubble text stays in
