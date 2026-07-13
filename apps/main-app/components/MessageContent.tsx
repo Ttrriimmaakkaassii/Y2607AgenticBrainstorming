@@ -10,20 +10,45 @@ interface SpokenRange {
 interface MessageContentProps {
   content: string;
   spokenRange: SpokenRange | null;
+  /** Case-insensitive substring to highlight (from the search bar), or empty/undefined for none. */
+  searchQuery?: string;
 }
 
-function renderWithHighlight(text: string, spokenRange: SpokenRange | null) {
-  if (!spokenRange) return text;
+/** Wraps every case-insensitive occurrence of `query` in `text` with a <mark>. */
+function highlightSearchMatches(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  let matchAt = lower.indexOf(q, cursor);
+  let key = 0;
+  while (matchAt !== -1) {
+    if (matchAt > cursor) parts.push(text.slice(cursor, matchAt));
+    parts.push(
+      <mark key={key++} className="search-match">
+        {text.slice(matchAt, matchAt + q.length)}
+      </mark>
+    );
+    cursor = matchAt + q.length;
+    matchAt = lower.indexOf(q, cursor);
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts.length > 0 ? parts : text;
+}
+
+function renderWithHighlight(text: string, spokenRange: SpokenRange | null, searchQuery: string) {
+  if (!spokenRange) return highlightSearchMatches(text, searchQuery);
   const { charIndex, charLength } = spokenRange;
-  if (charIndex < 0 || charIndex >= text.length) return text;
+  if (charIndex < 0 || charIndex >= text.length) return highlightSearchMatches(text, searchQuery);
   const before = text.slice(0, charIndex);
   const word = text.slice(charIndex, charIndex + charLength);
   const after = text.slice(charIndex + charLength);
   return (
     <>
-      {before}
+      {highlightSearchMatches(before, searchQuery)}
       <span className="spoken-word">{word}</span>
-      {after}
+      {highlightSearchMatches(after, searchQuery)}
     </>
   );
 }
@@ -61,8 +86,9 @@ function parseBullets(content: string): BulletLine[] | null {
   return bulletLines;
 }
 
-export function MessageContent({ content, spokenRange }: MessageContentProps) {
+export function MessageContent({ content, spokenRange, searchQuery }: MessageContentProps) {
   const bullets = parseBullets(content);
+  const query = searchQuery?.trim() ?? '';
 
   if (bullets) {
     return (
@@ -78,7 +104,7 @@ export function MessageContent({ content, spokenRange }: MessageContentProps) {
             <li key={i}>
               <span className="bullet-picto">{PICTOS[i % PICTOS.length]}</span>
               <span className="bullet-number">{i + 1}.</span>
-              <span>{renderWithHighlight(line.text, localRange)}</span>
+              <span>{renderWithHighlight(line.text, localRange, query)}</span>
             </li>
           );
         })}
@@ -86,5 +112,5 @@ export function MessageContent({ content, spokenRange }: MessageContentProps) {
     );
   }
 
-  return <>{renderWithHighlight(content, spokenRange)}</>;
+  return <>{renderWithHighlight(content, spokenRange, query)}</>;
 }

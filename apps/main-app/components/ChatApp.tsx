@@ -2128,6 +2128,11 @@ export function ChatApp() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
+        {searchQuery.trim() && (
+          <span className="search-result-count">
+            {visibleThreads.reduce((n, t) => n + t.messages.length, 0)} found
+          </span>
+        )}
         <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <input
             type="checkbox"
@@ -2724,6 +2729,7 @@ export function ChatApp() {
                               ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
                               : null
                           }
+                          searchQuery={searchQuery}
                         />
                       </div>
                       <div className="feedback-controls">

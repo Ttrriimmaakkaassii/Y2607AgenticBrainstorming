@@ -303,6 +303,19 @@ span.icon-badge {
   padding: 8px 12px 0;
 }
 
+.search-result-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+mark.search-match {
+  background: #ffe066;
+  color: #1a1a1a;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .top-panel-toggle-row {
   display: flex;
   justify-content: center;
