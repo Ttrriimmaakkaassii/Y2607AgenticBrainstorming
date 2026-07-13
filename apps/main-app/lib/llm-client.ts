@@ -10,6 +10,86 @@ import {
   ReactionType,
   ResponseStyle,
 } from './types';
+import { callWebSearchTool } from './web-search';
+
+/** One successful web_search call's worth of evidence — mirrors `Message.webSearches` (see lib/types.ts), attached to whichever agent reply triggered it. */
+export interface WebSearchEvidence {
+  query: string;
+  resultCount: number;
+  sources: { title: string; url: string }[];
+  searchedAt: string;
+}
+
+const MAX_TOOL_CALLS_PER_AGENT_TURN = 4;
+
+const WEB_SEARCH_DESCRIPTION =
+  'Search the public internet for current or externally verifiable information. Returns titles, URLs, snippets, and relevance scores. Use this before making claims about external products, repositories, documentation, news, software versions, people, laws, prices, or anything else not already in this conversation.';
+
+// Scoped down from the full spec (which also exposed searchDepth/topic/
+// domain filters/date range to the model): the model only ever needs to
+// pick the query itself well — the rest are fixed, sensible server-side
+// defaults (see functions/api/research/search.ts) rather than more
+// decisions for the model to get wrong.
+const OPENAI_WEB_SEARCH_TOOL = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description: WEB_SEARCH_DESCRIPTION,
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'A precise, self-contained internet search query.' },
+        maxResults: { type: 'integer', minimum: 1, maximum: 10 },
+      },
+      required: ['query'],
+    },
+  },
+};
+
+const ANTHROPIC_WEB_SEARCH_TOOL = {
+  name: 'web_search',
+  description: WEB_SEARCH_DESCRIPTION,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'A precise, self-contained internet search query.' },
+      maxResults: { type: 'integer', minimum: 1, maximum: 10 },
+    },
+    required: ['query'],
+  },
+};
+
+const GOOGLE_WEB_SEARCH_TOOL = {
+  name: 'web_search',
+  description: WEB_SEARCH_DESCRIPTION,
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'A precise, self-contained internet search query.' },
+      maxResults: { type: 'integer' },
+    },
+    required: ['query'],
+  },
+};
+
+/** Executes one model-requested web_search call and records its evidence — shared by all three providers, each of which hands over the tool call's arguments already parsed into a plain object (OpenAI's are a JSON string and get parsed by the caller first). */
+async function executeWebSearchToolCall(
+  args: { query?: string; maxResults?: number } | undefined,
+  accessToken: string | null,
+  evidence: WebSearchEvidence[]
+): Promise<string> {
+  const query = typeof args?.query === 'string' ? args.query : '';
+  const result = await callWebSearchTool({ query, maxResults: args?.maxResults }, accessToken);
+  if (result.ok) {
+    evidence.push({
+      query: result.query,
+      resultCount: result.results.length,
+      sources: result.results.map((r) => ({ title: r.title, url: r.url })),
+      searchedAt: result.searchedAt,
+    });
+  }
+  return JSON.stringify(result);
+}
 
 const OPENAI_COMPATIBLE_PROVIDERS: LLMProvider[] = [
   'openai',
@@ -88,6 +168,16 @@ const USER_PRIORITY_INSTRUCTION =
 const NO_FABRICATION_INSTRUCTION =
   ' You have no ability to browse the web, fetch URLs, run code, or call any external tool — you only have your own training knowledge and this conversation\'s transcript. Never claim or imply you performed an action you cannot actually do (e.g. "fetching the site now", "here is the raw HTML I retrieved", "I checked the repo"). If a task genuinely requires live or external information you don\'t have, say so plainly in your reply and answer only from general training knowledge, explicitly labeled as unverified/approximate — never presented as a retrieved fact.';
 
+// For agents with webSearchEnabled, the above is no longer true — they DO
+// have a real tool now (see runWithTools' worth of logic spread across the
+// three callXDirect functions) — so they get this instead.
+const WEB_SEARCH_CAPABILITY_INSTRUCTION =
+  " You have access to a real web_search tool. Call it immediately when the assignment needs external or current information — do not announce that you're about to search, do not ask another agent to do it, do not simulate results. Cite the source URL for every material claim from a search result. If search fails or is unavailable, say so exactly rather than guessing.";
+
+function capabilityInstruction(webSearchEnabled: boolean): string {
+  return webSearchEnabled ? WEB_SEARCH_CAPABILITY_INSTRUCTION : NO_FABRICATION_INSTRUCTION;
+}
+
 // The second-biggest reported failure mode: multiple agents spending many
 // turns debating process/methodology (should we fetch first or classify
 // first? who should do what?) instead of producing any substantive
@@ -107,7 +197,7 @@ function buildSystemPrompt(
   guidelines: string[],
   traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.${guidelinesInstruction(guidelines)}\nInstructions: ${agent.instructions}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION}${NO_FABRICATION_INSTRUCTION}${STAY_ON_TASK_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.${guidelinesInstruction(guidelines)}\nInstructions: ${agent.instructions}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION}${capabilityInstruction(agent.webSearchEnabled)}${STAY_ON_TASK_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(
@@ -153,142 +243,218 @@ export interface UsageInfo {
 interface DirectCallResult {
   content: string;
   usage: UsageInfo;
+  webSearches: WebSearchEvidence[];
 }
 
 /**
  * Shared caller for every provider whose chat API mirrors OpenAI's
  * /v1/chat/completions shape (OpenAI, DeepSeek, Z.ai, Moonshot, xAI, Mistral).
+ * When `toolsEnabled`, loops on tool_calls (up to
+ * MAX_TOOL_CALLS_PER_AGENT_TURN) instead of treating a tool-call response as
+ * the final answer.
  */
 async function callOpenAICompatibleDirect(
   connection: LLMConnection,
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  toolsEnabled: boolean,
+  accessToken: string | null
 ): Promise<DirectCallResult | null> {
   const provider = getProvider(connection.provider);
   if (!provider) return null;
   const modelInfo = getModel(connection.provider, connection.model);
 
-  const body: Record<string, unknown> = {
-    model: connection.model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    max_tokens: 500,
-  };
-  if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
+  const messages: Record<string, unknown>[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+  const webSearches: WebSearchEvidence[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  const res = await fetch(provider.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${connection.apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) return null;
-  return {
-    content,
-    usage: {
-      inputTokens: data.usage?.prompt_tokens ?? 0,
-      outputTokens: data.usage?.completion_tokens ?? 0,
-    },
-  };
+  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+    const body: Record<string, unknown> = {
+      model: connection.model,
+      messages,
+      max_tokens: 500,
+    };
+    if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
+    if (toolsEnabled) {
+      body.tools = [OPENAI_WEB_SEARCH_TOOL];
+      body.tool_choice = 'auto';
+    }
+
+    const res = await fetch(provider.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${connection.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    inputTokens += data.usage?.prompt_tokens ?? 0;
+    outputTokens += data.usage?.completion_tokens ?? 0;
+
+    const message = data.choices?.[0]?.message;
+    const toolCalls = message?.tool_calls;
+    if (toolsEnabled && Array.isArray(toolCalls) && toolCalls.length > 0 && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
+      messages.push({ role: 'assistant', content: message.content ?? null, tool_calls: toolCalls });
+      for (const toolCall of toolCalls) {
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = toolCall.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
+        } catch {
+          // Malformed arguments — executeWebSearchToolCall below just gets an
+          // empty query, which the search endpoint rejects with a structured
+          // INVALID_REQUEST the model can see and react to.
+        }
+        const evidenceJson = await executeWebSearchToolCall(parsedArgs, accessToken, webSearches);
+        messages.push({ role: 'tool', tool_call_id: toolCall.id, content: evidenceJson });
+      }
+      continue;
+    }
+
+    const content = message?.content?.trim();
+    if (!content) return null;
+    return { content, usage: { inputTokens, outputTokens }, webSearches };
+  }
+  return null;
 }
 
 async function callAnthropicDirect(
   connection: LLMConnection,
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  toolsEnabled: boolean,
+  accessToken: string | null
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('anthropic', connection.model);
-  const body: Record<string, unknown> = {
-    model: connection.model,
-    max_tokens: 500,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  };
-  if (modelInfo?.supportsEffort) {
-    body.thinking = { type: 'enabled', budget_tokens: effortToBudgetTokens(connection.effort) };
-  }
+  const messages: Record<string, unknown>[] = [{ role: 'user', content: userPrompt }];
+  const webSearches: WebSearchEvidence[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': connection.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const textBlock = data.content?.find((block: any) => block.type === 'text');
-  const content = textBlock?.text?.trim();
-  if (!content) return null;
-  return {
-    content,
-    usage: {
-      inputTokens: data.usage?.input_tokens ?? 0,
-      outputTokens: data.usage?.output_tokens ?? 0,
-    },
-  };
+  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+    const body: Record<string, unknown> = {
+      model: connection.model,
+      max_tokens: 500,
+      system: systemPrompt,
+      messages,
+    };
+    if (modelInfo?.supportsEffort) {
+      body.thinking = { type: 'enabled', budget_tokens: effortToBudgetTokens(connection.effort) };
+    }
+    if (toolsEnabled) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL];
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': connection.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    inputTokens += data.usage?.input_tokens ?? 0;
+    outputTokens += data.usage?.output_tokens ?? 0;
+
+    const toolUseBlocks = (data.content ?? []).filter((b: any) => b.type === 'tool_use');
+    if (toolsEnabled && toolUseBlocks.length > 0 && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
+      messages.push({ role: 'assistant', content: data.content });
+      const resultBlocks: Record<string, unknown>[] = [];
+      for (const block of toolUseBlocks) {
+        const evidenceJson = await executeWebSearchToolCall(block.input, accessToken, webSearches);
+        resultBlocks.push({ type: 'tool_result', tool_use_id: block.id, content: evidenceJson });
+      }
+      messages.push({ role: 'user', content: resultBlocks });
+      continue;
+    }
+
+    const textBlock = (data.content ?? []).find((block: any) => block.type === 'text');
+    const content = textBlock?.text?.trim();
+    if (!content) return null;
+    return { content, usage: { inputTokens, outputTokens }, webSearches };
+  }
+  return null;
 }
 
 async function callGoogleDirect(
   connection: LLMConnection,
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  toolsEnabled: boolean,
+  accessToken: string | null
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('google', connection.model);
-  const body: Record<string, unknown> = {
-    contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-  };
-  if (modelInfo?.supportsEffort) {
-    body.generationConfig = {
-      thinkingConfig: { thinkingBudget: effortToBudgetTokens(connection.effort) },
-    };
-  }
+  const contents: Record<string, unknown>[] = [
+    { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] },
+  ];
+  const webSearches: WebSearchEvidence[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+    const body: Record<string, unknown> = { contents };
+    if (modelInfo?.supportsEffort) {
+      body.generationConfig = {
+        thinkingConfig: { thinkingBudget: effortToBudgetTokens(connection.effort) },
+      };
     }
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!content) return null;
-  return {
-    content,
-    usage: {
-      inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
-      outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-    },
-  };
+    if (toolsEnabled) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL] }];
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    inputTokens += data.usageMetadata?.promptTokenCount ?? 0;
+    outputTokens += data.usageMetadata?.candidatesTokenCount ?? 0;
+
+    const candidateParts: any[] = data.candidates?.[0]?.content?.parts ?? [];
+    const functionCallPart = candidateParts.find((p) => p.functionCall);
+    if (toolsEnabled && functionCallPart && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
+      contents.push({ role: 'model', parts: candidateParts });
+      const evidenceJson = await executeWebSearchToolCall(functionCallPart.functionCall.args, accessToken, webSearches);
+      contents.push({
+        role: 'function',
+        parts: [{ functionResponse: { name: 'web_search', response: JSON.parse(evidenceJson) } }],
+      });
+      continue;
+    }
+
+    const content = candidateParts.find((p) => p.text)?.text?.trim();
+    if (!content) return null;
+    return { content, usage: { inputTokens, outputTokens }, webSearches };
+  }
+  return null;
 }
 
 async function callDirect(
   connection: LLMConnection,
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  toolsEnabled = false,
+  accessToken: string | null = null
 ): Promise<DirectCallResult | null> {
   try {
     if (OPENAI_COMPATIBLE_PROVIDERS.includes(connection.provider)) {
-      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt);
+      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken);
     }
     switch (connection.provider) {
       case 'anthropic':
-        return await callAnthropicDirect(connection, systemPrompt, userPrompt);
+        return await callAnthropicDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken);
       case 'google':
-        return await callGoogleDirect(connection, systemPrompt, userPrompt);
+        return await callGoogleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken);
       default:
         return null;
     }
@@ -308,6 +474,7 @@ export interface AgentReplyResult {
   usage: UsageInfo;
   provider: LLMProvider;
   model: string;
+  webSearches?: WebSearchEvidence[];
 }
 
 export async function fetchAgentReply(
@@ -324,7 +491,9 @@ export async function fetchAgentReply(
   guidelines: string[],
   traits: { name: string; value: number }[],
   extraInstruction?: string,
-  wikiDigest?: string
+  wikiDigest?: string,
+  /** Current Supabase session access token, or null if not signed in — required for agent.webSearchEnabled to actually work (see functions/api/research/search.ts's auth check); a signed-out session just gets TOOL_UNAVAILABLE from the search call instead of erroring. */
+  accessToken?: string | null
 ): Promise<AgentReplyResult | null> {
   const connection = agent.connectionId
     ? connections.find((c) => c.id === agent.connectionId)
@@ -342,13 +511,19 @@ export async function fetchAgentReply(
     traits
   );
   const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction, wikiDigest);
-  const result = await callDirect(connection, systemPrompt, userPrompt);
+  const result = await callDirect(connection, systemPrompt, userPrompt, agent.webSearchEnabled, accessToken ?? null);
   if (!result) return null;
   // Snapshot provider/model at send time — connections are user-editable/
   // deletable independently of message history, so resolving them later
   // from agent.connectionId would let an edit or deletion silently corrupt
   // historical token-usage breakdowns.
-  return { content: result.content, usage: result.usage, provider: connection.provider, model: connection.model };
+  return {
+    content: result.content,
+    usage: result.usage,
+    provider: connection.provider,
+    model: connection.model,
+    webSearches: result.webSearches.length > 0 ? result.webSearches : undefined,
+  };
 }
 
 export function reactionInstruction(type: ReactionType): string {

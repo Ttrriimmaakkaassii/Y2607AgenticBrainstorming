@@ -1044,6 +1044,49 @@ mark.search-match {
   margin-right: 4px;
 }
 
+.bubble-search-evidence {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.bubble-search-evidence-toggle {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.06);
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.bubble-search-evidence-detail {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.bubble-search-evidence-query {
+  margin-bottom: 6px;
+}
+
+.bubble-search-evidence-query:last-child {
+  margin-bottom: 0;
+}
+
+.bubble-search-evidence-query-text {
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+
+.bubble-search-evidence-source {
+  display: block;
+  color: var(--accent);
+  text-decoration: underline;
+  overflow-wrap: break-word;
+}
+
 .bubble-wrapper.user {
   flex-direction: row-reverse;
 }

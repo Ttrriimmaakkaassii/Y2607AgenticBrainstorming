@@ -20,6 +20,7 @@ import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/cu
 import { generateId } from '@/lib/id';
 import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
+import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
 import { AGENT_REACTIONS, UNIVERSAL_REACTIONS } from '@/lib/reactions';
@@ -78,6 +79,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     pinnedToAllConversations: false,
+    webSearchEnabled: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -93,6 +95,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     pinnedToAllConversations: false,
+    webSearchEnabled: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -108,6 +111,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true,
     pinnedToAllConversations: false,
+    webSearchEnabled: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -166,6 +170,7 @@ function migrateState(state: ConversationState): ConversationState {
       refNumber,
       active,
       pinnedToAllConversations: agent.pinnedToAllConversations ?? false,
+      webSearchEnabled: agent.webSearchEnabled ?? false,
       voiceURI: agent.voiceURI ?? null,
       googleVoiceName: agent.googleVoiceName ?? null,
       traits: agent.traits ?? {},
@@ -281,6 +286,11 @@ function useInfinityField(value: number | null, onCommit: (v: number | null) => 
 }
 
 export function ChatApp() {
+  const [expandedSearchMessageId, setExpandedSearchMessageId] = useState<string | null>(null);
+  // Null when this deployment has no Supabase auth configured — agents with
+  // webSearchEnabled degrade to TOOL_UNAVAILABLE in that case (see
+  // functions/api/research/search.ts's auth check) rather than erroring.
+  const auth = useAuthContext();
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
   const [inputMessage, setInputMessage] = useState('');
@@ -688,6 +698,7 @@ export function ChatApp() {
         outputTokens: seedReply.usage.outputTokens,
         provider: seedReply.provider,
         model: seedReply.model,
+        webSearches: seedReply.webSearches,
       });
     }
     return thread;
@@ -723,7 +734,8 @@ export function ChatApp() {
       enabledGuidelines,
       resolvedTraits,
       extraInstruction,
-      live.wikiEnabled ? live.wikiDigest : undefined
+      live.wikiEnabled ? live.wikiDigest : undefined,
+      auth?.session.access_token ?? null
     );
     if (reply) {
       setLiveMode(true);
@@ -865,6 +877,7 @@ export function ChatApp() {
         outputTokens: reply.usage.outputTokens,
         provider: reply.provider,
         model: reply.model,
+        webSearches: reply.webSearches,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       const finishedThread = updatedThread;
@@ -1191,6 +1204,7 @@ export function ChatApp() {
       outputTokens: reply.usage.outputTokens,
       provider: reply.provider,
       model: reply.model,
+      webSearches: reply.webSearches,
     });
   }
 
@@ -2103,6 +2117,7 @@ export function ChatApp() {
       connectionId: null,
       active: true,
       pinnedToAllConversations: false,
+      webSearchEnabled: false,
       voiceURI: null,
       googleVoiceName: null,
       traits: {},
@@ -2136,6 +2151,7 @@ export function ChatApp() {
       connectionId: null,
       active: true,
       pinnedToAllConversations: false,
+      webSearchEnabled: false,
       voiceURI: null,
       googleVoiceName: null,
       traits: {},
@@ -3293,6 +3309,41 @@ export function ChatApp() {
                         </button>
                         {msg.starred && <span className="bubble-star">⭐</span>}
                         {msg.category && <span className="bubble-category">🏷️ {msg.category}</span>}
+                        {msg.webSearches && msg.webSearches.length > 0 && (
+                          <div className="bubble-search-evidence" {...devRef('s31', msg.id)}>
+                            <button
+                              className="bubble-search-evidence-toggle"
+                              onClick={() =>
+                                setExpandedSearchMessageId((prev) => (prev === msg.id ? null : msg.id))
+                              }
+                            >
+                              🔍 searched the web ·{' '}
+                              {msg.webSearches.reduce((n, s) => n + s.resultCount, 0)} sources
+                            </button>
+                            {expandedSearchMessageId === msg.id && (
+                              <div className="bubble-search-evidence-detail">
+                                {msg.webSearches.map((s, si) => (
+                                  <div key={si} className="bubble-search-evidence-query">
+                                    <div className="bubble-search-evidence-query-text">
+                                      &quot;{s.query}&quot; — {new Date(s.searchedAt).toLocaleTimeString()}
+                                    </div>
+                                    {s.sources.map((src, ci) => (
+                                      <a
+                                        key={ci}
+                                        href={src.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="bubble-search-evidence-source"
+                                      >
+                                        {src.title || src.url}
+                                      </a>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <MessageContent
                           content={msg.content}
                           spokenRange={

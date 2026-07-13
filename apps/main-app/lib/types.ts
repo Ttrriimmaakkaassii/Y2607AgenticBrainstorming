@@ -39,6 +39,8 @@ export interface Agent {
   active: boolean;
   /** When true, this agent starts active by default in every brand-new tab/conversation, instead of needing a category pick or manual activation each time. */
   pinnedToAllConversations: boolean;
+  /** When true, this agent gets a real web_search tool (see lib/llm-client.ts's runWithTools) instead of just being told it can't browse the web. */
+  webSearchEnabled: boolean;
   /** Explicit TTS voice override (SpeechSynthesisVoice.voiceURI). Null = auto-assigned. */
   voiceURI: string | null;
   /** Explicit Google Cloud TTS voice override (e.g. "en-US-Neural2-A"). Null = auto-assigned. */
@@ -79,6 +81,13 @@ export interface Message {
   /** Provider/model snapshotted at send time, independent of the LLMConnection's current (possibly edited/deleted) state. */
   provider?: LLMProvider;
   model?: string;
+  /** One entry per successful web_search tool call made while generating this reply — absent for agents without search enabled, or replies that didn't need to search. */
+  webSearches?: {
+    query: string;
+    resultCount: number;
+    sources: { title: string; url: string }[];
+    searchedAt: string;
+  }[];
 }
 
 export interface Thread {

@@ -229,6 +229,23 @@ export function SettingsModal({
   const [googleVoiceName, setGoogleVoiceName] = useState<string | null>(
     currentAgent?.googleVoiceName ?? null
   );
+  // These only had their initial useState value — fine while currentAgentId
+  // never changes without a manual row click (selectAgent already handles
+  // that), but if it's ever changed from outside while this modal stays
+  // mounted, the form kept showing the PREVIOUSLY selected agent's
+  // name/role/color/etc. next to the NEW agent's ref number — exactly the
+  // "shows an agent I didn't create" symptom. Keep it reactive instead.
+  useEffect(() => {
+    if (!currentAgent) return;
+    setName(currentAgent.name);
+    setRole(currentAgent.role);
+    setInstructions(currentAgent.instructions);
+    setColor(currentAgent.color);
+    setConnectionId(currentAgent.connectionId);
+    setVoiceURI(currentAgent.voiceURI ?? null);
+    setGoogleVoiceName(currentAgent.googleVoiceName ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAgentId]);
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -462,8 +479,14 @@ export function SettingsModal({
   const sortedAgents = (() => {
     if (!agentSortColumn) return tableAgentsDraft;
     const dir = agentSortDir === 'asc' ? 1 : -1;
+    if (agentSortColumn === 'ref') {
+      // Numeric, not lexicographic — "Agt2" must sort before "Agt11",
+      // which plain string comparison gets wrong (treats it character by
+      // character, so "Agt11" < "Agt2").
+      const numFor = (a: Agent) => Number(/Agt(\d+)/.exec(a.refNumber ?? '')?.[1] ?? 0);
+      return [...tableAgentsDraft].sort((a, b) => (numFor(a) - numFor(b)) * dir);
+    }
     const keyFor = (a: Agent) => {
-      if (agentSortColumn === 'ref') return a.refNumber ?? '';
       if (agentSortColumn === 'name') return a.name;
       if (agentSortColumn === 'role') return a.role;
       if (agentSortColumn === 'llm') return connections.find((c) => c.id === a.connectionId)?.label ?? '';
@@ -554,28 +577,6 @@ export function SettingsModal({
                     onChange={(e) => onUpdateWhatsappNumber(e.target.value)}
                   />
                 </div>
-              </div>
-
-              <div className="modal-section" {...devRef('s28')}>
-                <div className="modal-section-title">Backup / Transfer Agents</div>
-                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
-                  Downloads every agent parameter — name, role, instructions, color, traits, voice,
-                  skill categories — for both this conversation&apos;s roster and your saved library, so
-                  they can be fully restored if lost.
-                </div>
-                <button className="btn-secondary" {...devRef('b90')} onClick={exportAgentsBackup}>
-                  📥 Download Backup (.json)
-                </button>
-                <label className="btn-secondary" style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
-                  📤 Import Backup
-                  <input
-                    type="file"
-                    accept="application/json"
-                    {...devRef('i26')}
-                    onChange={importAgentsBackup}
-                    style={{ display: 'none' }}
-                  />
-                </label>
               </div>
 
               <div className="modal-section" {...devRef('s13')}>
@@ -771,6 +772,27 @@ export function SettingsModal({
                   </label>
                 </div>
                 <div className="form-group">
+                  <label
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    title={
+                      auth
+                        ? undefined
+                        : 'Web search requires sign-in, which is not active for this session — the toggle is safe to leave on for when it is.'
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      {...devRef('ck15')}
+                      checked={currentAgent?.webSearchEnabled ?? false}
+                      onChange={(e) => {
+                        if (!currentAgent) return;
+                        onSave(currentAgent.id, { webSearchEnabled: e.target.checked });
+                      }}
+                    />
+                    🌐 Allow internet access (real web search){!auth && ' — requires sign-in'}
+                  </label>
+                </div>
+                <div className="form-group">
                   <label>Skill Categories (assign as many as you like)</label>
                   <div className="moods-menu-wrap" ref={categoriesMenuRef}>
                     <button
@@ -932,6 +954,7 @@ export function SettingsModal({
                           <th>Name</th>
                           <th>Categories</th>
                           <th title="Include this agent in every new tab/conversation by default">📌 Pinned</th>
+                          <th title="Give this agent a real web_search tool">🌐 Internet</th>
                           {traitDefs.map((def) => (
                             <th key={def.id} title={def.category}>
                               {def.name}
@@ -1049,6 +1072,20 @@ export function SettingsModal({
                                 }
                               />
                             </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                title="Give this agent a real web_search tool"
+                                checked={agent.webSearchEnabled}
+                                onChange={(e) =>
+                                  onUpdateAgentsBulk(
+                                    agents.map((a) =>
+                                      a.id === agent.id ? { ...a, webSearchEnabled: e.target.checked } : a
+                                    )
+                                  )
+                                }
+                              />
+                            </td>
                             {traitDefs.map((def) => {
                               const value = agent.traits?.[def.id] ?? 50;
                               return (
@@ -1072,7 +1109,7 @@ export function SettingsModal({
                         })}
                         {traitDefs.length === 0 && (
                           <tr>
-                            <td colSpan={4}>
+                            <td colSpan={5}>
                               <div className="empty-state">No traits defined yet — add one in Traits &amp; Character above.</div>
                             </td>
                           </tr>
@@ -1101,6 +1138,8 @@ export function SettingsModal({
                         <th className="sortable" onClick={() => toggleAgentSort('llm')}>
                           LLM{sortArrow('llm')}
                         </th>
+                        <th title="Include this agent in every new tab/conversation by default">📌</th>
+                        <th title="Give this agent a real web_search tool">🌐</th>
                         <th>Order</th>
                         <th></th>
                       </tr>
@@ -1279,6 +1318,22 @@ export function SettingsModal({
                                 ))}
                               </select>
                             </td>
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                title="Include this agent in every new tab/conversation by default"
+                                checked={agent.pinnedToAllConversations}
+                                onChange={(e) => updateDraftField(agent.id, { pinnedToAllConversations: e.target.checked })}
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                title="Give this agent a real web_search tool"
+                                checked={agent.webSearchEnabled}
+                                onChange={(e) => updateDraftField(agent.id, { webSearchEnabled: e.target.checked })}
+                              />
+                            </td>
                             <td onClick={(e) => e.stopPropagation()}>
                               <div className="agent-reorder-btns">
                                 <button
@@ -1330,6 +1385,28 @@ export function SettingsModal({
                 <button className="btn-secondary" {...devRef('b38')} onClick={onOpenLibrary}>
                   📚 Browse Agent Library
                 </button>
+              </div>
+
+              <div className="modal-section" {...devRef('s28')}>
+                <div className="modal-section-title">Backup / Transfer Agents</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
+                  Downloads every agent parameter — name, role, instructions, color, traits, voice,
+                  skill categories — for both this conversation&apos;s roster and your saved library, so
+                  they can be fully restored if lost.
+                </div>
+                <button className="btn-secondary" {...devRef('b90')} onClick={exportAgentsBackup}>
+                  📥 Download Backup (.json)
+                </button>
+                <label className="btn-secondary" style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
+                  📤 Import Backup
+                  <input
+                    type="file"
+                    accept="application/json"
+                    {...devRef('i26')}
+                    onChange={importAgentsBackup}
+                    style={{ display: 'none' }}
+                  />
+                </label>
               </div>
             </>
           )}
