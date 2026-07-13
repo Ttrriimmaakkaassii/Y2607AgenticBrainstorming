@@ -139,6 +139,7 @@ interface SettingsModalProps {
   archives: ArchivedConversation[];
   onRestoreArchive: (archive: ArchivedConversation) => void;
   onDeleteArchive: (id: string) => void;
+  onUpdateArchiveMeta: (id: string, updates: { category?: string | null; color?: string | null }) => void;
   whatsappNumber: string;
   onUpdateWhatsappNumber: (number: string) => void;
   guidelines: Guideline[];
@@ -184,6 +185,7 @@ export function SettingsModal({
   archives,
   onRestoreArchive,
   onDeleteArchive,
+  onUpdateArchiveMeta,
   whatsappNumber,
   onUpdateWhatsappNumber,
   guidelines,
@@ -1357,6 +1359,7 @@ export function SettingsModal({
                 archives={archives}
                 onRestore={onRestoreArchive}
                 onDelete={onDeleteArchive}
+                onUpdateMeta={onUpdateArchiveMeta}
                 onClose={() => {}}
               />
             </div>

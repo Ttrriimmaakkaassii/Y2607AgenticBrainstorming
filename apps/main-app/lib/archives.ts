@@ -34,7 +34,12 @@ export function loadArchives(): ArchivedConversation[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ArchivedConversation[]) : [];
+    const parsed = raw ? (JSON.parse(raw) as ArchivedConversation[]) : [];
+    return parsed.map((a) => ({
+      ...a,
+      category: a.category ?? null,
+      color: a.color ?? null,
+    }));
   } catch {
     return [];
   }

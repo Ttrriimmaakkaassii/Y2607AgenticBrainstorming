@@ -34,8 +34,9 @@ import {
   syncConnectionsToSupabase,
 } from '@/lib/llm-connections';
 import { getSession, onAuthStateChange } from '@/lib/auth';
-import { loadConversation, saveConversation } from '@/lib/storage';
+import { deleteConversation, loadConversation, saveConversation } from '@/lib/storage';
 import { buildArchiveTitle, loadArchives, saveArchives } from '@/lib/archives';
+import { ConversationTabMeta, loadTabs, saveTabs } from '@/lib/conversation-tabs';
 import { buildMessageMindmapMarkdown } from '@/lib/mindmap';
 import { Theme, applyTheme, loadTheme } from '@/lib/theme';
 import {
@@ -136,6 +137,7 @@ function defaultState(): ConversationState {
       wikiUpdatedAt: 0,
       wikiMessageCountAtLastUpdate: 0,
       wikiHistory: [],
+      pauseOnTabSwitch: true,
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -195,9 +197,17 @@ function migrateState(state: ConversationState): ConversationState {
       wikiUpdatedAt: state.settings.wikiUpdatedAt ?? 0,
       wikiMessageCountAtLastUpdate: state.settings.wikiMessageCountAtLastUpdate ?? 0,
       wikiHistory: state.settings.wikiHistory ?? [],
+      pauseOnTabSwitch: state.settings.pauseOnTabSwitch ?? true,
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
+}
+
+/** Short label for a conversation tab — the topic if one's been set, otherwise a generic placeholder. */
+function deriveTabTitle(state: ConversationState): string {
+  const topic = state.settings.topic.trim();
+  if (!topic) return 'New Conversation';
+  return topic.length > 30 ? `${topic.slice(0, 30)}…` : topic;
 }
 
 function getOrCreateConversationId(): string {
@@ -332,6 +342,8 @@ export function ChatApp() {
   const [liveMode, setLiveMode] = useState<boolean | null>(null);
   const [connections, setConnections] = useState<LLMConnection[]>([]);
   const [archives, setArchives] = useState<ArchivedConversation[]>([]);
+  const [tabs, setTabs] = useState<ConversationTabMeta[]>([]);
+  const [closingTabId, setClosingTabId] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState<{
     messageId: string;
     charIndex: number;
@@ -500,12 +512,30 @@ export function ChatApp() {
 
       const loaded = await loadConversation(conversationId);
       if (cancelled) return;
+      let loadedState: ConversationState;
       if (loaded) {
-        setState(migrateState(loaded));
+        loadedState = migrateState(loaded);
+        setState(loadedState);
         setCurrentAgentId(loaded.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
       } else {
+        loadedState = { ...defaultState(), id: conversationId };
         setState((prev) => ({ ...prev, id: conversationId }));
       }
+
+      // First run after upgrading to tabs: seed a single tab for whatever
+      // conversation was already active, so existing users see exactly one
+      // tab (matching what was on screen before) rather than none.
+      const existingTabs = loadTabs();
+      if (existingTabs.length > 0) {
+        setTabs(existingTabs);
+      } else {
+        const seeded: ConversationTabMeta[] = [
+          { id: conversationId, title: deriveTabTitle(loadedState) },
+        ];
+        setTabs(seeded);
+        saveTabs(seeded);
+      }
+
       setHydrated(true);
     })();
 
@@ -1669,6 +1699,8 @@ export function ChatApp() {
         id: generateId(),
         title,
         archivedAt: Date.now(),
+        category: null,
+        color: null,
         state,
       };
       const nextArchives = [...archives, archive];
@@ -1689,6 +1721,15 @@ export function ChatApp() {
   function restoreArchive(archive: ArchivedConversation) {
     const restored = migrateState(archive.state);
     setState(restored);
+    setCurrentAgentId(restored.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
+    // Opens as its own tab (rather than clobbering whatever tab was active) —
+    // unless that same conversation id is already open as a tab, in which
+    // case just switch to it instead of creating a duplicate entry.
+    if (!tabs.some((t) => t.id === restored.id)) {
+      const nextTabs = [...tabs, { id: restored.id, title: deriveTabTitle(restored) }];
+      setTabs(nextTabs);
+      saveTabs(nextTabs);
+    }
     // Point the "current conversation" pointer at the restored conversation's
     // own id — otherwise a reload re-resolves the previous pointer and it
     // looks like restoring silently created a separate instance.
@@ -1699,7 +1740,7 @@ export function ChatApp() {
       setCurrentConversationId(userId, restored.id);
     }
     setActiveModal(null);
-    showToast(`♻️ Restored "${archive.title}"`);
+    showToast(`♻️ Restored "${archive.title}" as a new tab`);
   }
 
   function deleteArchive(id: string) {
@@ -1707,6 +1748,96 @@ export function ChatApp() {
     setArchives(next);
     saveArchives(next);
     showToast('🗑️ Archive deleted');
+  }
+
+  function updateArchiveMeta(id: string, updates: { category?: string | null; color?: string | null }) {
+    const next = archives.map((a) => (a.id === id ? { ...a, ...updates } : a));
+    setArchives(next);
+    saveArchives(next);
+  }
+
+  /** Switches the single live conversation slot to a different (already-open) tab's conversation. */
+  async function switchTab(id: string) {
+    if (id === state.id) return;
+    if (state.settings.pauseOnTabSwitch && (state.status === 'running' || thinking.size > 0)) {
+      pauseConversation();
+    }
+    const loaded = await loadConversation(id);
+    const nextState = loaded ? migrateState(loaded) : { ...defaultState(), id };
+    setState(nextState);
+    setCurrentAgentId(nextState.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CONVERSATION_ID_KEY, id);
+    }
+    if (userId) {
+      setCurrentConversationId(userId, id);
+    }
+  }
+
+  function addTab() {
+    const fresh = defaultState();
+    setState(fresh);
+    setCurrentAgentId(fresh.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
+    const nextTabs = [...tabs, { id: fresh.id, title: deriveTabTitle(fresh) }];
+    setTabs(nextTabs);
+    saveTabs(nextTabs);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CONVERSATION_ID_KEY, fresh.id);
+    }
+    if (userId) {
+      setCurrentConversationId(userId, fresh.id);
+    }
+    showToast('🆕 New conversation tab');
+  }
+
+  /** Opens the Save/Discard/Cancel prompt for closing a tab — skipped for an empty, currently-active tab (nothing to lose). */
+  function closeTab(id: string) {
+    if (id === state.id && allMessages.length === 0) {
+      finishCloseTab(id, 'discard');
+      return;
+    }
+    setClosingTabId(id);
+  }
+
+  async function finishCloseTab(id: string, action: 'save' | 'discard') {
+    setClosingTabId(null);
+    const isActive = id === state.id;
+    const tabState = isActive ? state : migrateState((await loadConversation(id)) ?? { ...defaultState(), id });
+
+    if (action === 'save') {
+      const label = tabs.find((t) => t.id === id)?.title || 'Conversation';
+      const title = buildArchiveTitle(label, tabState);
+      const archive: ArchivedConversation = {
+        id: generateId(),
+        title,
+        archivedAt: Date.now(),
+        category: null,
+        color: null,
+        state: tabState,
+      };
+      const nextArchives = [...archives, archive];
+      setArchives(nextArchives);
+      saveArchives(nextArchives);
+    }
+    await deleteConversation(id);
+
+    const remainingTabs = tabs.filter((t) => t.id !== id);
+    if (remainingTabs.length === 0) {
+      // Never end up with zero tabs — open a fresh one in its place.
+      const fresh = defaultState();
+      setState(fresh);
+      setCurrentAgentId(fresh.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
+      const seeded = [{ id: fresh.id, title: deriveTabTitle(fresh) }];
+      setTabs(seeded);
+      saveTabs(seeded);
+      if (typeof window !== 'undefined') window.localStorage.setItem(CONVERSATION_ID_KEY, fresh.id);
+      if (userId) setCurrentConversationId(userId, fresh.id);
+    } else {
+      setTabs(remainingTabs);
+      saveTabs(remainingTabs);
+      if (isActive) await switchTab(remainingTabs[0].id);
+    }
+    showToast(action === 'save' ? '💾 Saved to Archives and closed' : '🗑️ Discarded and closed');
   }
 
   function updateSettings(updates: Partial<ConversationState['settings']>) {
@@ -1851,6 +1982,64 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
+      <div className="conversation-tabs-bar" {...devRef('s24')}>
+        {tabs.map((t, ti) => (
+          <div
+            key={t.id}
+            className={`conversation-tab ${t.id === state.id ? 'active' : ''}`}
+            {...devRef('b69', ti)}
+            onClick={() => switchTab(t.id)}
+            title={t.title}
+          >
+            <span className="conversation-tab-title">{t.title}</span>
+            <button
+              className="conversation-tab-close"
+              {...devRef('b70', ti)}
+              onClick={(e) => {
+                e.stopPropagation();
+                closeTab(t.id);
+              }}
+              title="Close this conversation tab"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button className="conversation-tab-add" {...devRef('b68')} onClick={addTab} title="New conversation tab">
+          +
+        </button>
+      </div>
+
+      {closingTabId && (
+        <div className="modal-overlay active" onClick={() => setClosingTabId(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <span className="modal-title">
+                Close &quot;{tabs.find((t) => t.id === closingTabId)?.title ?? 'this conversation'}&quot;?
+              </span>
+              <button className="modal-close" onClick={() => setClosingTabId(null)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button className="btn-primary" {...devRef('b71')} onClick={() => finishCloseTab(closingTabId, 'save')}>
+                💾 Save & Close
+              </button>
+              <button
+                className="btn-secondary"
+                {...devRef('b72')}
+                onClick={() => finishCloseTab(closingTabId, 'discard')}
+              >
+                🗑️ Discard & Close
+              </button>
+              <button className="btn-secondary" {...devRef('b73')} onClick={() => setClosingTabId(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="fixed-top-icons" {...devRef('s1')}>
         <button
           className="icon-btn"
@@ -2481,6 +2670,18 @@ export function ChatApp() {
           </label>
         </div>
         <div className="control-group">
+          <input
+            type="checkbox"
+            id="pauseOnTabSwitch"
+            {...devRef('ck12')}
+            checked={state.settings.pauseOnTabSwitch}
+            onChange={(e) => updateSettings({ pauseOnTabSwitch: e.target.checked })}
+          />
+          <label htmlFor="pauseOnTabSwitch" className="control-label" title="When off, a tab you switch away from keeps generating in the background — its reply lands once it finishes, even after you've moved on.">
+            ⏸️ Pause on tab switch
+          </label>
+        </div>
+        <div className="control-group">
           {state.status === 'running' ? (
             <button className="control-btn" {...devRef('b20')} onClick={pauseConversation}>
               ⏸️ Pause
@@ -2931,6 +3132,7 @@ export function ChatApp() {
           archives={archives}
           onRestoreArchive={restoreArchive}
           onDeleteArchive={deleteArchive}
+          onUpdateArchiveMeta={updateArchiveMeta}
           whatsappNumber={state.settings.whatsappNumber}
           onUpdateWhatsappNumber={(number) => updateSettings({ whatsappNumber: number })}
           guidelines={guidelines}

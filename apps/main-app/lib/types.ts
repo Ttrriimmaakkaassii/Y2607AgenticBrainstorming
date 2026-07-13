@@ -115,6 +115,8 @@ export interface ConversationSettings {
   wikiMessageCountAtLastUpdate: number;
   /** Past digest snapshots, newest first, capped to a bounded length — lets the user browse how the wiki evolved. */
   wikiHistory: { digest: string; updatedAt: number; messageCount: number }[];
+  /** Whether switching conversation tabs auto-pauses a tab that's actively generating a reply (default true). */
+  pauseOnTabSwitch: boolean;
 }
 
 export interface ConversationState {
@@ -132,5 +134,9 @@ export interface ArchivedConversation {
   id: string;
   title: string;
   archivedAt: number;
+  /** User-assigned tag for organizing historic conversations. Null = uncategorized. */
+  category: string | null;
+  /** User-assigned color (hex) for quick visual scanning in the Archives list. Null = no color set. */
+  color: string | null;
   state: ConversationState;
 }
