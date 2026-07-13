@@ -59,7 +59,12 @@ function moodInstruction(moods: Mood[]): string {
 
 function guidelinesInstruction(guidelines: string[]): string {
   if (guidelines.length === 0) return '';
-  return ` Every participant in this discussion must follow these guidelines: ${guidelines.map((g) => `"${g}"`).join('; ')}.`;
+  // A numbered block, read BEFORE anything else in the prompt (not just
+  // another clause folded into a run-on paragraph with mood/traits/style),
+  // so it's the first thing the model sees and reads as your actual rules
+  // rather than one more sentence to skim past.
+  const numbered = guidelines.map((g, i) => `${i + 1}. ${g}`).join('\n');
+  return `\n\nBefore anything else, read and follow these guidelines — every participant in this discussion must obey all of them:\n${numbered}\n`;
 }
 
 function traitsInstruction(traits: { name: string; value: number }[]): string {
@@ -102,7 +107,7 @@ function buildSystemPrompt(
   guidelines: string[],
   traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION}${NO_FABRICATION_INSTRUCTION}${STAY_ON_TASK_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.${guidelinesInstruction(guidelines)}\nInstructions: ${agent.instructions}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION}${NO_FABRICATION_INSTRUCTION}${STAY_ON_TASK_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(

@@ -1729,6 +1729,13 @@ export function ChatApp() {
       .join('\n\n');
   }
 
+  /** Selects every currently-visible message (respecting the active search/filter), or clears the selection if everything visible is already selected. */
+  function toggleSelectAllMessages() {
+    const visibleIds = visibleThreads.flatMap((t) => t.messages.map((m) => m.id));
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedMessageIds.includes(id));
+    setSelectedMessageIds(allSelected ? [] : visibleIds);
+  }
+
   async function copySelectedMessages() {
     try {
       await navigator.clipboard.writeText(selectedMessagesText());
@@ -3096,18 +3103,28 @@ export function ChatApp() {
         {state.status === 'running' ? '⏸️' : state.status === 'paused' ? '⏹️' : '▶️'}
       </button>
 
-      {selectedMessageIds.length > 0 && (
+      {allMessages.length > 0 && !sceneViewOpen && (
         <div className="selection-action-bar" {...devRef('r1')}>
-          <span>{selectedMessageIds.length} selected</span>
-          <button className="control-btn" {...devRef('b79')} onClick={copySelectedMessages}>
-            📋 Copy
+          {selectedMessageIds.length > 0 && <span>{selectedMessageIds.length} selected</span>}
+          <button className="control-btn" {...devRef('b94')} onClick={toggleSelectAllMessages}>
+            {selectedMessageIds.length > 0 &&
+            visibleThreads.flatMap((t) => t.messages).every((m) => selectedMessageIds.includes(m.id))
+              ? '☐ Deselect All'
+              : '☑️ Select All'}
           </button>
-          <button className="control-btn" {...devRef('b80')} onClick={shareSelectedToWhatsApp}>
-            💬 Share to WhatsApp
-          </button>
-          <button className="control-btn" {...devRef('b81')} onClick={() => setSelectedMessageIds([])}>
-            ✕ Clear
-          </button>
+          {selectedMessageIds.length > 0 && (
+            <>
+              <button className="control-btn" {...devRef('b79')} onClick={copySelectedMessages}>
+                📋 Copy
+              </button>
+              <button className="control-btn" {...devRef('b80')} onClick={shareSelectedToWhatsApp}>
+                💬 Share to WhatsApp
+              </button>
+              <button className="control-btn" {...devRef('b81')} onClick={() => setSelectedMessageIds([])}>
+                ✕ Clear
+              </button>
+            </>
+          )}
         </div>
       )}
 
