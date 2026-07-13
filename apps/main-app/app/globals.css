@@ -499,13 +499,6 @@ mark.search-match {
   align-items: center;
 }
 
-/* Default view: just the active participants, kept to one scrollable line
-   instead of wrapping — the "+N inactive" button reveals everyone (wrapping
-   normally) on demand. */
-.participants-bar.collapsed {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-}
 
 .participant-chip {
   display: flex;
@@ -1111,27 +1104,25 @@ body.dev-mode .selection-action-bar[data-devref] {
 }
 
 /*
- * The badge is positioned at the element's own top-right corner (top:0;
- * right:0, i.e. fully inside the element's own box) and then nudged
- * outside via `transform`, instead of using negative top/right offsets.
- * Transforms are paint-only and are explicitly excluded from layout and
- * scrollable-overflow calculations, so the badge can never enlarge an
- * ancestor's scrollable area or trigger a scrollbar/reflow — which
- * negative-offset absolute positioning could do, shifting buttons around
- * whenever Dev Mode was toggled.
+ * The badge sits at the element's own top-right corner, fully INSIDE its
+ * box (no outward nudge). It used to be pushed outside via `transform:
+ * translate(40%, -60%)`, which clipped it out of view for anything near a
+ * scrollable ancestor's edge (e.g. Scene View's toolbar/stage) or pinned
+ * near the actual viewport edge (the floating corner buttons) — reported
+ * as devref numbers being invisible/off-screen. Staying inside the box
+ * trades a little corner overlap for never being clipped.
  */
 body.dev-mode [data-devref]::after {
   content: attr(data-devref);
   position: absolute;
   top: 0;
   right: 0;
-  transform: translate(40%, -60%);
   background: #ff3b30;
   color: white;
   font-size: 8px;
   font-family: monospace;
   padding: 1px 3px;
-  border-radius: 3px;
+  border-radius: 0 0 0 3px;
   z-index: 50;
   pointer-events: none;
   line-height: 1.4;

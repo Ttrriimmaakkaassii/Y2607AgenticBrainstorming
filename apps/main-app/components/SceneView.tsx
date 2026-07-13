@@ -32,8 +32,12 @@ const FEEDBACK_ICONS: { type: Feedback; icon: string }[] = [
   { type: 'clarify', icon: '🤔' },
 ];
 
-/** How far a speaking avatar drifts toward the center bubble (0 = stays put, 1 = reaches dead center). */
-const SPEAKER_CENTER_PULL = 0.32;
+// Fixed spots flanking the central bubble — rather than drifting a speaker
+// partway toward dead center (which pulled them behind/under the bubble
+// box, hiding them entirely), the speaker and whoever they're addressing
+// each get their own guaranteed-visible seat right beside it.
+const SPEAKER_FLANK_SEAT: SceneSeat = { xPct: 86, yPct: 50, scale: 1.15 };
+const ADDRESSEE_FLANK_SEAT: SceneSeat = { xPct: 14, yPct: 50, scale: 1.1 };
 
 function angleBetween(from: SceneSeat, to: SceneSeat): number {
   return (Math.atan2(to.yPct - from.yPct, to.xPct - from.xPct) * 180) / Math.PI;
@@ -42,10 +46,6 @@ function angleBetween(from: SceneSeat, to: SceneSeat): number {
 /** Percent-space drag bounds so an avatar can never be dragged fully off the stage. */
 function clampPct(v: number): number {
   return Math.max(6, Math.min(94, v));
-}
-
-function moveTowardCenter(seat: SceneSeat, amount: number): SceneSeat {
-  return { ...seat, xPct: seat.xPct + (50 - seat.xPct) * amount, yPct: seat.yPct + (50 - seat.yPct) * amount };
 }
 
 /** A straight line when both points are on the same side of the stage; a
@@ -94,7 +94,7 @@ interface SceneViewProps {
   /** Which message/word the app's configured TTS reader is currently on (or null), so replay can sync its cursor and highlight to it. */
   spokenRange: { messageId: string; charIndex: number; charLength: number } | null;
   /** Starts the configured TTS reader (Browser/Google/Txt2Audio, whichever is set in Audio settings) from this message onward. */
-  onPlayFromMessageId: (id: string) => void;
+  onPlayFromMessageId: (id: string, charOffset?: number) => void;
   onStopSpeaking: () => void;
   onClose: () => void;
 }
@@ -320,24 +320,47 @@ export function SceneView({
     togglePlayPause();
   }
 
-  function scrubTo(index: number) {
+  /** Selecting/highlighting a word in the bubble text starts the reader from
+   * there instead of the message's beginning. */
+  function playFromSelection(messageId: string, charOffset: number) {
+    if (!audioEnabled) setAudioEnabled(true);
+    const idx = timeline.findIndex((m) => m.id === messageId);
+    if (idx >= 0) {
+      setPlaybackMode('replay');
+      setCursorIndex(idx);
+    }
+    setIsPlaying(true);
+    onPlayFromMessageId(messageId, charOffset);
+  }
+
+  /** `keepPlaying`: used by swipe (not the manual scrubber drag) — if audio
+   * narration was actively playing, keep it playing on the new message
+   * instead of stopping, since a swipe is "skip to the next/previous one",
+   * not "pause and let me look". */
+  function scrubTo(index: number, keepPlaying = false) {
+    const resumeAudio = keepPlaying && audioEnabled && isPlaying;
     if (audioEnabled) onStopSpeaking();
     setPlaybackMode('replay');
-    setIsPlaying(false);
     setCursorIndex(index);
+    if (resumeAudio) {
+      const nextId = timeline[index]?.id;
+      if (nextId) onPlayFromMessageId(nextId);
+    } else {
+      setIsPlaying(false);
+    }
   }
 
   /** Swipe-to-navigate on the central bubble — mobile-friendly alternative to dragging the scrubber. */
   function swipeToNext() {
     if (timeline.length === 0) return;
     const base = replaying ? cursorIndex : timeline.length - 1;
-    scrubTo(Math.min(base + 1, timeline.length - 1));
+    scrubTo(Math.min(base + 1, timeline.length - 1), true);
   }
 
   function swipeToPrev() {
     if (timeline.length === 0) return;
     const base = replaying ? cursorIndex : timeline.length - 1;
-    scrubTo(Math.max(base - 1, 0));
+    scrubTo(Math.max(base - 1, 0), true);
   }
 
   function goLive() {
@@ -433,9 +456,13 @@ export function SceneView({
   // first message in the timeline, right when Play is first pressed).
   const focusAgent = focusId ? activeAgents.find((a) => a.id === focusId) ?? agents.find((a) => a.id === focusId) ?? null : null;
   const focusSeat = focusId ? seatByAgentId.get(focusId) ?? null : null;
-  const zoom = focusSeat ? 1.06 : 1;
-  const focusX = focusSeat?.xPct ?? 50;
-  const focusY = focusSeat?.yPct ?? 50;
+  // The camera always zooms on the bubble itself (50/50) rather than toward
+  // whoever's focused — the speaker now sits at a fixed flanking seat beside
+  // the bubble (see SPEAKER_FLANK_SEAT below), not drifting toward center,
+  // so zooming off-center toward them would look lopsided.
+  const zoom = focusSeat ? 1.04 : 1;
+  const focusX = 50;
+  const focusY = 50;
 
   const centralMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
 
@@ -443,19 +470,17 @@ export function SceneView({
     if (!focusAgent || !centralMessage) return null;
     return findAddressedAgent(centralMessage.content, focusAgent.id, activeAgents);
   }, [focusAgent, centralMessage, activeAgents]);
-  // The addressed agent's CURRENT seat (re-reads seatByAgentId, which already
-  // reflects any drag override), so the arrow's endpoint follows them live
-  // even if they've been moved since the message was said.
-  const addressedSeat = addressedAgent ? seatByAgentId.get(addressedAgent.id) ?? null : null;
-  // The speaker's own seat, including the same toward-center drift applied
-  // to their avatar while they're actively speaking, so the arrow visibly
-  // starts at the speaker rather than the bubble's fixed center point.
   // Tied to `focusId` (same thing driving the bubble) rather than the raw
   // `thinking` map — thinking only covers the brief network round-trip, so
   // keying drift/pulse off it alone snapped the avatar back the instant a
   // reply arrived, even while it was still typing out in the bubble.
   const focusSpeakingNow = focusId != null;
-  const arrowOriginSeat = focusSeat ? (focusSpeakingNow ? moveTowardCenter(focusSeat, SPEAKER_CENTER_PULL) : focusSeat) : null;
+  // Both the speaker and whoever they're addressing get a fixed seat right
+  // beside the bubble (see SPEAKER_FLANK_SEAT/ADDRESSEE_FLANK_SEAT) instead
+  // of their normal stage position, so the arrow always runs between those
+  // two fixed points rather than the agents' regular seats.
+  const arrowOriginSeat = focusSpeakingNow ? SPEAKER_FLANK_SEAT : focusSeat;
+  const addressedSeat = addressedAgent ? ADDRESSEE_FLANK_SEAT : null;
 
   return (
     <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
@@ -531,7 +556,12 @@ export function SceneView({
           {activeAgents.map((agent) => {
             const baseSeat = seatByAgentId.get(agent.id)!;
             const speakingNow = replaying ? replayFocusAgentId === agent.id : focusId === agent.id;
-            const seat = speakingNow ? moveTowardCenter(baseSeat, SPEAKER_CENTER_PULL) : baseSeat;
+            const isAddressedNow = addressedAgent?.id === agent.id;
+            // The speaker and whoever they're addressing jump to fixed seats
+            // right beside the bubble — guaranteed visible — instead of their
+            // regular stage position, which could drift behind/under the
+            // (much larger) bubble box and effectively disappear there.
+            const seat = speakingNow ? SPEAKER_FLANK_SEAT : isAddressedNow ? ADDRESSEE_FLANK_SEAT : baseSeat;
             const gazeAngleDeg = focusSeat && focusId !== agent.id ? angleBetween(baseSeat, focusSeat) : 0;
             return (
               <SceneAvatar
@@ -595,6 +625,7 @@ export function SceneView({
               onShareWhatsApp={onShareWhatsApp}
               onSwipeNext={swipeToNext}
               onSwipePrev={swipeToPrev}
+              onSelectSeek={(offset) => playFromSelection(centralMessage.id, offset)}
             />
           </div>
         )}
@@ -701,6 +732,8 @@ interface CentralBubbleProps {
   /** Swipe left/right on the bubble steps to the next/previous message (mobile-friendly alternative to the scrubber). */
   onSwipeNext: () => void;
   onSwipePrev: () => void;
+  /** Selecting/highlighting a word or phrase in the text starts the reader from that character offset. */
+  onSelectSeek: (charOffset: number) => void;
 }
 
 function renderSpokenHighlight(text: string, range: { charIndex: number; charLength: number }) {
@@ -733,12 +766,13 @@ function CentralBubble({
   onShareWhatsApp,
   onSwipeNext,
   onSwipePrev,
+  onSelectSeek,
 }: CentralBubbleProps) {
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_FEEDBACK_RANGE = 100;
   // Live horizontal drag offset, purely for the nub feedback below — reset
   // once the gesture ends (committed or not). Positive = dragging right
-  // (green, previous message), negative = dragging left (red, next message).
+  // (green, next message), negative = dragging left (red, previous message).
   const [dragDx, setDragDx] = useState(0);
 
   function handleSwipeStart(e: React.PointerEvent) {
@@ -771,7 +805,8 @@ function CentralBubble({
     // Require a clearly horizontal, deliberate drag so scrolling the
     // (possibly overflowing) message text vertically never misfires as a swipe.
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    if (dx < 0) onSwipeNext();
+    // Right (green nub) -> next message; left (red nub) -> previous.
+    if (dx > 0) onSwipeNext();
     else onSwipePrev();
   }
 
@@ -803,6 +838,17 @@ function CentralBubble({
   const rightNubOpacity = dragDx > 0 ? Math.min(0.9, 0.18 + dragDx / SWIPE_FEEDBACK_RANGE) : 0.18;
   const leftNubOpacity = dragDx < 0 ? Math.min(0.9, 0.18 + -dragDx / SWIPE_FEEDBACK_RANGE) : 0.18;
 
+  // Re-locates the selected text as a plain substring of the raw message
+  // content, rather than mapping the DOM selection Range to a source offset
+  // (which the markdown-rendered text makes unreliable) — simple and robust,
+  // at the cost of always seeking to the FIRST occurrence of that text.
+  function handleTextSelectionSeek() {
+    const selected = window.getSelection()?.toString().trim();
+    if (!selected || selected.length < 2) return;
+    const offset = message.content.indexOf(selected);
+    if (offset >= 0) onSelectSeek(offset);
+  }
+
   return (
     <div
       className="scene-central-box"
@@ -815,7 +861,7 @@ function CentralBubble({
       onPointerLeave={handleSwipeCancel}
     >
       {/* Swipe hints: a sliver of a circle poking out each edge — right
-          (green) for the previous message, left (red) for the next one —
+          (green) for the next message, left (red) for the previous one —
           brightening live as the user actually drags in that direction. */}
       <span
         className="scene-swipe-nub left"
@@ -829,7 +875,7 @@ function CentralBubble({
         <span className="scene-central-dot" style={{ background: agent.color }} />
         {agent.refNumber} {agent.name} is speaking
       </div>
-      <div className="scene-central-text" ref={scrollRef}>
+      <div className="scene-central-text" ref={scrollRef} onMouseUp={handleTextSelectionSeek}>
         {spokenRange ? (
           <p className="scene-paragraph">{renderSpokenHighlight(text, spokenRange)}</p>
         ) : (

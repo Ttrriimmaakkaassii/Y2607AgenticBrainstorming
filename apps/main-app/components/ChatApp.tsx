@@ -1201,7 +1201,7 @@ export function ChatApp() {
     return parts.length > 0 ? parts : [{ text, offset: 0 }];
   }
 
-  function playFromMessage(startIndex: number) {
+  function playFromMessage(startIndex: number, startCharOffset?: number) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       showToast('Speech synthesis is not supported in this browser.');
       return;
@@ -1232,18 +1232,22 @@ export function ChatApp() {
         return;
       }
       const msg = allMessages[index];
+      // Only the message the user actually clicked/selected into starts
+      // partway through — every message after it in the chain plays from
+      // the beginning as usual.
+      const offset = index === startIndex ? startCharOffset ?? 0 : 0;
       const apiKey = loadTtsApiKey();
       if (state.settings.ttsProvider === 'google' && apiKey) {
-        speakMessageGoogle(index, msg, apiKey);
+        speakMessageGoogle(index, msg, apiKey, offset);
         return;
       }
       const customBaseUrl = loadCustomTtsBaseUrl();
       const customApiKey = loadCustomTtsApiKey();
       if (state.settings.ttsProvider === 'custom' && customBaseUrl && customApiKey) {
-        speakMessageCustom(index, msg, customBaseUrl, customApiKey);
+        speakMessageCustom(index, msg, customBaseUrl, customApiKey, offset);
         return;
       }
-      speakMessageBrowser(index, msg);
+      speakMessageBrowser(index, msg, offset);
     }
 
     // Splits a message into a short "fast start" chunk (first sentence, or
@@ -1313,7 +1317,7 @@ export function ChatApp() {
     // own so it comes back fast, while the remainder is requested
     // concurrently in the background so it's normally ready by the time
     // the first chunk finishes — best of both: fast start, no mid-message gap.
-    async function speakMessageGoogle(index: number, msg: Message, apiKey: string) {
+    async function speakMessageGoogle(index: number, msg: Message, apiKey: string, startOffset = 0) {
       const author = agentById(msg.agentId);
       const voiceName = pickGoogleVoiceForAgent(msg.agentId, author?.googleVoiceName);
       const model = state.settings.googleTtsModel;
@@ -1322,20 +1326,23 @@ export function ChatApp() {
       const abortController = new AbortController();
       ttsAbortControllerRef.current = abortController;
 
-      const split = splitForFastStart(msg.content);
+      // Starting partway through skips fast-start splitting entirely — it's
+      // already a short remainder, no need to split it further.
+      const content = startOffset > 0 ? msg.content.slice(startOffset) : msg.content;
+      const split = startOffset > 0 ? null : splitForFastStart(content);
       const finishLoading = () => setTtsLoadingMessageId((prev) => (prev === msg.id ? null : prev));
 
       if (!split) {
-        const audioUrl = await synthesizeGoogleAudio(apiKey, msg.content, voiceName, model, rate, abortController.signal);
+        const audioUrl = await synthesizeGoogleAudio(apiKey, content, voiceName, model, rate, abortController.signal);
         if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
         finishLoading();
         if (speakingCancelledRef.current) return;
         if (!audioUrl) {
           showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
-          speakMessageBrowser(index, msg);
+          speakMessageBrowser(index, msg, startOffset);
           return;
         }
-        playGoogleAudioChunk(msg, audioUrl, msg.content, 0, () => speakAt(index + 1));
+        playGoogleAudioChunk(msg, audioUrl, content, startOffset, () => speakAt(index + 1));
         return;
       }
 
@@ -1350,7 +1357,7 @@ export function ChatApp() {
       if (speakingCancelledRef.current) return;
       if (!firstUrl) {
         showToast('⚠️ Gemini TTS failed — falling back to the browser voice.');
-        speakMessageBrowser(index, msg);
+        speakMessageBrowser(index, msg, startOffset);
         return;
       }
       playGoogleAudioChunk(msg, firstUrl, firstText, 0, async () => {
@@ -1368,26 +1375,31 @@ export function ChatApp() {
     // No fast-start split here (unlike Gemini) — a custom/self-hosted TTS
     // service's latency characteristics aren't known in advance, so this
     // keeps the request shape simple: synthesize the whole message once.
-    async function speakMessageCustom(index: number, msg: Message, baseUrl: string, apiKey: string) {
+    async function speakMessageCustom(index: number, msg: Message, baseUrl: string, apiKey: string, startOffset = 0) {
       const voice = loadCustomTtsVoice();
+      const content = startOffset > 0 ? msg.content.slice(startOffset) : msg.content;
       setTtsLoadingMessageId(msg.id);
       const abortController = new AbortController();
       ttsAbortControllerRef.current = abortController;
-      const audioUrl = await synthesizeCustomTts(baseUrl, apiKey, msg.content, voice, abortController.signal);
+      const audioUrl = await synthesizeCustomTts(baseUrl, apiKey, content, voice, abortController.signal);
       if (ttsAbortControllerRef.current === abortController) ttsAbortControllerRef.current = null;
       setTtsLoadingMessageId((prev) => (prev === msg.id ? null : prev));
       if (speakingCancelledRef.current) return;
       if (!audioUrl) {
         showToast('⚠️ Custom TTS failed — falling back to the browser voice.');
-        speakMessageBrowser(index, msg);
+        speakMessageBrowser(index, msg, startOffset);
         return;
       }
-      playGoogleAudioChunk(msg, audioUrl, msg.content, 0, () => speakAt(index + 1));
+      playGoogleAudioChunk(msg, audioUrl, content, startOffset, () => speakAt(index + 1));
     }
 
-    function speakMessageBrowser(index: number, msg: Message) {
+    function speakMessageBrowser(index: number, msg: Message, startOffset = 0) {
       const sentences = splitIntoSentences(msg.content);
-      let sentenceIdx = 0;
+      // Jump straight to the sentence containing the selected word instead
+      // of slicing text mid-sentence — each sentence's own `offset` already
+      // maps back to the full message, so word-highlighting stays correct.
+      let sentenceIdx =
+        startOffset > 0 ? Math.max(sentences.findIndex((s) => s.offset + s.text.length > startOffset), 0) : 0;
 
       function speakSentenceBrowser(text: string, offset: number) {
         const utterance = new SpeechSynthesisUtterance(text);
@@ -2203,6 +2215,14 @@ export function ChatApp() {
             🎬
           </button>
           <button
+            className={`icon-btn ${searchBarOpen ? 'active' : ''}`}
+            {...devRef('b87')}
+            onClick={() => setSearchBarOpen((v) => !v)}
+            title={searchBarOpen ? 'Hide search' : 'Search this discussion'}
+          >
+            🔎
+          </button>
+          <button
             className="icon-btn"
             {...devRef('b1')}
             onClick={() => setShowAudioRail((v) => !v)}
@@ -2247,6 +2267,64 @@ export function ChatApp() {
           </button>
         </div>
       </div>
+
+      {/* Rendered right at the top, outside `.top-panel-collapsible`, so
+          search stays reachable even when Parameters is collapsed. */}
+      {searchBarOpen && (
+        <div className="search-bar" {...devRef('s4')}>
+          <input
+            type="text"
+            className="select-input"
+            {...devRef('i3')}
+            style={{ flex: 1 }}
+            autoFocus
+            placeholder="🔎 Search discussion... (filters live as you type)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {(searchQuery || filterStarredOnly || filterCategory) && (
+            <span className="search-result-count" {...devRef('s26')}>
+              {visibleThreads.reduce((n, t) => n + t.messages.length, 0)} found
+            </span>
+          )}
+          <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="checkbox"
+              {...devRef('ck2')}
+              checked={filterStarredOnly}
+              onChange={(e) => setFilterStarredOnly(e.target.checked)}
+            />
+            ⭐ Starred only
+          </label>
+          <select
+            className="select-input"
+            {...devRef('dr1')}
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+          >
+            <option value="">All categories</option>
+            {messageCategories.map((c) => (
+              <option key={c} value={c}>
+                🏷️ {c}
+              </option>
+            ))}
+          </select>
+          {(searchQuery || filterStarredOnly || filterCategory) && (
+            <button
+              className="btn-icon"
+              {...devRef('b14')}
+              onClick={() => {
+                setSearchQuery('');
+                setFilterStarredOnly(false);
+                setFilterCategory('');
+              }}
+              title="Clear filters"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
       {closingTabId && (
         <div className="modal-overlay active" onClick={() => setClosingTabId(null)}>
@@ -2465,73 +2543,7 @@ export function ChatApp() {
         </div>
       </div>
 
-      <div className="search-bar" {...devRef('s4')}>
-        <button
-          className={`control-btn ${searchBarOpen ? 'active' : ''}`}
-          {...devRef('b87')}
-          onClick={() => setSearchBarOpen((v) => !v)}
-          title={searchBarOpen ? 'Hide search' : 'Search this discussion'}
-        >
-          🔎 Search
-        </button>
-        {(searchQuery || filterStarredOnly || filterCategory) && (
-          <span className="search-result-count" {...devRef('s26')}>
-            {visibleThreads.reduce((n, t) => n + t.messages.length, 0)} found
-          </span>
-        )}
-        {searchBarOpen && (
-          <>
-            <input
-              type="text"
-              className="select-input"
-              {...devRef('i3')}
-              style={{ flex: 1 }}
-              autoFocus
-              placeholder="🔎 Search discussion... (filters live as you type)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <label className="control-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <input
-                type="checkbox"
-                {...devRef('ck2')}
-                checked={filterStarredOnly}
-                onChange={(e) => setFilterStarredOnly(e.target.checked)}
-              />
-              ⭐ Starred only
-            </label>
-            <select
-              className="select-input"
-              {...devRef('dr1')}
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-            >
-              <option value="">All categories</option>
-              {messageCategories.map((c) => (
-                <option key={c} value={c}>
-                  🏷️ {c}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-        {(searchQuery || filterStarredOnly || filterCategory) && (
-          <button
-            className="btn-icon"
-            {...devRef('b14')}
-            onClick={() => {
-              setSearchQuery('');
-              setFilterStarredOnly(false);
-              setFilterCategory('');
-            }}
-            title="Clear filters"
-          >
-            ×
-          </button>
-        )}
-      </div>
-
-      <div className={`participants-bar ${chipBarShowAll ? '' : 'collapsed'}`} {...devRef('s5')}>
+      <div className="participants-bar" {...devRef('s5')}>
         <span className="control-label">Participants:</span>
         {state.agents
           .filter((agent) => chipBarShowAll || agent.active)
@@ -2802,13 +2814,6 @@ export function ChatApp() {
         </div>
       </div>
 
-      </div>
-      </div>
-
-      {/* Deliberately rendered OUTSIDE `.top-panel-collapsible` (unlike the
-          topic/moods/participants above) so Play/Pause/Stop/Reset and the
-          response-style controls stay visible even when the user collapses
-          Parameters, or while Scene View is open. */}
       <div className="controls-panel" {...devRef('s6')}>
         <div className="control-group">
           <span className="control-label">Response Style:</span>
@@ -2957,6 +2962,8 @@ export function ChatApp() {
           </span>
         </div>
       </div>
+      </div>
+      </div>
 
       {/* One button, three states: idle/stopped -> Play (green), running -> Pause (amber), paused -> Stop (red). Each click advances to the next state. */}
       <button
@@ -3023,9 +3030,9 @@ export function ChatApp() {
           onSetCategory={(message) => setMessageCategory(message.threadId, message.id)}
           onShareWhatsApp={(message) => shareToWhatsApp(message.content)}
           spokenRange={speaking}
-          onPlayFromMessageId={(id) => {
+          onPlayFromMessageId={(id, charOffset) => {
             const idx = allMessages.findIndex((m) => m.id === id);
-            if (idx >= 0) playFromMessage(idx);
+            if (idx >= 0) playFromMessage(idx, charOffset);
           }}
           onStopSpeaking={stopSpeaking}
           onClose={() => setSceneViewOpen(false)}
