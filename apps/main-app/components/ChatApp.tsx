@@ -1779,7 +1779,11 @@ export function ChatApp() {
     return {
       ...base,
       id: id ?? base.id,
-      agents: state.agents.map((a) => ({ ...a })),
+      // Agent identity/LLM assignment carries over, but participation
+      // (`active`) is each tab's own — a brand-new tab starts with
+      // everyone active rather than inheriting whichever subset happened
+      // to be toggled on in the tab it was opened from.
+      agents: state.agents.map((a) => ({ ...a, active: true })),
       nextAgentNumber: state.nextAgentNumber,
     };
   }
@@ -1885,12 +1889,14 @@ export function ChatApp() {
   );
 
   /**
-   * Propagates the full agent roster — including which LLM connection each
-   * agent is assigned — to every OTHER open tab's persisted conversation.
-   * Per explicit instruction, agents (identity AND LLM choice) are fully
-   * shared across tabs: whichever tab last changed something wins
-   * everywhere. Fire-and-forget — never blocks the caller, never touches
-   * `archives` (an archive is a frozen historical snapshot, not a live tab).
+   * Propagates the agent roster — identity fields AND which LLM connection
+   * each agent is assigned — to every OTHER open tab's persisted
+   * conversation. `active` (which agents are participating) is the one
+   * thing that stays per-tab: activating/deactivating an agent in one tab
+   * must not flip its participation everywhere else, so each target tab's
+   * own `active` value is preserved rather than overwritten. Fire-and-
+   * forget — never blocks the caller, never touches `archives` (an archive
+   * is a frozen historical snapshot, not a live tab).
    */
   async function syncAgentIdentityAcrossTabs(nextAgents: Agent[]) {
     const nextNumber = state.nextAgentNumber;
@@ -1898,9 +1904,14 @@ export function ChatApp() {
       if (tab.id === state.id) continue;
       const loaded = await loadConversation(tab.id);
       if (!loaded) continue;
+      const targetById = new Map(loaded.agents.map((a) => [a.id, a]));
+      const mergedAgents = nextAgents.map((src) => {
+        const existing = targetById.get(src.id);
+        return { ...src, active: existing ? existing.active : src.active };
+      });
       await saveConversation({
         ...loaded,
-        agents: nextAgents,
+        agents: mergedAgents,
         nextAgentNumber: Math.max(loaded.nextAgentNumber, nextNumber),
       });
     }
@@ -2043,31 +2054,132 @@ export function ChatApp() {
   return (
     <div className="app-shell">
       <div className="conversation-tabs-bar" {...devRef('s24')}>
-        {tabs.map((t, ti) => (
-          <div
-            key={t.id}
-            className={`conversation-tab ${t.id === state.id ? 'active' : ''}`}
-            {...devRef('b69', ti)}
-            onClick={() => switchTab(t.id)}
-            title={t.title}
-          >
-            <span className="conversation-tab-title">{t.title}</span>
-            <button
-              className="conversation-tab-close"
-              {...devRef('b70', ti)}
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(t.id);
-              }}
-              title="Close this conversation tab"
+        <div className="conversation-tabs-list">
+          {tabs.map((t, ti) => (
+            <div
+              key={t.id}
+              className={`conversation-tab ${t.id === state.id ? 'active' : ''}`}
+              {...devRef('b69', ti)}
+              onClick={() => switchTab(t.id)}
+              title={t.title}
             >
-              ×
-            </button>
-          </div>
-        ))}
-        <button className="conversation-tab-add" {...devRef('b68')} onClick={addTab} title="New conversation tab">
-          +
-        </button>
+              <span className="conversation-tab-title">{t.title}</span>
+              <button
+                className="conversation-tab-close"
+                {...devRef('b70', ti)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(t.id);
+                }}
+                title="Close this conversation tab"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button className="conversation-tab-add" {...devRef('b68')} onClick={addTab} title="New conversation tab">
+            +
+          </button>
+        </div>
+
+        <div className="conversation-tabs-icons" {...devRef('s1')}>
+          <button
+            className="icon-btn"
+            {...devRef('b67')}
+            onClick={() => {
+              saveConversation(state);
+              showToast('💾 Conversation saved');
+            }}
+            title="Save conversation now"
+          >
+            💾
+          </button>
+          {state.settings.maxExchanges != null &&
+            (() => {
+              const latestThread = state.threads[state.threads.length - 1];
+              const remaining = latestThread
+                ? Math.max(state.settings.maxExchanges! - agentExchangeCount(latestThread), 0)
+                : state.settings.maxExchanges;
+              return (
+                <>
+                  <span className="icon-badge" title="Agent replies remaining before the exchange limit is hit">
+                    🔢 {remaining}
+                  </span>
+                  <button
+                    className="icon-badge"
+                    {...devRef('b63')}
+                    title="Extend the exchange limit by 10, even mid-conversation"
+                    onClick={() => extendExchanges(10)}
+                  >
+                    ➕10
+                  </button>
+                </>
+              );
+            })()}
+          <button
+            className={`icon-btn ${freezeScroll ? 'active' : ''}`}
+            {...devRef('b62')}
+            title={
+              freezeScroll
+                ? 'Scroll is frozen — new messages will not pull the view down'
+                : 'Freeze scroll position so new incoming messages do not auto-scroll the view'
+            }
+            onClick={() => setFreezeScroll((v) => !v)}
+          >
+            {freezeScroll ? '🧊' : '❄️'}
+          </button>
+          <button
+            className={`icon-btn ${sceneViewOpen ? 'active' : ''}`}
+            {...devRef('b55')}
+            title={sceneViewOpen ? 'Back to Thread View' : 'Open Scene View'}
+            onClick={() => setSceneViewOpen((v) => !v)}
+          >
+            🎬
+          </button>
+          <button
+            className="icon-btn"
+            {...devRef('b1')}
+            onClick={() => setShowAudioRail((v) => !v)}
+            title="Toggle audio rail"
+          >
+            🔊
+          </button>
+          <button
+            className="icon-btn"
+            {...devRef('b2')}
+            onClick={cycleTheme}
+            title={`Theme: ${theme} (click to cycle)`}
+          >
+            {THEME_ICONS[theme]}
+          </button>
+          <button
+            className={`icon-btn ${devMode ? 'active' : ''}`}
+            {...devRef('b3')}
+            onClick={() => setDevMode((v) => !v)}
+            title="Dev Mode: show a unique reference code on every section/feature/button/field"
+          >
+            🛠️
+          </button>
+          <button
+            className="icon-btn"
+            {...devRef('b4')}
+            onClick={() => {
+              setModalReturnTo(null);
+              setActiveModal('settings');
+            }}
+            title="Settings (Agents, LLMs, Audio, Archives, Account)"
+          >
+            ⚙️
+          </button>
+          <button
+            className="icon-btn"
+            {...devRef('b5')}
+            onClick={() => setTopPanelOpen((v) => !v)}
+            title={topPanelOpen ? 'Collapse header/search/participants/controls' : 'Show header/search/participants/controls'}
+          >
+            {topPanelOpen ? '▲' : '▼'}
+          </button>
+        </div>
       </div>
 
       {closingTabId && (
@@ -2099,109 +2211,6 @@ export function ChatApp() {
           </div>
         </div>
       )}
-
-      <div className="fixed-top-icons" {...devRef('s1')}>
-        <button
-          className="icon-btn"
-          {...devRef('b67')}
-          onClick={() => {
-            saveConversation(state);
-            showToast('💾 Conversation saved');
-          }}
-          title="Save conversation now"
-        >
-          💾
-        </button>
-        {state.settings.maxExchanges != null &&
-          (() => {
-            const latestThread = state.threads[state.threads.length - 1];
-            const remaining = latestThread
-              ? Math.max(state.settings.maxExchanges! - agentExchangeCount(latestThread), 0)
-              : state.settings.maxExchanges;
-            return (
-              <>
-                <span className="icon-badge" title="Agent replies remaining before the exchange limit is hit">
-                  🔢 {remaining}
-                </span>
-                <button
-                  className="icon-badge"
-                  {...devRef('b63')}
-                  title="Extend the exchange limit by 10, even mid-conversation"
-                  onClick={() => extendExchanges(10)}
-                >
-                  ➕10
-                </button>
-              </>
-            );
-          })()}
-        <button
-          className={`icon-btn ${freezeScroll ? 'active' : ''}`}
-          {...devRef('b62')}
-          title={
-            freezeScroll
-              ? 'Scroll is frozen — new messages will not pull the view down'
-              : 'Freeze scroll position so new incoming messages do not auto-scroll the view'
-          }
-          onClick={() => setFreezeScroll((v) => !v)}
-        >
-          {freezeScroll ? '🧊' : '❄️'}
-        </button>
-        <button
-          className={`icon-btn ${sceneViewOpen ? 'active' : ''}`}
-          {...devRef('b55')}
-          title={sceneViewOpen ? 'Back to Thread View' : 'Open Scene View'}
-          onClick={() => setSceneViewOpen((v) => !v)}
-        >
-          🎬
-        </button>
-        <button
-          className="icon-btn"
-          {...devRef('b1')}
-          onClick={() => setShowAudioRail((v) => !v)}
-          title="Toggle audio rail"
-        >
-          🔊
-        </button>
-        <button
-          className="icon-btn"
-          {...devRef('b2')}
-          onClick={cycleTheme}
-          title={`Theme: ${theme} (click to cycle)`}
-        >
-          {THEME_ICONS[theme]}
-        </button>
-        <button
-          className={`icon-btn ${devMode ? 'active' : ''}`}
-          {...devRef('b3')}
-          onClick={() => setDevMode((v) => !v)}
-          title="Dev Mode: show a unique reference code on every section/feature/button/field"
-        >
-          🛠️
-        </button>
-      </div>
-
-      <button
-        className="settings-gear-btn"
-        {...devRef('b4')}
-        onClick={() => {
-          setModalReturnTo(null);
-          setActiveModal('settings');
-        }}
-        title="Settings (Agents, LLMs, Audio, Archives, Account)"
-      >
-        ⚙️
-      </button>
-
-      <div className="top-panel-toggle-row" {...devRef('s2')}>
-        <button
-          className="control-btn top-panel-toggle-btn"
-          {...devRef('b5')}
-          onClick={() => setTopPanelOpen((v) => !v)}
-          title={topPanelOpen ? 'Collapse header/search/participants/controls' : 'Show header/search/participants/controls'}
-        >
-          {topPanelOpen ? '▲ Hide parameters' : '▼ Show parameters'}
-        </button>
-      </div>
 
       <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
       <div className="top-panel-inner">
@@ -2428,23 +2437,21 @@ export function ChatApp() {
       <div className="participants-bar" {...devRef('s5')}>
         <span className="control-label">Participants:</span>
         {state.agents
-          .filter((agent) => agent.active)
           .map((agent, agentIndex) => {
             const connected = agentIsConnected(agent);
             return (
               <button
                 key={agent.id}
                 {...devRef('b15', agentIndex)}
-                className={`participant-chip ${connected ? 'active' : ''} ${!connected ? 'disconnected' : ''}`}
+                // Every agent always renders here, in stable state.agents
+                // order — only styling (not presence/position) reflects
+                // active/connected, so toggling one never reflows/reorders
+                // its neighbors.
+                className={`participant-chip ${connected ? 'active' : 'disconnected'} ${
+                  !agent.active ? 'inactive' : ''
+                }`}
                 style={{ borderColor: agent.color }}
                 onClick={() => {
-                  // A single click deactivates this chip, which removes it
-                  // from the DOM (the list is filtered to active agents) —
-                  // if that happened immediately, the second click of a
-                  // double-click would land on nothing (or the wrong chip
-                  // that shifted into its place) and never register as a
-                  // dblclick. Delay the toggle briefly so a following
-                  // dblclick can cancel it first.
                   if (chipClickTimeoutRef.current) {
                     clearTimeout(chipClickTimeoutRef.current);
                     chipClickTimeoutRef.current = null;
@@ -2467,7 +2474,9 @@ export function ChatApp() {
                 title={
                   !connected
                     ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs (double-click to open Settings)`
-                    : 'Click to deactivate, double-click to open Settings'
+                    : agent.active
+                    ? 'Click to deactivate, double-click to open Settings'
+                    : 'Click to activate, double-click to open Settings'
                 }
               >
                 <span className="participant-dot" style={{ background: agent.color }} />
@@ -2476,6 +2485,16 @@ export function ChatApp() {
               </button>
             );
           })}
+        <button
+          className="control-btn"
+          {...devRef('b75')}
+          onClick={() =>
+            setState((prev) => ({ ...prev, agents: prev.agents.map((a) => ({ ...a, active: false })) }))
+          }
+          title="Deactivate every agent in this conversation"
+        >
+          🚫 Deactivate All
+        </button>
         <div className="participants-menu-wrap" ref={participantsMenuRef}>
           <button
             className="control-btn"
@@ -3224,7 +3243,11 @@ export function ChatApp() {
         />
       )}
       {activeModal === 'library' && (
-        <AgentLibraryModal onAdd={addAgentFromPreset} onClose={closeSubModal} />
+        <AgentLibraryModal
+          onAdd={addAgentFromPreset}
+          onClose={closeSubModal}
+          currentAgentNames={state.agents.map((a) => a.name)}
+        />
       )}
       {activeModal === 'analytics' && (
         <AnalyticsModal

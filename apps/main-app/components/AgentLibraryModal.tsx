@@ -16,11 +16,13 @@ import { useOverlayClose } from '@/lib/use-overlay-close';
 interface AgentLibraryModalProps {
   onAdd: (preset: AgentPreset) => void;
   onClose: () => void;
+  /** Names of agents already in the current conversation — used to badge presets already added, and how many times. */
+  currentAgentNames: string[];
 }
 
 const CUSTOM_AGENTS_VIEW = 'custom';
 
-export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
+export function AgentLibraryModal({ onAdd, onClose, currentAgentNames }: AgentLibraryModalProps) {
   const overlayClose = useOverlayClose(onClose);
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
@@ -219,6 +221,7 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
             )}
             {category.presets.map((preset) => {
               const isCustom = customAgents.some((a) => a.name === preset.name);
+              const countInUse = currentAgentNames.filter((n) => n === preset.name).length;
               return (
                 <div className="agent-list-item" key={preset.name} style={{ alignItems: 'flex-start' }}>
                   <div className="avatar" style={{ background: preset.color }}>
@@ -227,6 +230,14 @@ export function AgentLibraryModal({ onAdd, onClose }: AgentLibraryModalProps) {
                   <div className="agent-info">
                     <div className="agent-name">
                       {preset.name} — {preset.role}
+                      {countInUse > 0 && (
+                        <span
+                          className="agent-count-badge"
+                          title={`Already in this conversation ${countInUse} time${countInUse === 1 ? '' : 's'}`}
+                        >
+                          ×{countInUse}
+                        </span>
+                      )}
                     </div>
                     <div className="agent-instructions">{preset.instructions}</div>
                     {preset.categories && preset.categories.length > 0 && (

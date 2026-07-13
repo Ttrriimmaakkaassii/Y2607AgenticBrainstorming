@@ -154,42 +154,35 @@ body {
   gap: 8px;
 }
 
-/* Shifted down from the very top edge to sit below the always-present
-   conversation tabs bar rather than overlapping it. */
-.settings-gear-btn {
-  position: fixed;
-  top: 50px;
-  right: 8px;
-  z-index: 40;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--border-color);
-  background: var(--bg-panel);
-  cursor: pointer;
-  font-size: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-}
-
-.fixed-top-icons {
-  position: fixed;
-  top: 50px;
-  right: 50px;
-  z-index: 40;
-  display: flex;
-  gap: 6px;
-}
-
-/* Row of open-conversation tabs, always present (at least one) — browser-
-   tab-like: click to switch, × to close, trailing + to open a new one. */
+/* The one always-visible top bar: tabs on the left (their own horizontal
+   scroll if there are many), every utility icon on the right — sticky so
+   it can never scroll out of view regardless of what the page below does. */
 .conversation-tabs-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-panel);
+}
+
+.conversation-tabs-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
+}
+
+.conversation-tabs-icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .conversation-tab {
@@ -254,7 +247,7 @@ body {
   background: var(--bg-panel);
 }
 
-.fixed-top-icons .icon-btn {
+.conversation-tabs-icons .icon-btn {
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -266,12 +259,19 @@ body {
   justify-content: center;
   padding: 0;
   font-size: 15px;
+  flex-shrink: 0;
+}
+
+.conversation-tabs-icons .icon-btn.active {
+  background: var(--accent, #7c5cff);
+  border-color: transparent;
+  color: white;
 }
 
 /* Unlike the single-emoji circular .icon-btn, these carry short text
    ("🔢 3", "➕10") that doesn't fit a fixed 34px circle — a pill shape
    with a small font reads cleanly instead of overflowing/wrapping. */
-.fixed-top-icons .icon-badge {
+.conversation-tabs-icons .icon-badge {
   height: 34px;
   padding: 0 10px;
   border-radius: 17px;
@@ -322,10 +322,6 @@ span.icon-badge {
 
 .floating-play-btn:hover {
   filter: brightness(1.1);
-}
-
-.settings-gear-btn:hover {
-  background: var(--bg-input);
 }
 
 .header-left,
@@ -392,22 +388,6 @@ mark.search-match {
   padding: 0 1px;
 }
 
-.top-panel-toggle-row {
-  display: flex;
-  justify-content: center;
-  padding: 4px 12px 0;
-}
-
-.top-panel-toggle-btn {
-  font-size: 11px;
-  padding: 4px 10px;
-  opacity: 0.75;
-}
-
-.top-panel-toggle-btn:hover {
-  opacity: 1;
-}
-
 .top-panel-collapsible {
   display: grid;
   grid-template-rows: 1fr;
@@ -468,6 +448,13 @@ mark.search-match {
   filter: grayscale(1);
   cursor: not-allowed;
   border-style: dashed;
+}
+
+/* Not participating in this conversation — stays in place (not removed
+   from the list) so toggling never reflows/reorders the other chips. */
+.participant-chip.inactive {
+  opacity: 0.4;
+  text-decoration: line-through;
 }
 
 .participants-menu-wrap {
@@ -1395,6 +1382,19 @@ body.dev-mode [data-devref]::after {
   color: white;
   padding: 1px 6px;
   border-radius: 8px;
+}
+
+/* How many instances of this preset are already in the current conversation. */
+.agent-count-badge {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  background: #7c5cff;
+  padding: 1px 6px;
+  border-radius: 8px;
+  vertical-align: middle;
 }
 
 .category-checklist {

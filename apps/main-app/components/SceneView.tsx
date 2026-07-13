@@ -298,6 +298,12 @@ export function SceneView({
     setIsPlaying((v) => !v);
   }
 
+  /** One-click "listen to the conversation" — turns narration on (if it wasn't already) and starts/pauses replay together, instead of needing the mute toggle and play button separately. */
+  function toggleAudioPlay() {
+    if (!audioEnabled) setAudioEnabled(true);
+    togglePlayPause();
+  }
+
   function scrubTo(index: number) {
     if (audioEnabled) onStopSpeaking();
     setPlaybackMode('replay');
@@ -571,6 +577,19 @@ export function SceneView({
           disabled={timeline.length === 0}
         >
           {isPlaying ? '⏸️' : '▶️'}
+        </button>
+        <button
+          className={`scene-play-btn scene-play-audio-btn ${audioEnabled ? 'active' : ''}`}
+          {...devRef('b74')}
+          title={
+            isPlaying && audioEnabled
+              ? 'Pause the read-aloud replay'
+              : 'Play the conversation aloud (turns on narration and starts replay together)'
+          }
+          onClick={toggleAudioPlay}
+          disabled={timeline.length === 0}
+        >
+          🔊{isPlaying && audioEnabled ? '⏸️' : '▶️'}
         </button>
         <button
           className={`scene-transport-btn scene-mute-btn ${audioEnabled ? 'active' : ''}`}
