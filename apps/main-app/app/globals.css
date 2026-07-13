@@ -2390,6 +2390,12 @@ body.dev-mode [data-devref]::after {
   color: #f7f7f7;
   animation: scene-central-in 0.4s ease;
   transition: width 0.3s ease;
+  /* Lets the browser handle vertical scroll natively (for the text inside)
+     while leaving horizontal drags free for the swipe-to-navigate pointer
+     handlers — without this, mobile browsers can hijack a swipe as a
+     scroll/pan gesture and fire pointercancel instead of pointerup, so the
+     gesture never completes. */
+  touch-action: pan-y;
 }
 
 @keyframes scene-central-in {

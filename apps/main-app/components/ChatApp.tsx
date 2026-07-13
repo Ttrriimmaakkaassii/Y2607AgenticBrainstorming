@@ -1768,6 +1768,22 @@ export function ChatApp() {
     saveArchives(next);
   }
 
+  /**
+   * A brand-new conversation seeded with the CURRENT tab's agent roster
+   * (names, roles, instructions, colors, LLM connections, traits) rather
+   * than the hardcoded starter agents — agents are a shared cast across
+   * every tab, only the thread history is per-tab.
+   */
+  function freshConversationWithCurrentAgents(id?: string): ConversationState {
+    const base = defaultState();
+    return {
+      ...base,
+      id: id ?? base.id,
+      agents: state.agents.map((a) => ({ ...a })),
+      nextAgentNumber: state.nextAgentNumber,
+    };
+  }
+
   /** Switches the single live conversation slot to a different (already-open) tab's conversation. */
   async function switchTab(id: string) {
     if (id === state.id) return;
@@ -1775,7 +1791,7 @@ export function ChatApp() {
       pauseConversation();
     }
     const loaded = await loadConversation(id);
-    const nextState = loaded ? migrateState(loaded) : { ...defaultState(), id };
+    const nextState = loaded ? migrateState(loaded) : freshConversationWithCurrentAgents(id);
     setState(nextState);
     setCurrentAgentId(nextState.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
     if (typeof window !== 'undefined') {
@@ -1787,7 +1803,7 @@ export function ChatApp() {
   }
 
   function addTab() {
-    const fresh = defaultState();
+    const fresh = freshConversationWithCurrentAgents();
     setState(fresh);
     setCurrentAgentId(fresh.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
     const nextTabs = [...tabs, { id: fresh.id, title: deriveTabTitle(fresh) }];
@@ -1836,7 +1852,7 @@ export function ChatApp() {
     const remainingTabs = tabs.filter((t) => t.id !== id);
     if (remainingTabs.length === 0) {
       // Never end up with zero tabs — open a fresh one in its place.
-      const fresh = defaultState();
+      const fresh = freshConversationWithCurrentAgents();
       setState(fresh);
       setCurrentAgentId(fresh.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
       const seeded = [{ id: fresh.id, title: deriveTabTitle(fresh) }];
