@@ -70,6 +70,28 @@ function traitsInstruction(traits: { name: string; value: number }[]): string {
 const USER_PRIORITY_INSTRUCTION =
   " If the user (not another agent) has posted a message — including a direction change, a correction, or a request to move to a new subject — treat it as the top priority: address it directly and steer your reply accordingly, even if it interrupts or redirects the discussion agents were just having.";
 
+// Agents here have no tools: no web fetch, no code execution, no file
+// access — only their training knowledge and this conversation's
+// transcript. Without an explicit rule against it, a model asked to
+// "check the website" or "read the repo" will readily hallucinate having
+// done so (fabricated HTML, fake fetch logs, invented feature lists)
+// instead of admitting it can't. This is the single biggest failure mode
+// reported from real usage — an agent claimed to have fetched an external
+// site, produced fabricated details from it, and another agent had to
+// call it out as unverified several turns later instead of it never
+// happening at all.
+const NO_FABRICATION_INSTRUCTION =
+  ' You have no ability to browse the web, fetch URLs, run code, or call any external tool — you only have your own training knowledge and this conversation\'s transcript. Never claim or imply you performed an action you cannot actually do (e.g. "fetching the site now", "here is the raw HTML I retrieved", "I checked the repo"). If a task genuinely requires live or external information you don\'t have, say so plainly in your reply and answer only from general training knowledge, explicitly labeled as unverified/approximate — never presented as a retrieved fact.';
+
+// The second-biggest reported failure mode: multiple agents spending many
+// turns debating process/methodology (should we fetch first or classify
+// first? who should do what?) instead of producing any substantive
+// answer — a discussion that visibly went in circles for a dozen-plus
+// messages without new information. This directly tells every agent to
+// stop doing that.
+const STAY_ON_TASK_INSTRUCTION =
+  " Do not spend your reply debating process, methodology, or who should do what — decide your own approach silently and use this reply to make actual progress on the user's question (real content, findings, or a direct answer), not meta-commentary about how the discussion should be run. If a previous agent's reply was itself just process debate with no new substance, break the loop by answering directly instead of continuing the debate.";
+
 function buildSystemPrompt(
   agent: Agent,
   moods: Mood[],
@@ -80,7 +102,7 @@ function buildSystemPrompt(
   guidelines: string[],
   traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION}${NO_FABRICATION_INSTRUCTION}${STAY_ON_TASK_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(
