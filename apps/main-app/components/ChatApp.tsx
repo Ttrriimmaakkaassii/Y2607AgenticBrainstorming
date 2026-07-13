@@ -139,6 +139,7 @@ function defaultState(): ConversationState {
       wikiMessageCountAtLastUpdate: 0,
       wikiHistory: [],
       pauseOnTabSwitch: true,
+      textSize: 'sm',
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -200,6 +201,7 @@ function migrateState(state: ConversationState): ConversationState {
       wikiMessageCountAtLastUpdate: state.settings.wikiMessageCountAtLastUpdate ?? 0,
       wikiHistory: state.settings.wikiHistory ?? [],
       pauseOnTabSwitch: state.settings.pauseOnTabSwitch ?? true,
+      textSize: state.settings.textSize ?? 'sm',
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
@@ -3036,10 +3038,11 @@ export function ChatApp() {
           }}
           onStopSpeaking={stopSpeaking}
           onClose={() => setSceneViewOpen(false)}
+          defaultTextSize={state.settings.textSize}
         />
       )}
       <div
-        className="conversation-area"
+        className={`conversation-area text-${state.settings.textSize}`}
         ref={conversationAreaRef}
         {...devRef('s8')}
         style={sceneViewOpen ? { display: 'none' } : undefined}
@@ -3393,6 +3396,8 @@ export function ChatApp() {
           onUpdateWiki={(updates) => updateSettings(updates)}
           onRefreshWikiNow={refreshWikiDigest}
           onOpenMindmap={openMindmapFromSettings}
+          textSize={state.settings.textSize}
+          onUpdateTextSize={(size) => updateSettings({ textSize: size })}
         />
       )}
       {activeModal === 'library' && (

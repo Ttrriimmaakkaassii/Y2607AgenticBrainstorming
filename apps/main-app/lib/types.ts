@@ -125,6 +125,8 @@ export interface ConversationSettings {
   wikiHistory: { digest: string; updatedAt: number; messageCount: number }[];
   /** Whether switching conversation tabs auto-pauses a tab that's actively generating a reply (default true). */
   pauseOnTabSwitch: boolean;
+  /** Text size for message bubbles in Thread View — also the default for Scene View's central bubble text size. */
+  textSize: 'xs' | 'sm' | 'md' | 'lg';
 }
 
 export interface ConversationState {

@@ -116,6 +116,8 @@ interface SceneViewProps {
   onPlayFromMessageId: (id: string, charOffset?: number) => void;
   onStopSpeaking: () => void;
   onClose: () => void;
+  /** Default bubble text size, from Settings > Display — the toolbar dropdown here can still override it for this session. */
+  defaultTextSize: 'xs' | 'sm' | 'md' | 'lg';
 }
 
 export function SceneView({
@@ -135,6 +137,7 @@ export function SceneView({
   onPlayFromMessageId,
   onStopSpeaking,
   onClose,
+  defaultTextSize,
 }: SceneViewProps) {
   const speakingMessageId = spokenRange?.messageId ?? null;
   const activeAgents = useMemo(() => agents.filter((a) => a.active), [agents]);
@@ -164,7 +167,13 @@ export function SceneView({
   const [autoFocusId, setAutoFocusId] = useState<string | null>(null);
   const [userDismissed, setUserDismissed] = useState(false);
 
-  const [bubbleSize, setBubbleSize] = useState<BubbleSize>('sm');
+  const [bubbleSize, setBubbleSize] = useState<BubbleSize>(defaultTextSize);
+  // Keep following the Settings > Display value if the user hasn't
+  // overridden it in this session via the toolbar dropdown below.
+  const bubbleSizeOverriddenRef = useRef(false);
+  useEffect(() => {
+    if (!bubbleSizeOverriddenRef.current) setBubbleSize(defaultTextSize);
+  }, [defaultTextSize]);
   const [playbackMode, setPlaybackMode] = useState<'live' | 'replay'>('live');
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -548,8 +557,11 @@ export function SceneView({
         <select
           {...devRef('dr23')}
           value={bubbleSize}
-          onChange={(e) => setBubbleSize(e.target.value as BubbleSize)}
-          title="Speech bubble & text size"
+          onChange={(e) => {
+            bubbleSizeOverriddenRef.current = true;
+            setBubbleSize(e.target.value as BubbleSize);
+          }}
+          title="Speech bubble & text size (defaults from Settings > Display)"
         >
           {BUBBLE_SIZE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>

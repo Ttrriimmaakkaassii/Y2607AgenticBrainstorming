@@ -1001,6 +1001,20 @@ mark.search-match {
   user-select: text;
 }
 
+/* Text-size setting (Settings > Display) — overrides the 13px default set
+   above. "sm" matches the existing default so it's a no-op. */
+.conversation-area.text-xs .bubble-text {
+  font-size: 11px;
+}
+
+.conversation-area.text-md .bubble-text {
+  font-size: 15px;
+}
+
+.conversation-area.text-lg .bubble-text {
+  font-size: 18px;
+}
+
 .bubble-copy-btn {
   position: absolute;
   top: 2px;

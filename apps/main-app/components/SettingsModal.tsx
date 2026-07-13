@@ -32,7 +32,7 @@ import { ArchivesModal } from './ArchivesModal';
 import { ChangeLogPanel } from './ChangeLogPanel';
 import { AccountSettingsPanel } from './AccountSettingsPanel';
 
-type SettingsTab = 'agent' | 'llm' | 'audio' | 'wiki' | 'archives' | 'log' | 'account';
+type SettingsTab = 'agent' | 'llm' | 'audio' | 'display' | 'wiki' | 'archives' | 'log' | 'account';
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -160,6 +160,9 @@ interface SettingsModalProps {
   }) => void;
   onRefreshWikiNow: () => void;
   onOpenMindmap: (markdown: string, title: string) => void;
+  /** Message bubble text size in Thread View — also the default for Scene View's central bubble text size. */
+  textSize: 'xs' | 'sm' | 'md' | 'lg';
+  onUpdateTextSize: (size: 'xs' | 'sm' | 'md' | 'lg') => void;
 }
 
 export function SettingsModal({
@@ -202,6 +205,8 @@ export function SettingsModal({
   onUpdateWiki,
   onRefreshWikiNow,
   onOpenMindmap,
+  textSize,
+  onUpdateTextSize,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
@@ -427,6 +432,7 @@ export function SettingsModal({
     { id: 'agent', label: '🧑 Agent' },
     { id: 'llm', label: '🔌 LLM' },
     { id: 'audio', label: '🎧 Audio' },
+    { id: 'display', label: '🔠 Display' },
     { id: 'wiki', label: '📚 Wiki' },
     { id: 'archives', label: '🗄️ Archives' },
     { id: 'log', label: '📜 Log' },
@@ -1183,6 +1189,32 @@ export function SettingsModal({
                 onClose={() => {}}
                 onToast={onToast}
               />
+            </div>
+          )}
+
+          {tab === 'display' && (
+            <div {...devRef('s27')}>
+              <div className="modal-section">
+                <h3>🔠 Text Size</h3>
+                <p style={{ fontSize: 13, opacity: 0.8, marginBottom: 12 }}>
+                  Controls the size of message text in Thread View — and doubles as the default bubble
+                  text size in Scene View (Scene View's own size dropdown can still override it for that
+                  session).
+                </p>
+                <div className="control-group">
+                  <select
+                    className="control-input"
+                    {...devRef('dr30')}
+                    value={textSize}
+                    onChange={(e) => onUpdateTextSize(e.target.value as 'xs' | 'sm' | 'md' | 'lg')}
+                  >
+                    <option value="xs">Extra Small</option>
+                    <option value="sm">Small (default)</option>
+                    <option value="md">Medium</option>
+                    <option value="lg">Large</option>
+                  </select>
+                </div>
+              </div>
             </div>
           )}
 
