@@ -205,6 +205,22 @@ export function SceneView({
     prevThinkingIdsRef.current = thinkingIds;
   }, [thinkingIds]);
 
+  // Seed the initial focus from whoever spoke last, so opening Scene View on
+  // a conversation that's just sitting idle (nobody currently composing —
+  // e.g. reopened later, or switched to from another tab) still shows the
+  // most recent reply instead of a blank stage until someone starts typing.
+  useEffect(() => {
+    if (autoFocusId !== null) return;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.agentId !== 'user' && activeAgents.some((a) => a.id === m.agentId)) {
+        setAutoFocusId(m.agentId);
+        break;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Auto-advance the replay cursor while playing — a fixed-timer estimate,
   // used only when audio narration is off. With narration on, the cursor
   // instead follows the reader (see the effect below) so the scene stays in

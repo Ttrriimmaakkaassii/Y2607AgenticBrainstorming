@@ -89,6 +89,8 @@ export interface Thread {
 export interface ConversationSettings {
   topic: string;
   maxSentences: number;
+  /** How many bullet points to ask for when Response Style is "Bullet Points". Persisted so it stays put as the default until the user changes it. */
+  bulletCount: number;
   maxExchanges: number | null;
   maxTokens: number | null;
   orchestratorEnabled: boolean;

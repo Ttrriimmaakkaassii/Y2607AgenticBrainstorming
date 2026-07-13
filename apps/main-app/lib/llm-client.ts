@@ -33,8 +33,8 @@ const REACTION_INSTRUCTIONS: Record<ReactionType, string> = {
   tiktok: '',
 };
 
-function styleInstruction(style: ResponseStyle, maxSentences: number): string {
-  if (style === 'bullets') return 'Reply as a concise bulleted list (3-6 bullet points), each starting with "- ".';
+function styleInstruction(style: ResponseStyle, maxSentences: number, bulletCount: number): string {
+  if (style === 'bullets') return `Reply as a concise bulleted list of exactly ${bulletCount} bullet point${bulletCount === 1 ? '' : 's'}, each starting with "- ".`;
   if (style === 'detailed') return 'Reply with a thorough, detailed explanation (multiple paragraphs are fine).';
   if (style === 'mindmap') {
     return 'Reply as a short markdown outline suitable for a mind map: a single "# " title line, then 2-5 "- " bullet points, each optionally with one nested "  - " sub-point. No prose outside the outline.';
@@ -72,11 +72,12 @@ function buildSystemPrompt(
   moods: Mood[],
   style: ResponseStyle,
   maxSentences: number,
+  bulletCount: number,
   interactionStyle: InteractionStyle,
   guidelines: string[],
   traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)} ${styleInstruction(style, maxSentences)} Stay in character, without restating your name.`;
+  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion. Instructions: ${agent.instructions}${guidelinesInstruction(guidelines)}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
 }
 
 function buildUserPrompt(
@@ -288,6 +289,7 @@ export async function fetchAgentReply(
   agents: Agent[],
   responseStyle: ResponseStyle,
   maxSentences: number,
+  bulletCount: number,
   interactionStyle: InteractionStyle,
   guidelines: string[],
   traits: { name: string; value: number }[],
@@ -304,6 +306,7 @@ export async function fetchAgentReply(
     moods,
     responseStyle,
     maxSentences,
+    bulletCount,
     interactionStyle,
     guidelines,
     traits

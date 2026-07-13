@@ -231,6 +231,30 @@ body {
   opacity: 1;
 }
 
+.conversation-tab-group-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 1px;
+  opacity: 0.6;
+}
+
+.conversation-tab-group-btn:hover {
+  opacity: 1;
+}
+
+.conversation-tab-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
 .conversation-tab-add {
   width: 28px;
   height: 28px;

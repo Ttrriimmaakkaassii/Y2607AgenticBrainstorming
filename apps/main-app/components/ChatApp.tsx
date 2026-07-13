@@ -119,6 +119,7 @@ function defaultState(): ConversationState {
     settings: {
       topic: '',
       maxSentences: 5,
+      bulletCount: 5,
       maxExchanges: null,
       maxTokens: null,
       orchestratorEnabled: true,
@@ -184,6 +185,7 @@ function migrateState(state: ConversationState): ConversationState {
         state.settings.moods ??
         ((state.settings as any).mood ? [(state.settings as any).mood as string] : ['debate']),
       responseStyle: state.settings.responseStyle ?? 'sentences',
+      bulletCount: state.settings.bulletCount ?? 5,
       interactionStyle: state.settings.interactionStyle ?? 'dialogue',
       ttsRate: state.settings.ttsRate ?? 1,
       ttsLang: state.settings.ttsLang ?? 'en-US',
@@ -295,6 +297,7 @@ export function ChatApp() {
   const [participantsMenuOpen, setParticipantsMenuOpen] = useState(false);
   const [participantFilter, setParticipantFilter] = useState('');
   const [participantCategoryFilters, setParticipantCategoryFilters] = useState<Set<string>>(new Set());
+  const [showInactiveParticipants, setShowInactiveParticipants] = useState(false);
   const [participantsCustomAgents, setParticipantsCustomAgents] = useState<AgentPreset[]>([]);
   const [participantsCustomCategories, setParticipantsCustomCategories] = useState<CustomCategory[]>([]);
   const [manageBulkConnectionId, setManageBulkConnectionId] = useState('');
@@ -530,7 +533,7 @@ export function ChatApp() {
         setTabs(existingTabs);
       } else {
         const seeded: ConversationTabMeta[] = [
-          { id: conversationId, title: deriveTabTitle(loadedState) },
+          { id: conversationId, title: deriveTabTitle(loadedState), category: null },
         ];
         setTabs(seeded);
         saveTabs(seeded);
@@ -681,6 +684,7 @@ export function ChatApp() {
       state.agents,
       live.responseStyle,
       live.maxSentences,
+      live.bulletCount,
       live.interactionStyle,
       enabledGuidelines,
       resolvedTraits,
@@ -1738,7 +1742,7 @@ export function ChatApp() {
     // unless that same conversation id is already open as a tab, in which
     // case just switch to it instead of creating a duplicate entry.
     if (!tabs.some((t) => t.id === restored.id)) {
-      const nextTabs = [...tabs, { id: restored.id, title: deriveTabTitle(restored) }];
+      const nextTabs = [...tabs, { id: restored.id, title: deriveTabTitle(restored), category: null }];
       setTabs(nextTabs);
       saveTabs(nextTabs);
     }
@@ -1810,7 +1814,10 @@ export function ChatApp() {
     const fresh = freshConversationWithCurrentAgents();
     setState(fresh);
     setCurrentAgentId(fresh.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
-    const nextTabs = [...tabs, { id: fresh.id, title: deriveTabTitle(fresh) }];
+    // Inherits the current tab's group, if any, so opening a new tab from
+    // inside a group keeps it there instead of starting ungrouped.
+    const currentCategory = tabs.find((t) => t.id === state.id)?.category ?? null;
+    const nextTabs = [...tabs, { id: fresh.id, title: deriveTabTitle(fresh), category: currentCategory }];
     setTabs(nextTabs);
     saveTabs(nextTabs);
     if (typeof window !== 'undefined') {
@@ -1859,7 +1866,7 @@ export function ChatApp() {
       const fresh = freshConversationWithCurrentAgents();
       setState(fresh);
       setCurrentAgentId(fresh.agents[0]?.id ?? DEFAULT_AGENTS[0].id);
-      const seeded = [{ id: fresh.id, title: deriveTabTitle(fresh) }];
+      const seeded = [{ id: fresh.id, title: deriveTabTitle(fresh), category: null }];
       setTabs(seeded);
       saveTabs(seeded);
       if (typeof window !== 'undefined') window.localStorage.setItem(CONVERSATION_ID_KEY, fresh.id);
@@ -1870,6 +1877,27 @@ export function ChatApp() {
       if (isActive) await switchTab(remainingTabs[0].id);
     }
     showToast(action === 'save' ? '💾 Saved to Archives and closed' : '🗑️ Discarded and closed');
+  }
+
+  function renameTab(id: string) {
+    const current = tabs.find((t) => t.id === id);
+    if (!current) return;
+    const next = window.prompt('Rename this tab:', current.title);
+    if (next === null || !next.trim()) return;
+    const nextTabs = tabs.map((t) => (t.id === id ? { ...t, title: next.trim() } : t));
+    setTabs(nextTabs);
+    saveTabs(nextTabs);
+  }
+
+  /** Groups tabs for organization (e.g. "Work", "Research") — purely a display/organization label, doesn't affect the conversation itself. */
+  function setTabCategory(id: string) {
+    const current = tabs.find((t) => t.id === id);
+    if (!current) return;
+    const next = window.prompt('Group/category for this tab (blank = ungrouped):', current.category ?? '');
+    if (next === null) return;
+    const nextTabs = tabs.map((t) => (t.id === id ? { ...t, category: next.trim() || null } : t));
+    setTabs(nextTabs);
+    saveTabs(nextTabs);
   }
 
   function updateSettings(updates: Partial<ConversationState['settings']>) {
@@ -2055,28 +2083,63 @@ export function ChatApp() {
     <div className="app-shell">
       <div className="conversation-tabs-bar" {...devRef('s24')}>
         <div className="conversation-tabs-list">
-          {tabs.map((t, ti) => (
-            <div
-              key={t.id}
-              className={`conversation-tab ${t.id === state.id ? 'active' : ''}`}
-              {...devRef('b69', ti)}
-              onClick={() => switchTab(t.id)}
-              title={t.title}
-            >
-              <span className="conversation-tab-title">{t.title}</span>
-              <button
-                className="conversation-tab-close"
-                {...devRef('b70', ti)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(t.id);
-                }}
-                title="Close this conversation tab"
-              >
-                ×
-              </button>
-            </div>
-          ))}
+          {(() => {
+            // Cluster tabs by group/category (ungrouped last), inserting a
+            // small label divider whenever the group changes — purely a
+            // display grouping, doesn't reorder anything persisted beyond
+            // this render pass.
+            const grouped = [...tabs].sort((a, b) => {
+              const ca = a.category ?? '';
+              const cb = b.category ?? '';
+              if (ca === cb) return 0;
+              if (!ca) return 1;
+              if (!cb) return -1;
+              return ca.localeCompare(cb);
+            });
+            let lastCategory: string | null | undefined;
+            return grouped.map((t, ti) => {
+              const showDivider = t.category !== lastCategory;
+              lastCategory = t.category;
+              return (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center' }}>
+                  {showDivider && (
+                    <span className="conversation-tab-group-label">{t.category ?? 'Ungrouped'}</span>
+                  )}
+                  <div
+                    className={`conversation-tab ${t.id === state.id ? 'active' : ''}`}
+                    {...devRef('b69', ti)}
+                    onClick={() => switchTab(t.id)}
+                    onDoubleClick={() => renameTab(t.id)}
+                    title={`${t.title}${t.category ? ` (${t.category})` : ''} — double-click to rename`}
+                  >
+                    <span className="conversation-tab-title">{t.title}</span>
+                    <button
+                      className="conversation-tab-group-btn"
+                      {...devRef('b76', ti)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTabCategory(t.id);
+                      }}
+                      title="Set this tab's group/category"
+                    >
+                      🏷️
+                    </button>
+                    <button
+                      className="conversation-tab-close"
+                      {...devRef('b70', ti)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTab(t.id);
+                      }}
+                      title="Close this conversation tab"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              );
+            });
+          })()}
           <button className="conversation-tab-add" {...devRef('b68')} onClick={addTab} title="New conversation tab">
             +
           </button>
@@ -2189,7 +2252,7 @@ export function ChatApp() {
               <span className="modal-title">
                 Close &quot;{tabs.find((t) => t.id === closingTabId)?.title ?? 'this conversation'}&quot;?
               </span>
-              <button className="modal-close" onClick={() => setClosingTabId(null)}>
+              <button className="modal-close" {...devRef('b77')} onClick={() => setClosingTabId(null)}>
                 ×
               </button>
             </div>
@@ -2522,6 +2585,7 @@ export function ChatApp() {
                 ];
                 const q = participantFilter.trim().toLowerCase();
                 const filtered = state.agents.filter((a) => {
+                  if (!showInactiveParticipants && !a.active) return false;
                   const categories = categoriesForParticipant(a.name);
                   if (
                     participantCategoryFilters.size > 0 &&
@@ -2627,6 +2691,15 @@ export function ChatApp() {
                         Apply
                       </button>
                     </div>
+                    <div className="participants-menu-actions">
+                      <button
+                        className="control-btn"
+                        {...devRef('b85')}
+                        onClick={() => setShowInactiveParticipants((v) => !v)}
+                      >
+                        {showInactiveParticipants ? 'Show active only' : `Show all (${state.agents.length})`}
+                      </button>
+                    </div>
                     <div className="participants-menu-list">
                       {filtered.map((agent, fi) => {
                         const connected = agentIsConnected(agent);
@@ -2711,6 +2784,21 @@ export function ChatApp() {
             />
           </div>
         )}
+        {state.settings.responseStyle === 'bullets' && (
+          <div className="control-group">
+            <span className="control-label">Bullets:</span>
+            <input
+              type="number"
+              className="control-input"
+              {...devRef('i8')}
+              min={1}
+              max={10}
+              title="How many bullet points each reply should have — stays at this value until you change it"
+              value={state.settings.bulletCount}
+              onChange={(e) => updateSettings({ bulletCount: Number(e.target.value) || 1 })}
+            />
+          </div>
+        )}
         <div className="control-group">
           <span className="control-label">Exchanges:</span>
           <input
@@ -2781,17 +2869,6 @@ export function ChatApp() {
           <button className="control-btn" {...devRef('b23')} onClick={resetConversation}>
             🔄 Reset
           </button>
-          <button
-            className={`control-btn ${freezeScroll ? 'active' : ''}`}
-            onClick={() => setFreezeScroll((v) => !v)}
-            title={
-              freezeScroll
-                ? 'Scroll is frozen — new messages will not pull the view down'
-                : 'Freeze scroll position so new incoming messages do not auto-scroll the view'
-            }
-          >
-            {freezeScroll ? '🧊 Scroll Frozen' : '❄️ Freeze Scroll'}
-          </button>
         </div>
         <div className="control-group">
           <span className="stats-badge">{allMessages.length} messages</span>
@@ -2817,6 +2894,7 @@ export function ChatApp() {
       {/* One button, three states: idle/stopped -> Play (green), running -> Pause (amber), paused -> Stop (red). Each click advances to the next state. */}
       <button
         className={`floating-play-btn ${state.status === 'paused' ? 'stop-state' : state.status === 'running' ? 'pause-state' : ''}`}
+        {...devRef('b78')}
         onClick={
           state.status === 'running'
             ? pauseConversation
@@ -2838,13 +2916,13 @@ export function ChatApp() {
       {selectedMessageIds.length > 0 && (
         <div className="selection-action-bar" {...devRef('r1')}>
           <span>{selectedMessageIds.length} selected</span>
-          <button className="control-btn" onClick={copySelectedMessages}>
+          <button className="control-btn" {...devRef('b79')} onClick={copySelectedMessages}>
             📋 Copy
           </button>
-          <button className="control-btn" onClick={shareSelectedToWhatsApp}>
+          <button className="control-btn" {...devRef('b80')} onClick={shareSelectedToWhatsApp}>
             💬 Share to WhatsApp
           </button>
-          <button className="control-btn" onClick={() => setSelectedMessageIds([])}>
+          <button className="control-btn" {...devRef('b81')} onClick={() => setSelectedMessageIds([])}>
             ✕ Clear
           </button>
         </div>
@@ -2894,7 +2972,7 @@ export function ChatApp() {
       >
         {state.threads.length === 0 && (
           <div className="start-discussion">
-            <button onClick={startDiscussion}>▶️ Start New Discussion</button>
+            <button {...devRef('b82')} onClick={startDiscussion}>▶️ Start New Discussion</button>
           </div>
         )}
 
@@ -2939,7 +3017,7 @@ export function ChatApp() {
                     Started {new Date(thread.createdAt).toLocaleString()}
                   </div>
                 </div>
-                <button className="control-btn" onClick={() => handleNewThread(thread.agentId)}>
+                <button className="control-btn" {...devRef('b83', thread.id)} onClick={() => handleNewThread(thread.agentId)}>
                   + New Thread
                 </button>
               </div>
@@ -3000,6 +3078,7 @@ export function ChatApp() {
                       >
                         <button
                           className="bubble-copy-btn"
+                          {...devRef('b84', msg.id)}
                           title="Copy (selected text, or the whole message)"
                           onClick={() => copyMessageText(msg.content)}
                         >
