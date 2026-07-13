@@ -37,6 +37,8 @@ export interface Agent {
   connectionId: string | null;
   /** Whether this agent participates in new discussion rounds. */
   active: boolean;
+  /** When true, this agent starts active by default in every brand-new tab/conversation, instead of needing a category pick or manual activation each time. */
+  pinnedToAllConversations: boolean;
   /** Explicit TTS voice override (SpeechSynthesisVoice.voiceURI). Null = auto-assigned. */
   voiceURI: string | null;
   /** Explicit Google Cloud TTS voice override (e.g. "en-US-Neural2-A"). Null = auto-assigned. */

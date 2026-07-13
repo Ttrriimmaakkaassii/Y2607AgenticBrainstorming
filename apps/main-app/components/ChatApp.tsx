@@ -77,6 +77,7 @@ const DEFAULT_AGENTS: Agent[] = [
     llmProvider: 'openai',
     connectionId: null,
     active: true,
+    pinnedToAllConversations: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -91,6 +92,7 @@ const DEFAULT_AGENTS: Agent[] = [
     llmProvider: 'anthropic',
     connectionId: null,
     active: true,
+    pinnedToAllConversations: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -105,6 +107,7 @@ const DEFAULT_AGENTS: Agent[] = [
     llmProvider: 'google',
     connectionId: null,
     active: true,
+    pinnedToAllConversations: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -162,6 +165,7 @@ function migrateState(state: ConversationState): ConversationState {
       ...agent,
       refNumber,
       active,
+      pinnedToAllConversations: agent.pinnedToAllConversations ?? false,
       voiceURI: agent.voiceURI ?? null,
       googleVoiceName: agent.googleVoiceName ?? null,
       traits: agent.traits ?? {},
@@ -1879,10 +1883,10 @@ export function ChatApp() {
       id: id ?? base.id,
       // Agent identity/LLM assignment carries over, but participation
       // (`active`) is each tab's own — a brand-new tab starts with nobody
-      // active, prompting a category pick in the Participants bar (see
-      // ChatApp's `s5` block) rather than inheriting whichever subset
-      // happened to be toggled on in the tab it was opened from.
-      agents: state.agents.map((a) => ({ ...a, active: false })),
+      // active (prompting a category pick in the Participants bar, see
+      // ChatApp's `s5` block) EXCEPT agents pinned to always join every
+      // conversation by default, which start active here regardless.
+      agents: state.agents.map((a) => ({ ...a, active: a.pinnedToAllConversations })),
       nextAgentNumber: state.nextAgentNumber,
     };
   }
@@ -2098,6 +2102,7 @@ export function ChatApp() {
       llmProvider: 'openai',
       connectionId: null,
       active: true,
+      pinnedToAllConversations: false,
       voiceURI: null,
       googleVoiceName: null,
       traits: {},
@@ -2130,6 +2135,7 @@ export function ChatApp() {
       llmProvider: 'openai',
       connectionId: null,
       active: true,
+      pinnedToAllConversations: false,
       voiceURI: null,
       googleVoiceName: null,
       traits: {},

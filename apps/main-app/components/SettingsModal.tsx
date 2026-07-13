@@ -757,6 +757,20 @@ export function SettingsModal({
                   />
                 </div>
                 <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      {...devRef('ck14')}
+                      checked={currentAgent?.pinnedToAllConversations ?? false}
+                      onChange={(e) => {
+                        if (!currentAgent) return;
+                        onSave(currentAgent.id, { pinnedToAllConversations: e.target.checked });
+                      }}
+                    />
+                    📌 Include in every new tab/conversation by default
+                  </label>
+                </div>
+                <div className="form-group">
                   <label>Skill Categories (assign as many as you like)</label>
                   <div className="moods-menu-wrap" ref={categoriesMenuRef}>
                     <button
@@ -917,6 +931,7 @@ export function SettingsModal({
                           <th>Ref</th>
                           <th>Name</th>
                           <th>Categories</th>
+                          <th title="Include this agent in every new tab/conversation by default">📌 Pinned</th>
                           {traitDefs.map((def) => (
                             <th key={def.id} title={def.category}>
                               {def.name}
@@ -1019,6 +1034,20 @@ export function SettingsModal({
                                     )}
                                 </div>
                               )}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                title="Include this agent in every new tab/conversation by default"
+                                checked={agent.pinnedToAllConversations}
+                                onChange={(e) =>
+                                  onUpdateAgentsBulk(
+                                    agents.map((a) =>
+                                      a.id === agent.id ? { ...a, pinnedToAllConversations: e.target.checked } : a
+                                    )
+                                  )
+                                }
+                              />
                             </td>
                             {traitDefs.map((def) => {
                               const value = agent.traits?.[def.id] ?? 50;
