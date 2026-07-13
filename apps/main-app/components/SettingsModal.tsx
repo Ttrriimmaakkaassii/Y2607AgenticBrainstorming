@@ -31,7 +31,7 @@ import { ArchivesModal } from './ArchivesModal';
 import { ChangeLogPanel } from './ChangeLogPanel';
 import { AccountSettingsPanel } from './AccountSettingsPanel';
 
-type SettingsTab = 'agent' | 'llm' | 'audio' | 'archives' | 'log' | 'account';
+type SettingsTab = 'agent' | 'llm' | 'audio' | 'wiki' | 'archives' | 'log' | 'account';
 
 /** A real dropdown for freeform-tag category fields, with a "+ New category…" escape hatch. */
 function CategorySelect({
@@ -102,6 +102,17 @@ interface SettingsModalProps {
   traitDefs: TraitDef[];
   onTraitDefsChange: (traitDefs: TraitDef[]) => void;
   onUpdateAgentTraits: (agentId: string, traits: Record<string, number>) => void;
+  wikiEnabled: boolean;
+  wikiKeeperConnectionId: string | null;
+  wikiRefreshInterval: number;
+  wikiDigest: string;
+  wikiUpdatedAt: number;
+  onUpdateWiki: (updates: {
+    wikiEnabled?: boolean;
+    wikiKeeperConnectionId?: string | null;
+    wikiRefreshInterval?: number;
+  }) => void;
+  onRefreshWikiNow: () => void;
 }
 
 export function SettingsModal({
@@ -134,6 +145,13 @@ export function SettingsModal({
   traitDefs,
   onTraitDefsChange,
   onUpdateAgentTraits,
+  wikiEnabled,
+  wikiKeeperConnectionId,
+  wikiRefreshInterval,
+  wikiDigest,
+  wikiUpdatedAt,
+  onUpdateWiki,
+  onRefreshWikiNow,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('agent');
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
@@ -355,6 +373,7 @@ export function SettingsModal({
     { id: 'agent', label: '🧑 Agent' },
     { id: 'llm', label: '🔌 LLM' },
     { id: 'audio', label: '🎧 Audio' },
+    { id: 'wiki', label: '📚 Wiki' },
     { id: 'archives', label: '🗄️ Archives' },
     { id: 'log', label: '📜 Log' },
     ...(auth ? [{ id: 'account' as const, label: '👤 Account' }] : []),
@@ -1110,6 +1129,71 @@ export function SettingsModal({
                 onClose={() => {}}
                 onToast={onToast}
               />
+            </div>
+          )}
+
+          {tab === 'wiki' && (
+            <div {...devRef('s23')}>
+              <div className="modal-section">
+                <h3>📚 Shared Wiki</h3>
+                <p style={{ fontSize: 13, opacity: 0.8, marginBottom: 12 }}>
+                  A compact, LLM-maintained summary of facts/decisions/open questions from every
+                  thread in this conversation — injected into every agent's prompt so agents in
+                  different threads stay aware of what's been said elsewhere, without sending the
+                  full raw history to every call.
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                  <input
+                    type="checkbox"
+                    {...devRef('ck11')}
+                    checked={wikiEnabled}
+                    onChange={(e) => onUpdateWiki({ wikiEnabled: e.target.checked })}
+                  />
+                  Enable shared wiki
+                </label>
+                <div className="form-group compact-field">
+                  <label>Wiki Keeper (LLM connection that writes the digest)</label>
+                  <select
+                    {...devRef('dr24')}
+                    value={wikiKeeperConnectionId ?? ''}
+                    onChange={(e) => onUpdateWiki({ wikiKeeperConnectionId: e.target.value || null })}
+                  >
+                    <option value="">— none —</option>
+                    {connections.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group compact-field">
+                  <label>Refresh every N new messages</label>
+                  <input
+                    type="number"
+                    min={1}
+                    {...devRef('i25')}
+                    value={wikiRefreshInterval}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 1) onUpdateWiki({ wikiRefreshInterval: Math.floor(n) });
+                    }}
+                  />
+                </div>
+                <button className="btn-secondary" {...devRef('b61')} onClick={onRefreshWikiNow}>
+                  🔄 Regenerate now
+                </button>
+                <div className="form-group">
+                  <label>
+                    Current digest{wikiUpdatedAt ? ` — last updated ${new Date(wikiUpdatedAt).toLocaleString()}` : ' — not generated yet'}
+                  </label>
+                  <textarea
+                    readOnly
+                    {...devRef('t6')}
+                    value={wikiDigest || '(empty — enable the wiki and pick a keeper connection, then send a few messages)'}
+                    rows={12}
+                  />
+                </div>
+              </div>
             </div>
           )}
 

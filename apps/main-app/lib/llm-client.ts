@@ -83,7 +83,8 @@ function buildUserPrompt(
   topic: string,
   history: Message[],
   agents: Agent[],
-  extraInstruction?: string
+  extraInstruction?: string,
+  wikiDigest?: string
 ): string {
   const transcript = history
     // Full conversation context, bounded generously rather than unbounded —
@@ -97,9 +98,13 @@ function buildUserPrompt(
     })
     .join('\n');
 
+  const wikiSection = wikiDigest
+    ? `\n\nShared wiki (cross-thread knowledge established so far):\n${wikiDigest}`
+    : '';
+
   const base = transcript
-    ? `Topic: ${topic || '(unspecified)'}\n\nConversation so far:\n${transcript}`
-    : `Start a discussion on: ${topic || 'a topic of your choosing'}`;
+    ? `Topic: ${topic || '(unspecified)'}${wikiSection}\n\nConversation so far:\n${transcript}`
+    : `Start a discussion on: ${topic || 'a topic of your choosing'}${wikiSection}`;
 
   return extraInstruction ? `${base}\n\nInstruction: ${extraInstruction}` : `${base}\n\nContinue the discussion with your next message.`;
 }
@@ -244,7 +249,8 @@ export async function fetchAgentReply(
   interactionStyle: InteractionStyle,
   guidelines: string[],
   traits: { name: string; value: number }[],
-  extraInstruction?: string
+  extraInstruction?: string,
+  wikiDigest?: string
 ): Promise<string | null> {
   const connection = agent.connectionId
     ? connections.find((c) => c.id === agent.connectionId)
@@ -260,7 +266,7 @@ export async function fetchAgentReply(
     guidelines,
     traits
   );
-  const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction);
+  const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction, wikiDigest);
   return callDirect(connection, systemPrompt, userPrompt);
 }
 
@@ -301,4 +307,32 @@ export async function fetchSubjectAnalysis(
     'ONLY a JSON array, no prose, no markdown code fences, in exactly this shape: ' +
     '[{"subject": "...", "category": "...", "confidence": 0}]';
   return callDirect(connection, systemPrompt, transcript || 'No conversation yet.');
+}
+
+/**
+ * Asks the given connection to fold `newTranscript` into `previousDigest`,
+ * producing an updated compact "wiki" — the only cross-thread memory every
+ * agent gets injected into its prompt (see buildUserPrompt's `wikiDigest`
+ * param). Returns the raw model output (plain text, meant to be stored
+ * verbatim as the new digest) or null on failure; callers should keep the
+ * previous digest rather than clobber it with null.
+ */
+export async function fetchWikiDigest(
+  connection: LLMConnection,
+  previousDigest: string,
+  newTranscript: string
+): Promise<string | null> {
+  const systemPrompt =
+    'You maintain a compact shared "wiki" for a multi-agent discussion made of several ' +
+    'independent threads. The wiki is the ONLY cross-thread memory every agent gets — keep it ' +
+    'dense, factual, and organized as short bullet sections (e.g. "Established facts", ' +
+    '"Decisions", "Open questions", "Per-thread notes"). Merge the new messages into the existing ' +
+    'wiki: add new facts, update anything superseded, remove stale/resolved items, and preserve ' +
+    'everything still relevant. Keep the WHOLE wiki under roughly 600 words — prioritize the most ' +
+    'important and most recent material over exhaustive detail. Respond with ONLY the updated ' +
+    'wiki text, no preamble, no markdown code fences.';
+  const userPrompt = previousDigest
+    ? `Current wiki:\n${previousDigest}\n\nNew messages since last update:\n${newTranscript}`
+    : `New messages:\n${newTranscript}\n\nWrite the initial wiki.`;
+  return callDirect(connection, systemPrompt, userPrompt);
 }

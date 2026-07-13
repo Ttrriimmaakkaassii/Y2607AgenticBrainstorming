@@ -18,7 +18,7 @@ import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
-import { fetchAgentReply, reactionInstruction } from '@/lib/llm-client';
+import { fetchAgentReply, fetchWikiDigest, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
@@ -129,6 +129,12 @@ function defaultState(): ConversationState {
       ttsProvider: 'browser',
       googleTtsModel: GEMINI_TTS_MODELS[0].id,
       whatsappNumber: '',
+      wikiEnabled: false,
+      wikiKeeperConnectionId: null,
+      wikiRefreshInterval: 10,
+      wikiDigest: '',
+      wikiUpdatedAt: 0,
+      wikiMessageCountAtLastUpdate: 0,
     },
     status: 'idle',
     updatedAt: Date.now(),
@@ -181,6 +187,12 @@ function migrateState(state: ConversationState): ConversationState {
       ttsProvider: state.settings.ttsProvider ?? 'browser',
       googleTtsModel: state.settings.googleTtsModel ?? GEMINI_TTS_MODELS[0].id,
       whatsappNumber: state.settings.whatsappNumber ?? '',
+      wikiEnabled: state.settings.wikiEnabled ?? false,
+      wikiKeeperConnectionId: state.settings.wikiKeeperConnectionId ?? null,
+      wikiRefreshInterval: state.settings.wikiRefreshInterval ?? 10,
+      wikiDigest: state.settings.wikiDigest ?? '',
+      wikiUpdatedAt: state.settings.wikiUpdatedAt ?? 0,
+      wikiMessageCountAtLastUpdate: state.settings.wikiMessageCountAtLastUpdate ?? 0,
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
@@ -630,7 +642,8 @@ export function ChatApp() {
       live.interactionStyle,
       enabledGuidelines,
       resolvedTraits,
-      extraInstruction
+      extraInstruction,
+      live.wikiEnabled ? live.wikiDigest : undefined
     );
     if (reply) {
       setLiveMode(true);
@@ -639,6 +652,58 @@ export function ChatApp() {
     }
     return reply;
   }
+
+  const wikiRefreshInFlightRef = useRef(false);
+
+  /**
+   * Regenerates the shared cross-thread wiki digest from just the newest
+   * messages (not the whole ledger — the digest already carries prior
+   * knowledge forward incrementally each refresh). Fire-and-forget: never
+   * awaited from runAgentRound's loop, so it can't block turn-taking. On
+   * failure/no connection, silently keeps the existing digest rather than
+   * clobbering good data with null.
+   */
+  async function refreshWikiDigest() {
+    const live = settingsRef.current;
+    const connection = connections.find((c) => c.id === live.wikiKeeperConnectionId);
+    if (!connection || wikiRefreshInFlightRef.current) return;
+    wikiRefreshInFlightRef.current = true;
+    try {
+      const allMessagesSorted = state.threads
+        .flatMap((t) => t.messages)
+        .sort((a, b) => a.timestamp - b.timestamp);
+      const snapshotCount = allMessagesSorted.length;
+      const newMessages = allMessagesSorted.slice(-Math.max(live.wikiRefreshInterval, 40));
+      const transcript = newMessages
+        .map((m) => {
+          const author = m.agentId === 'user' ? 'User' : agentById(m.agentId)?.name ?? 'Agent';
+          return `[Thread ${m.threadId.slice(0, 6)}] ${author}: ${m.content}`;
+        })
+        .join('\n');
+      const digest = await fetchWikiDigest(connection, live.wikiDigest, transcript);
+      if (!digest) return;
+      updateSettings({
+        wikiDigest: digest,
+        wikiUpdatedAt: Date.now(),
+        wikiMessageCountAtLastUpdate: snapshotCount,
+      });
+    } finally {
+      wikiRefreshInFlightRef.current = false;
+    }
+  }
+
+  const totalMessageCount = useMemo(
+    () => state.threads.reduce((n, t) => n + t.messages.length, 0),
+    [state.threads]
+  );
+
+  useEffect(() => {
+    const live = settingsRef.current;
+    if (!live.wikiEnabled || !live.wikiKeeperConnectionId) return;
+    if (totalMessageCount - live.wikiMessageCountAtLastUpdate < live.wikiRefreshInterval) return;
+    refreshWikiDigest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalMessageCount]);
 
   /**
    * Runs one round-robin pass over `respondingAgents`. When a finite
@@ -2802,6 +2867,13 @@ export function ChatApp() {
               agents: prev.agents.map((a) => (a.id === id ? { ...a, traits } : a)),
             }))
           }
+          wikiEnabled={state.settings.wikiEnabled}
+          wikiKeeperConnectionId={state.settings.wikiKeeperConnectionId}
+          wikiRefreshInterval={state.settings.wikiRefreshInterval}
+          wikiDigest={state.settings.wikiDigest}
+          wikiUpdatedAt={state.settings.wikiUpdatedAt}
+          onUpdateWiki={(updates) => updateSettings(updates)}
+          onRefreshWikiNow={refreshWikiDigest}
         />
       )}
       {activeModal === 'library' && (

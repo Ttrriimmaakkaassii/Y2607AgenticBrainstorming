@@ -102,6 +102,17 @@ export interface ConversationSettings {
   googleTtsModel: string;
   /** Digits only, international format without leading 00/+ (e.g. "212661320000"). */
   whatsappNumber: string;
+  /** Whether every agent's prompt gets a cross-thread "shared wiki" digest injected — off by default, opt-in. */
+  wikiEnabled: boolean;
+  /** Which LLMConnection generates/refreshes the wiki digest. Null = no keeper chosen yet. */
+  wikiKeeperConnectionId: string | null;
+  /** Regenerate the digest after this many new messages (across all threads) since the last refresh. */
+  wikiRefreshInterval: number;
+  /** LLM-authored rolling summary of facts/decisions/open questions across ALL threads — the only cross-thread memory agents get. */
+  wikiDigest: string;
+  wikiUpdatedAt: number;
+  /** Total message count (across all threads) at the time of the last digest refresh — used to compute the "N new messages" trigger. */
+  wikiMessageCountAtLastUpdate: number;
 }
 
 export interface ConversationState {
