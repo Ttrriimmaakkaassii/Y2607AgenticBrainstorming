@@ -412,28 +412,44 @@ mark.search-match {
   padding: 0 1px;
 }
 
+/* Parameters drawer — slides in from the left over the conversation instead
+   of pushing it down, so it can hold everything (topic/search/participants/
+   controls) without stealing vertical space from the conversation itself. */
 .top-panel-collapsible {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 0.25s ease, opacity 0.2s ease;
-  opacity: 1;
+  position: fixed;
+  top: 0;
+  /* Slid via `left` rather than `transform` — a transformed ancestor would
+     become the containing block for any `position: fixed` descendant
+     (e.g. the Moods/Participants popovers), trapping them inside this
+     panel's own scroll clipping instead of letting them escape to the
+     true viewport. */
+  left: min(-380px, -90vw);
+  bottom: 0;
+  width: min(380px, 90vw);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-color);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
+  z-index: 45;
+  transition: left 0.25s ease;
+  overflow-y: auto;
+  padding-top: 56px;
 }
 
-.top-panel-collapsible.closed {
-  grid-template-rows: 0fr;
-  opacity: 0;
+.top-panel-collapsible.open {
+  left: 0;
+}
+
+.top-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 44;
 }
 
 .top-panel-inner {
   overflow: visible;
   min-height: 0;
-}
-
-/* Only clip during the collapsed state (needed for the grid-row shrink
-   animation) — while open, overflow must stay visible so popovers like the
-   participants "Manage" dropdown aren't cut off by this wrapper. */
-.top-panel-collapsible.closed .top-panel-inner {
-  overflow: hidden;
+  padding: 8px 12px 24px;
 }
 
 .participants-bar {
@@ -486,12 +502,17 @@ mark.search-match {
 }
 
 .participants-menu {
+  /* Base absolute-under-wrap position — overridden inline with `position:
+     fixed` + viewport coordinates once the trigger's rect is known, so the
+     popover always escapes any scrolling ancestor (e.g. the parameters
+     drawer) instead of getting clipped by it. */
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 50;
   width: 280px;
   max-width: 90vw;
+  overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;
@@ -545,12 +566,17 @@ mark.search-match {
 }
 
 .moods-menu {
+  /* Base absolute-under-wrap position — overridden inline with `position:
+     fixed` + viewport coordinates once the trigger's rect is known, so the
+     popover always escapes any scrolling ancestor (e.g. the parameters
+     drawer) instead of getting clipped by it. */
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 50;
   width: 280px;
   max-width: 90vw;
+  overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;

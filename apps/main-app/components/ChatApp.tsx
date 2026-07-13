@@ -2235,12 +2235,12 @@ export function ChatApp() {
             ⚙️
           </button>
           <button
-            className="icon-btn"
+            className={`icon-btn ${topPanelOpen ? 'active' : ''}`}
             {...devRef('b5')}
             onClick={() => setTopPanelOpen((v) => !v)}
-            title={topPanelOpen ? 'Collapse header/search/participants/controls' : 'Show header/search/participants/controls'}
+            title={topPanelOpen ? 'Close parameters (topic/search/participants/controls)' : 'Open parameters (topic/search/participants/controls)'}
           >
-            {topPanelOpen ? '▲' : '▼'}
+            ☰
           </button>
         </div>
       </div>
@@ -2275,7 +2275,10 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : 'closed'}`}>
+      {topPanelOpen && (
+        <div className="top-panel-backdrop" {...devRef('s9')} onClick={() => setTopPanelOpen(false)} />
+      )}
+      <div className={`top-panel-collapsible ${topPanelOpen ? 'open' : ''}`}>
       <div className="top-panel-inner">
       <div className="header" {...devRef('s3')}>
         <div className="header-left">
@@ -2319,7 +2322,22 @@ export function ChatApp() {
               🎭 Moods ({state.settings.moods.length}) ▾
             </button>
             {moodsMenuOpen && (
-              <div className="moods-menu">
+              <div
+                className="moods-menu"
+                // Fixed + viewport-anchored (not the default absolute-under-wrap)
+                // so this popover isn't clipped when it's opened from inside the
+                // parameters drawer, which scrolls its own overflow.
+                style={(() => {
+                  const rect = moodsMenuRef.current?.getBoundingClientRect();
+                  if (!rect) return undefined;
+                  return {
+                    position: 'fixed' as const,
+                    top: rect.bottom + 4,
+                    left: rect.left,
+                    maxHeight: Math.max(160, window.innerHeight - rect.bottom - 16),
+                  };
+                })()}
+              >
                 <input
                   type="text"
                   className="control-input"
@@ -2568,7 +2586,22 @@ export function ChatApp() {
             👥 Manage ({state.agents.filter((a) => a.active).length}/{state.agents.length}) ▾
           </button>
           {participantsMenuOpen && (
-            <div className="participants-menu" {...devRef('dr2')}>
+            <div
+              className="participants-menu"
+              {...devRef('dr2')}
+              // Fixed + viewport-anchored so this popover escapes the parameters
+              // drawer's own scroll clipping instead of getting cut off by it.
+              style={(() => {
+                const rect = participantsMenuRef.current?.getBoundingClientRect();
+                if (!rect) return undefined;
+                return {
+                  position: 'fixed' as const,
+                  top: rect.bottom + 4,
+                  left: rect.left,
+                  maxHeight: Math.max(200, window.innerHeight - rect.bottom - 16),
+                };
+              })()}
+            >
               <input
                 type="text"
                 className="control-input"
