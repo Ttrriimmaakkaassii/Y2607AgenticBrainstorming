@@ -28,6 +28,7 @@ import { GEMINI_TTS_MODELS, pickGoogleVoiceForAgent, synthesizeGoogleAudio } fro
 import { loadTtsApiKey } from '@/lib/tts-connection';
 import { loadCustomTtsApiKey, loadCustomTtsBaseUrl, loadCustomTtsVoice, synthesizeCustomTts } from '@/lib/custom-tts';
 import {
+  LLM_CONNECTIONS_STORAGE_KEY,
   loadConnections,
   loadConnectionsFromSupabase,
   saveConnections,
@@ -490,6 +491,16 @@ export function ChatApp() {
     saveConnections(next);
     if (userId) syncConnectionsToSupabase(next, userId);
   }
+
+  // API keys/connections are saved to localStorage, which other already-open
+  // tabs won't otherwise notice — pick up changes made in another tab live.
+  useEffect(() => {
+    function handleStorage(e: StorageEvent) {
+      if (e.key === LLM_CONNECTIONS_STORAGE_KEY) setConnections(loadConnections());
+    }
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   useEffect(() => {
     if (!authResolved) return;

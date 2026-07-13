@@ -110,7 +110,13 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
 
   async function createPodcastEpisode() {
     const effectiveBaseUrl = podcastBaseUrl.trim() || loadCustomTtsBaseUrl();
-    saveCustomPodcastBaseUrl(podcastBaseUrl);
+    // Only persist an explicit, changed override — otherwise this would
+    // silently overwrite the saved Podcast Base URL with the inherited
+    // Txt2Audio fallback (or blank) shown in the field by default.
+    const trimmed = podcastBaseUrl.trim();
+    if (trimmed && trimmed !== loadCustomPodcastBaseUrl()) {
+      saveCustomPodcastBaseUrl(podcastBaseUrl);
+    }
     const apiKey = loadCustomTtsApiKey();
     if (!apiKey.trim()) {
       onToast('Add your Txt2Audio API key in 🔌 LLM → Txt2Audio first.');

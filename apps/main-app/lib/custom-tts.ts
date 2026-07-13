@@ -1,5 +1,6 @@
 const BASE_URL_KEY = 'multi-agent-custom-tts-base-url';
-const API_KEY_KEY = 'multi-agent-custom-tts-api-key';
+export const CUSTOM_TTS_API_KEY_STORAGE_KEY = 'multi-agent-custom-tts-api-key';
+const API_KEY_KEY = CUSTOM_TTS_API_KEY_STORAGE_KEY;
 const VOICE_KEY = 'multi-agent-custom-tts-voice';
 const PODCAST_BASE_URL_KEY = 'multi-agent-custom-tts-podcast-base-url';
 const PODCAST_SLUG_HISTORY_KEY = 'multi-agent-custom-tts-podcast-slugs';

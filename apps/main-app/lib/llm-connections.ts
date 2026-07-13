@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
 import { LLMConnection } from './types';
 
-const STORAGE_KEY = 'multi-agent-llm-connections';
+export const LLM_CONNECTIONS_STORAGE_KEY = 'multi-agent-llm-connections';
+const STORAGE_KEY = LLM_CONNECTIONS_STORAGE_KEY;
 
 /**
  * localStorage is always the fast local cache. When signed in (see

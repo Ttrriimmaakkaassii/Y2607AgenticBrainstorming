@@ -1,4 +1,5 @@
-const STORAGE_KEY = 'multi-agent-tts-api-key';
+export const TTS_API_KEY_STORAGE_KEY = 'multi-agent-tts-api-key';
+const STORAGE_KEY = TTS_API_KEY_STORAGE_KEY;
 
 /**
  * Google Cloud Text-to-Speech API key, bring-your-own-key like LLMConnections

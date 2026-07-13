@@ -8,9 +8,10 @@ import { loadCustomAgents, renameCustomAgent } from '@/lib/custom-agents';
 import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { devRef } from '@/lib/devref';
-import { loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
+import { TTS_API_KEY_STORAGE_KEY, loadTtsApiKey, saveTtsApiKey } from '@/lib/tts-connection';
 import { GEMINI_TTS_MODELS, describeGoogleTtsError, validateGeminiKey } from '@/lib/google-tts';
 import {
+  CUSTOM_TTS_API_KEY_STORAGE_KEY,
   CUSTOM_TTS_DEFAULT_VOICE,
   loadCustomPodcastBaseUrl,
   loadCustomTtsApiKey,
@@ -121,6 +122,17 @@ export function LLMProvidersModal({
   useEffect(() => {
     setCustomAgentPresets(loadCustomAgents());
     setCustomCategories(loadCustomCategories());
+  }, []);
+
+  // API keys are saved to localStorage, which other already-open tabs won't
+  // otherwise notice — pick up a key saved in another tab live.
+  useEffect(() => {
+    function handleStorage(e: StorageEvent) {
+      if (e.key === TTS_API_KEY_STORAGE_KEY) setTtsApiKey(loadTtsApiKey());
+      if (e.key === CUSTOM_TTS_API_KEY_STORAGE_KEY) setCustomTtsApiKey(loadCustomTtsApiKey());
+    }
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
