@@ -5,7 +5,7 @@ import { getProvider } from '@/lib/llm-catalog';
 import { Agent, ArchivedConversation, LLMConnection, Thread } from '@/lib/types';
 import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { loadCustomAgents, upsertCustomAgent } from '@/lib/custom-agents';
-import { CustomCategory, loadCustomCategories } from '@/lib/categories';
+import { CustomCategory, addCustomCategory, loadCustomCategories } from '@/lib/categories';
 import {
   Guideline,
   addGuideline,
@@ -315,6 +315,15 @@ export function SettingsModal({
   function toggleCurrentAgentCategory(categoryName: string) {
     if (!currentAgent) return;
     toggleAgentCategory(currentAgent, categoryName);
+  }
+
+  /** Creates a brand-new skill category (if the name isn't already taken) and immediately assigns it to `agent`, so users don't have to leave the assignment picker to file someone under a category that doesn't exist yet. */
+  function addAndAssignCategory(agent: Agent, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const next = addCustomCategory(trimmed, '📁', '#8e44ad');
+    setCustomCategories(next);
+    toggleAgentCategory(agent, trimmed);
   }
 
   function updateAgentTrait(traitId: string, value: number) {
@@ -699,6 +708,21 @@ export function SettingsModal({
                             name.toLowerCase().includes(categoryFilter.trim().toLowerCase())
                           ).length === 0 && <div className="moods-menu-empty">No categories match.</div>}
                         </div>
+                        {categoryFilter.trim() &&
+                          !allCategoryNames.some((name) => name.toLowerCase() === categoryFilter.trim().toLowerCase()) &&
+                          currentAgent && (
+                            <button
+                              type="button"
+                              className="control-btn"
+                              {...devRef('b89')}
+                              onClick={() => {
+                                addAndAssignCategory(currentAgent, categoryFilter);
+                                setCategoryFilter('');
+                              }}
+                            >
+                              + Add &quot;{categoryFilter.trim()}&quot; as a new category
+                            </button>
+                          )}
                       </div>
                     )}
                   </div>
@@ -886,6 +910,21 @@ export function SettingsModal({
                                       <div className="moods-menu-empty">No categories match.</div>
                                     )}
                                   </div>
+                                  {tableCategoryFilter.trim() &&
+                                    !allCategoryNames.some(
+                                      (n) => n.toLowerCase() === tableCategoryFilter.trim().toLowerCase()
+                                    ) && (
+                                      <button
+                                        type="button"
+                                        className="control-btn"
+                                        onClick={() => {
+                                          addAndAssignCategory(agent, tableCategoryFilter);
+                                          setTableCategoryFilter('');
+                                        }}
+                                      >
+                                        + Add &quot;{tableCategoryFilter.trim()}&quot; as a new category
+                                      </button>
+                                    )}
                                 </div>
                               )}
                             </td>
@@ -1079,6 +1118,21 @@ export function SettingsModal({
                                       <div className="moods-menu-empty">No categories match.</div>
                                     )}
                                   </div>
+                                  {tableCategoryFilter.trim() &&
+                                    !allCategoryNames.some(
+                                      (n) => n.toLowerCase() === tableCategoryFilter.trim().toLowerCase()
+                                    ) && (
+                                      <button
+                                        type="button"
+                                        className="control-btn"
+                                        onClick={() => {
+                                          addAndAssignCategory(savedAgent, tableCategoryFilter);
+                                          setTableCategoryFilter('');
+                                        }}
+                                      >
+                                        + Add &quot;{tableCategoryFilter.trim()}&quot; as a new category
+                                      </button>
+                                    )}
                                 </div>
                               )}
                             </td>
