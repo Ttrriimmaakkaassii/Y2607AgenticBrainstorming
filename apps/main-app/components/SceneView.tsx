@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Agent, Feedback, Message, ReactionType } from '@/lib/types';
 import { TraitDef } from '@/lib/traits';
-import { SCENE_BACKGROUND, sideLayout, SPEAKING_COLOR, type SceneSeat } from '@/lib/scenes';
+import { SCENE_BACKGROUND, sideLayout, SPEAKING_COLOR, ADDRESSED_COLOR, type SceneSeat } from '@/lib/scenes';
 import { PLAYBACK_SPEEDS, type PlaybackSpeed, buildSceneTimeline, messageDurationMs } from '@/lib/scene-timeline';
 import { SceneAvatar } from './SceneAvatar';
 import { SceneMarkdown } from './SceneMarkdown';
@@ -437,6 +437,18 @@ export function SceneView({
       </div>
 
       <div className="scene-stage" ref={stageRef} style={{ background: SCENE_BACKGROUND }} onClick={dismissToWideShot}>
+        {focusAgent && (
+          <div className="scene-flash-card">
+            <span className="scene-flash-speaker" style={{ borderColor: SPEAKING_COLOR }}>
+              🗣️ {focusAgent.refNumber} Speaking
+            </span>
+            {addressedAgent && (
+              <span className="scene-flash-addressed" style={{ borderColor: ADDRESSED_COLOR }}>
+                → {addressedAgent.refNumber} Addressed
+              </span>
+            )}
+          </div>
+        )}
         <div
           className="scene-world"
           style={{

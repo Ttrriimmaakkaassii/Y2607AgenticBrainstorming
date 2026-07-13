@@ -75,17 +75,13 @@ export function SceneAvatar({
           animationDuration: isSpeaking ? `${pulseSpeed}s` : undefined,
         }}
       >
-        {agent.name.charAt(0).toUpperCase()}
+        {agent.refNumber}
         <div className="scene-avatar-eyes">
           <span style={{ transform: `translate(${eyeOffsetX}px, ${eyeOffsetY}px)` }} />
           <span style={{ transform: `translate(${eyeOffsetX}px, ${eyeOffsetY}px)` }} />
         </div>
       </div>
-      <div className="scene-avatar-refbadge" style={{ borderColor: displayColor }}>
-        {agent.refNumber}
-      </div>
       <div className="scene-avatar-nametag" style={{ borderColor: displayColor }}>
-        <span className="scene-avatar-nametag-ref">{agent.refNumber}</span>
         {agent.name.split(/\s+/).filter(Boolean).map((word, i) => (
           <span key={i}>{word}</span>
         ))}
