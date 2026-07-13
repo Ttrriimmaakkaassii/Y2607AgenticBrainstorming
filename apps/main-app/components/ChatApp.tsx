@@ -2773,6 +2773,13 @@ export function ChatApp() {
         </div>
       </div>
 
+      </div>
+      </div>
+
+      {/* Deliberately rendered OUTSIDE `.top-panel-collapsible` (unlike the
+          topic/moods/participants above) so Play/Pause/Stop/Reset and the
+          response-style controls stay visible even when the user collapses
+          Parameters, or while Scene View is open. */}
       <div className="controls-panel" {...devRef('s6')}>
         <div className="control-group">
           <span className="control-label">Response Style:</span>
@@ -2920,8 +2927,6 @@ export function ChatApp() {
               : '⚠️ No responses yet — connect an LLM'}
           </span>
         </div>
-      </div>
-      </div>
       </div>
 
       {/* One button, three states: idle/stopped -> Play (green), running -> Pause (amber), paused -> Stop (red). Each click advances to the next state. */}

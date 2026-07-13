@@ -426,7 +426,12 @@ export function SceneView({
   }
 
   const focusId = replaying ? replayFocusAgentId : userDismissed ? null : manualFocusId ?? autoFocusId;
-  const focusAgent = focusId ? activeAgents.find((a) => a.id === focusId) ?? null : null;
+  // Replay is browsing HISTORY, which can include a message from an agent
+  // that's since been deactivated — falling back to the full roster (not
+  // just activeAgents) keeps the bubble showing that message instead of
+  // going blank the moment playback lands on it (most commonly the very
+  // first message in the timeline, right when Play is first pressed).
+  const focusAgent = focusId ? activeAgents.find((a) => a.id === focusId) ?? agents.find((a) => a.id === focusId) ?? null : null;
   const focusSeat = focusId ? seatByAgentId.get(focusId) ?? null : null;
   const zoom = focusSeat ? 1.06 : 1;
   const focusX = focusSeat?.xPct ?? 50;
@@ -451,6 +456,23 @@ export function SceneView({
 
   return (
     <div className={`scene-view scene-bubble-${bubbleSize}`} {...devRef('s22')}>
+      {/* Floats right next to the main conversation Play/Resume button
+          (`.floating-play-btn`, rendered by ChatApp), rather than living
+          among the replay transport controls, since it's a "play the whole
+          thing, narrated" shortcut for the live/talking-agents experience. */}
+      <button
+        className={`scene-play-audio-floating ${audioEnabled ? 'active' : ''}`}
+        {...devRef('b74')}
+        title={
+          isPlaying && audioEnabled
+            ? 'Pause the read-aloud replay'
+            : 'Play the conversation aloud (turns on narration and starts replay together)'
+        }
+        onClick={toggleAudioPlay}
+        disabled={timeline.length === 0}
+      >
+        🔊{isPlaying && audioEnabled ? '⏸️' : '▶️'}
+      </button>
       <div className="scene-toolbar">
         <select
           {...devRef('dr23')}
@@ -593,19 +615,6 @@ export function SceneView({
           disabled={timeline.length === 0}
         >
           {isPlaying ? '⏸️' : '▶️'}
-        </button>
-        <button
-          className={`scene-play-btn scene-play-audio-btn ${audioEnabled ? 'active' : ''}`}
-          {...devRef('b74')}
-          title={
-            isPlaying && audioEnabled
-              ? 'Pause the read-aloud replay'
-              : 'Play the conversation aloud (turns on narration and starts replay together)'
-          }
-          onClick={toggleAudioPlay}
-          disabled={timeline.length === 0}
-        >
-          🔊{isPlaying && audioEnabled ? '⏸️' : '▶️'}
         </button>
         <button
           className={`scene-transport-btn scene-mute-btn ${audioEnabled ? 'active' : ''}`}

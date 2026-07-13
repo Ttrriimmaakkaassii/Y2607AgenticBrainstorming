@@ -348,6 +348,41 @@ span.icon-badge {
   filter: brightness(1.1);
 }
 
+/* Sits immediately to the left of .floating-play-btn (bottom:90px; right:16px;
+   width:52px) so the two read as one paired control in the same corner. */
+.scene-play-audio-floating {
+  position: fixed;
+  bottom: 90px;
+  right: 76px;
+  z-index: 25;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: #555;
+  color: white;
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.scene-play-audio-floating.active {
+  background: #2ecc71;
+}
+
+.scene-play-audio-floating:hover {
+  filter: brightness(1.1);
+}
+
+.scene-play-audio-floating:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .header-left,
 .header-right {
   display: flex;
@@ -1048,6 +1083,22 @@ mark.search-match {
 body.dev-mode [data-devref] {
   position: relative;
   outline: 1px dashed #ff3b30;
+}
+
+/*
+ * A handful of devref'd elements are themselves `position: fixed`/`sticky`
+ * (the floating Play/Resume button, the bulk-selection action bar) — the
+ * blanket `position: relative` above clobbers that, snapping them out of
+ * their floating spot the instant Dev Mode turns on (reported as "buttons
+ * move" / "the resume button doesn't show up"). Fixed/sticky/absolute
+ * elements already establish a containing block for the `::after` badge on
+ * their own, so `relative` was never actually needed for these — restore
+ * their real position with a more specific selector.
+ */
+body.dev-mode .floating-play-btn[data-devref],
+body.dev-mode .scene-play-audio-floating[data-devref],
+body.dev-mode .selection-action-bar[data-devref] {
+  position: fixed;
 }
 
 /*
@@ -2726,7 +2777,7 @@ body.dev-mode [data-devref]::after {
 
   .scene-swipe-nub {
     width: 34px;
-    height: 68px;
+    height: 120px;
   }
 }
 
@@ -2741,7 +2792,7 @@ body.dev-mode [data-devref]::after {
   position: absolute;
   top: 50%;
   width: 26px;
-  height: 56px;
+  height: 96px;
   border-radius: 50%;
   pointer-events: none;
   z-index: 29;
