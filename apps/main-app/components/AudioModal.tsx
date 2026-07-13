@@ -80,9 +80,35 @@ export function AudioModal({
       // Android Chrome silently drops a speak() call made synchronously
       // from inside the previous utterance's onend/onerror — deferring to
       // a fresh tick avoids the queue going quiet mid-conversation.
-      utterance.onend = () => setTimeout(() => speakAt(index + 1), 80);
-      utterance.onerror = () => setTimeout(() => speakAt(index + 1), 80);
+      let advanced = false;
+      function advanceOnce() {
+        if (advanced) return;
+        advanced = true;
+        if (endWatchdog) clearInterval(endWatchdog);
+        setTimeout(() => speakAt(index + 1), 80);
+      }
+      utterance.onend = advanceOnce;
+      utterance.onerror = advanceOnce;
       window.speechSynthesis.speak(utterance);
+
+      // Some Android builds never fire onend/onerror for a given utterance
+      // at all — not late, just never — which left playback frozen
+      // indefinitely on whatever message that happened to. Polling the
+      // synthesizer's own state directly notices the utterance actually
+      // finished without depending on an event that may never arrive.
+      let watchdogChecks = 0;
+      const endWatchdog: ReturnType<typeof setInterval> = setInterval(() => {
+        if (cancelledRef.current) {
+          clearInterval(endWatchdog);
+          return;
+        }
+        watchdogChecks += 1;
+        if (watchdogChecks < 4) return;
+        if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+          clearInterval(endWatchdog);
+          advanceOnce();
+        }
+      }, 250);
     }
 
     async function speakAtGoogle(index: number, msg: Message, apiKey: string) {

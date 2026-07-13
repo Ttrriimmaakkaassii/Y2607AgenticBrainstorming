@@ -81,8 +81,14 @@ export function SceneAvatar({
           <span style={{ transform: `translate(${eyeOffsetX}px, ${eyeOffsetY}px)` }} />
         </div>
       </div>
+      <div className="scene-avatar-refbadge" style={{ borderColor: displayColor }}>
+        {agent.refNumber}
+      </div>
       <div className="scene-avatar-nametag" style={{ borderColor: displayColor }}>
-        {agent.refNumber} {agent.name}
+        <span className="scene-avatar-nametag-ref">{agent.refNumber}</span>
+        {agent.name.split(/\s+/).filter(Boolean).map((word, i) => (
+          <span key={i}>{word}</span>
+        ))}
       </div>
       {isSpeaking && (
         <div className="scene-talking-indicator">

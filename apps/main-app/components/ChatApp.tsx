@@ -1310,15 +1310,38 @@ export function ChatApp() {
         // utterance's onend/onerror handler — desktop Chrome tolerates
         // this chaining, Android doesn't, and the queue just goes quiet
         // with no error. Deferring to a fresh tick avoids it.
-        utterance.onend = () => {
+        let advanced = false;
+        function advanceOnce() {
+          if (advanced) return;
+          advanced = true;
           if (fallbackTimer) clearInterval(fallbackTimer);
+          if (endWatchdog) clearInterval(endWatchdog);
           setTimeout(speakSentence, 80);
-        };
-        utterance.onerror = () => {
-          if (fallbackTimer) clearInterval(fallbackTimer);
-          setTimeout(speakSentence, 80);
-        };
+        }
+        utterance.onend = advanceOnce;
+        utterance.onerror = advanceOnce;
         window.speechSynthesis.speak(utterance);
+
+        // Some Android builds never fire onend/onerror at all for a given
+        // utterance — not delayed, just never. Trusting only those events
+        // left playback permanently frozen on whatever sentence that
+        // happened to. This polls the synthesizer's own state directly as
+        // an independent, event-free way to notice the utterance actually
+        // finished, so the chain can't get stuck waiting on an event that
+        // was never going to come.
+        let watchdogChecks = 0;
+        const endWatchdog: ReturnType<typeof setInterval> = setInterval(() => {
+          if (speakingCancelledRef.current) {
+            clearInterval(endWatchdog);
+            return;
+          }
+          watchdogChecks += 1;
+          if (watchdogChecks < 4) return; // give speak() ~1s to actually start before trusting "not speaking"
+          if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+            clearInterval(endWatchdog);
+            advanceOnce();
+          }
+        }, 250);
       }
 
       function speakSentence() {
