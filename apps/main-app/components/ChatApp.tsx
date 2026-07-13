@@ -417,11 +417,31 @@ export function ChatApp() {
     traitDefsRef.current = traitDefs;
   }, [traitDefs]);
   const [devMode, setDevMode] = useState(false);
-  /** agentId -> threadId, for every agent currently awaiting an LLM reply. */
-  const [thinking, setThinking] = useState<Map<string, string>>(new Map());
+  /**
+   * agentId -> { threadId, conversationId } for every agent currently
+   * awaiting an LLM reply. Tracks EVERY open tab at once (not just the
+   * active one) — a round started before a tab switch keeps running in the
+   * background — so `conversationId` is what a given entry belongs to.
+   * `visibleThinking` below is the current tab's own slice, and is what
+   * actually gets rendered/passed down; reading `thinking` directly for UI
+   * would show an agent as "speaking" in a tab it has nothing to do with,
+   * the instant it happened to be mid-round in a DIFFERENT tab.
+   */
+  const [thinking, setThinking] = useState<Map<string, { threadId: string; conversationId: string }>>(
+    new Map()
+  );
+  const visibleThinking = useMemo(
+    () =>
+      new Map(
+        Array.from(thinking.entries())
+          .filter(([, v]) => v.conversationId === state.id)
+          .map(([agentId, v]) => [agentId, v.threadId])
+      ),
+    [thinking, state.id]
+  );
 
-  function startThinking(agentId: string, threadId: string) {
-    setThinking((prev) => new Map(prev).set(agentId, threadId));
+  function startThinking(agentId: string, threadId: string, conversationId: string) {
+    setThinking((prev) => new Map(prev).set(agentId, { threadId, conversationId }));
   }
 
   function stopThinking(agentId: string) {
@@ -786,6 +806,12 @@ export function ChatApp() {
    * 2 agents" actually plays out as ~10 messages each, autonomously.
    */
   async function runAgentRound(thread: Thread, respondingAgents: Agent[]) {
+    // Captured once, at the moment this round is kicked off — if the user
+    // switches tabs while it's still running (only possible with
+    // pauseOnTabSwitch off, or the brief race before a pause takes effect),
+    // this round still belongs to the conversation it started in, not
+    // whichever tab happens to be active when a reply lands.
+    const conversationId = state.id;
     const connected = respondingAgents.filter(agentIsConnected);
     const skipped = respondingAgents.filter((a) => !agentIsConnected(a));
     if (skipped.length > 0) {
@@ -808,7 +834,7 @@ export function ChatApp() {
 
       const agent = connected[turn % connected.length];
       turn += 1;
-      startThinking(agent.id, updatedThread.id);
+      startThinking(agent.id, updatedThread.id, conversationId);
       const reply = await getReply(agent, updatedThread.messages);
       stopThinking(agent.id);
       if (!reply) {
@@ -837,11 +863,29 @@ export function ChatApp() {
         model: reply.model,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
-      setState((prev) => ({
-        ...prev,
-        threads: prev.threads.map((t) => (t.id === thread.id ? updatedThread : t)),
-        updatedAt: Date.now(),
-      }));
+      const finishedThread = updatedThread;
+      setState((prev) => {
+        if (prev.id !== conversationId) {
+          // The user has switched to a different tab since this round
+          // started — persist directly to the ORIGINATING conversation's
+          // own storage instead of silently dropping the reply, or (worse)
+          // matching against whatever tab happens to be showing right now.
+          void loadConversation(conversationId).then((original) => {
+            if (!original) return;
+            void saveConversation({
+              ...original,
+              threads: original.threads.map((t) => (t.id === thread.id ? finishedThread : t)),
+              updatedAt: Date.now(),
+            });
+          });
+          return prev;
+        }
+        return {
+          ...prev,
+          threads: prev.threads.map((t) => (t.id === thread.id ? finishedThread : t)),
+          updatedAt: Date.now(),
+        };
+      });
       // Give the reader (and Scene View's camera) time to settle on the
       // message that just finished before the next agent starts typing.
       if (postSpeechDelayRef.current > 0 && isRunnable()) {
@@ -866,7 +910,7 @@ export function ChatApp() {
       return;
     }
     const [opener, ...responders] = connectedActive;
-    startThinking(opener.id, 'pending');
+    startThinking(opener.id, 'pending', state.id);
     const openingLine = await getReply(opener, []);
     stopThinking(opener.id);
     if (!openingLine) {
@@ -893,7 +937,7 @@ export function ChatApp() {
       showToast(`${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs first.`);
       return;
     }
-    startThinking(agent.id, 'pending');
+    startThinking(agent.id, 'pending', state.id);
     const openingLine = await getReply(agent, []);
     stopThinking(agent.id);
     if (!openingLine) {
@@ -1094,7 +1138,7 @@ export function ChatApp() {
     const precedingMessages = thread.messages.slice(0, index + 1);
     const instruction = reactionInstruction(type);
 
-    startThinking(author.id, threadId);
+    startThinking(author.id, threadId, state.id);
     const reply = await getReply(author, precedingMessages, instruction);
     stopThinking(author.id);
     if (!reply) {
@@ -1818,7 +1862,7 @@ export function ChatApp() {
   /** Switches the single live conversation slot to a different (already-open) tab's conversation. */
   async function switchTab(id: string) {
     if (id === state.id) return;
-    if (state.settings.pauseOnTabSwitch && (state.status === 'running' || thinking.size > 0)) {
+    if (state.settings.pauseOnTabSwitch && (state.status === 'running' || visibleThinking.size > 0)) {
       pauseConversation();
     }
     const loaded = await loadConversation(id);
@@ -3064,7 +3108,7 @@ export function ChatApp() {
           agents={state.agents}
           traitDefs={traitDefs}
           messages={allMessages}
-          thinking={thinking}
+          thinking={visibleThinking}
           postSpeechDelayMs={postSpeechDelayMs}
           onChangePostSpeechDelay={setPostSpeechDelayMs}
           onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}
@@ -3095,7 +3139,7 @@ export function ChatApp() {
           </div>
         )}
 
-        {Array.from(thinking.entries())
+        {Array.from(visibleThinking.entries())
           .filter(([, threadId]) => threadId === 'pending')
           .map(([agentId]) => {
             const agent = agentById(agentId);
@@ -3315,7 +3359,7 @@ export function ChatApp() {
                   );
                 });
               })()}
-              {Array.from(thinking.entries())
+              {Array.from(visibleThinking.entries())
                 .filter(([, threadId]) => threadId === thread.id)
                 .map(([agentId]) => {
                   const agent = agentById(agentId);

@@ -21,6 +21,7 @@ import {
   loadTraitCategories,
 } from '@/lib/traits';
 import { GEMINI_TTS_VOICES } from '@/lib/google-tts';
+import { generateId } from '@/lib/id';
 import { downloadHtmlAsJpeg } from '@/lib/rasterize-svg';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
@@ -331,6 +332,75 @@ export function SettingsModal({
     onUpdateAgentTraits(currentAgent.id, { ...currentAgent.traits, [traitId]: value });
   }
 
+  /** Every agent parameter that exists, from both this conversation (traits,
+   * voice, active/connection state) and the saved library (which persists
+   * across conversations) — a single file that fully restores an agent
+   * roster if it's ever lost. */
+  function exportAgentsBackup() {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      conversationAgents: agents,
+      libraryAgents: customAgents,
+      categories: customCategories,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'agents-backup.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    onToast('📥 Downloaded agents backup.');
+  }
+
+  function importAgentsBackup(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result as string) as {
+          conversationAgents?: Agent[];
+          libraryAgents?: AgentPreset[];
+          categories?: CustomCategory[];
+        };
+        (parsed.libraryAgents ?? []).forEach((p) => upsertCustomAgent(p));
+        if (parsed.libraryAgents?.length) setCustomAgents(loadCustomAgents());
+
+        const existingCategoryNames = new Set(customCategories.map((c) => c.name.toLowerCase()));
+        (parsed.categories ?? []).forEach((c) => {
+          if (!existingCategoryNames.has(c.name.toLowerCase())) addCustomCategory(c.name, c.icon, c.color);
+        });
+        if (parsed.categories?.length) setCustomCategories(loadCustomCategories());
+
+        const imported = parsed.conversationAgents ?? [];
+        if (imported.length > 0) {
+          // Fresh ids/ref numbers so they can't collide with anything already
+          // in this conversation, and no stale connection (a connection id
+          // from wherever this backup came from won't exist here) — every
+          // other detail (name/role/instructions/color/traits/voice) restored
+          // as-is, added inactive so they don't suddenly join a live round.
+          let nextNumber =
+            Math.max(0, ...agents.map((a) => Number(/Agt(\d+)/.exec(a.refNumber)?.[1] ?? 0))) + 1;
+          const restored = imported.map((a) => ({
+            ...a,
+            id: generateId(),
+            refNumber: `Agt${nextNumber++}`,
+            connectionId: null,
+            active: false,
+          }));
+          onUpdateAgentsBulk([...agents, ...restored]);
+        }
+        onToast(`✅ Imported agents backup (${imported.length} agent(s), ${(parsed.libraryAgents ?? []).length} library preset(s)).`);
+      } catch {
+        onToast('Could not read that file — expected an agents backup JSON.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
   function updateAgentTraitFor(agentId: string, traitId: string, value: number) {
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) return;
@@ -484,6 +554,28 @@ export function SettingsModal({
                     onChange={(e) => onUpdateWhatsappNumber(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="modal-section" {...devRef('s28')}>
+                <div className="modal-section-title">Backup / Transfer Agents</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
+                  Downloads every agent parameter — name, role, instructions, color, traits, voice,
+                  skill categories — for both this conversation&apos;s roster and your saved library, so
+                  they can be fully restored if lost.
+                </div>
+                <button className="btn-secondary" {...devRef('b90')} onClick={exportAgentsBackup}>
+                  📥 Download Backup (.json)
+                </button>
+                <label className="btn-secondary" style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
+                  📤 Import Backup
+                  <input
+                    type="file"
+                    accept="application/json"
+                    {...devRef('i26')}
+                    onChange={importAgentsBackup}
+                    style={{ display: 'none' }}
+                  />
+                </label>
               </div>
 
               <div className="modal-section" {...devRef('s13')}>

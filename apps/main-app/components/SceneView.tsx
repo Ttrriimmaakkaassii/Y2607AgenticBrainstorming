@@ -48,19 +48,6 @@ function clampPct(v: number): number {
   return Math.max(6, Math.min(94, v));
 }
 
-/** A straight line when both points are on the same side of the stage; a
- * bowed curve — arcing away from the central bubble at 50/50 — when they're
- * on opposite sides, so the arrow doesn't just cut straight through it. */
-function buildArrowPath(x1: number, y1: number, x2: number, y2: number): string {
-  const oppositeSides = (x1 - 50) * (x2 - 50) < 0;
-  if (!oppositeSides) return `M ${x1},${y1} L ${x2},${y2}`;
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  const bow = Math.min(20, Math.max(10, Math.abs(x2 - x1) * 0.22));
-  const cy = my <= 50 ? my - bow : my + bow;
-  return `M ${x1},${y1} Q ${mx},${cy} ${x2},${y2}`;
-}
-
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -494,23 +481,24 @@ export function SceneView({
 
   const centralMessage = focusAgent ? displayMessages.get(focusAgent.id) : undefined;
 
+  // Agents relevant to THIS conversation — active now, or have actually
+  // spoken in it — not the entire shared roster. The roster can include
+  // agents from other categories/tabs who were never part of this
+  // discussion at all; matching a name against ALL of them risked a first-
+  // name false-positive (a common word coinciding with some unrelated
+  // agent's name) flagging agents who have nothing to do with this
+  // conversation as "addressed", which then rendered regardless of active
+  // state (see agentsToRender) — i.e. "every single agent" showing up.
+  const conversationAgentIds = useMemo(() => new Set(messages.map((m) => m.agentId)), [messages]);
+  const relevantAgents = useMemo(
+    () => agents.filter((a) => a.active || conversationAgentIds.has(a.id)),
+    [agents, conversationAgentIds]
+  );
+
   const addressedAgents = useMemo(() => {
     if (!focusAgent || !centralMessage) return [];
-    // Search the full roster, not just activeAgents — a message can still
-    // name someone who's since been deactivated, and they can still be
-    // shown (see agentsToRender) at their flanking seat for this moment.
-    return findAddressedAgents(centralMessage.content, focusAgent.id, agents);
-  }, [focusAgent, centralMessage, agents]);
-  // Tied to `focusId` (same thing driving the bubble) rather than the raw
-  // `thinking` map — thinking only covers the brief network round-trip, so
-  // keying drift/pulse off it alone snapped the avatar back the instant a
-  // reply arrived, even while it was still typing out in the bubble.
-  const focusSpeakingNow = focusId != null;
-  // Both the speaker and whoever they're addressing get a fixed seat right
-  // beside the bubble (see SPEAKER_FLANK_SEAT/addresseeFlankSeat) instead
-  // of their normal stage position, so the arrow always runs between those
-  // two fixed points rather than the agents' regular seats.
-  const arrowOriginSeat = focusSpeakingNow ? SPEAKER_FLANK_SEAT : focusSeat;
+    return findAddressedAgents(centralMessage.content, focusAgent.id, relevantAgents);
+  }, [focusAgent, centralMessage, relevantAgents]);
   const addresseeSeats = useMemo(
     () =>
       new Map(addressedAgents.map((a, i) => [a.id, addresseeFlankSeat(i, addressedAgents.length)])),
@@ -645,33 +633,6 @@ export function SceneView({
             </div>
           )}
 
-          {/* Lives inside .scene-world (not as a stage-level sibling) so it
-              rides the same zoom transform as the avatars — drawing it
-              outside caused the endpoints to drift out of alignment with
-              the actual avatar positions whenever the camera was zoomed in
-              on a focused speaker. */}
-          {addressedAgents.length > 0 && arrowOriginSeat && (
-            <svg className="scene-address-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <defs>
-                <marker id="scene-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                  <path d="M0,0 L8,4 L0,8 Z" fill={SPEAKING_COLOR} />
-                </marker>
-              </defs>
-              {addressedAgents.map((a) => {
-                const seat = addresseeSeats.get(a.id)!;
-                return (
-                  <path
-                    key={`${focusAgent!.id}-${a.id}`}
-                    className="scene-address-line"
-                    d={buildArrowPath(arrowOriginSeat.xPct, arrowOriginSeat.yPct, seat.xPct, seat.yPct)}
-                    fill="none"
-                    stroke={SPEAKING_COLOR}
-                    markerEnd="url(#scene-arrowhead)"
-                  />
-                );
-              })}
-            </svg>
-          )}
         </div>
 
         {focusAgent && centralMessage && (
