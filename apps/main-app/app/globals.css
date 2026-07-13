@@ -192,6 +192,30 @@ body {
   font-size: 15px;
 }
 
+/* Unlike the single-emoji circular .icon-btn, these carry short text
+   ("🔢 3", "➕10") that doesn't fit a fixed 34px circle — a pill shape
+   with a small font reads cleanly instead of overflowing/wrapping. */
+.fixed-top-icons .icon-badge {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 17px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+span.icon-badge {
+  cursor: default;
+}
+
 .floating-play-btn {
   position: fixed;
   bottom: 90px;

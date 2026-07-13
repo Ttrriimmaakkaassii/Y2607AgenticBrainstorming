@@ -1852,6 +1852,17 @@ export function ChatApp() {
   return (
     <div className="app-shell">
       <div className="fixed-top-icons" {...devRef('s1')}>
+        <button
+          className="icon-btn"
+          {...devRef('b67')}
+          onClick={() => {
+            saveConversation(state);
+            showToast('💾 Conversation saved');
+          }}
+          title="Save conversation now"
+        >
+          💾
+        </button>
         {state.settings.maxExchanges != null &&
           (() => {
             const latestThread = state.threads[state.threads.length - 1];
@@ -1860,11 +1871,11 @@ export function ChatApp() {
               : state.settings.maxExchanges;
             return (
               <>
-                <span className="icon-btn" title="Agent replies remaining before the exchange limit is hit" style={{ cursor: 'default' }}>
-                  🔢 {remaining} left
+                <span className="icon-badge" title="Agent replies remaining before the exchange limit is hit">
+                  🔢 {remaining}
                 </span>
                 <button
-                  className="icon-btn"
+                  className="icon-badge"
                   {...devRef('b63')}
                   title="Extend the exchange limit by 10, even mid-conversation"
                   onClick={() => extendExchanges(10)}
