@@ -67,13 +67,19 @@ function escapeRegExp(text: string): string {
 
 /** Finds another seated agent the speaker's message is addressing — either
  * by "@Agt3"-style reference or by mentioning that agent's name outright —
- * so the stage can draw a directional arrow at them. */
+ * so the stage can draw a directional arrow at them. Matches the agent's
+ * first name alone too (e.g. "Sarah, what do you think?"), not just their
+ * full configured name — real dialogue almost always addresses people by
+ * first name, not their full "Dr. Sarah Chen"-style display name. */
 function findAddressedAgent(content: string, speakerId: string, agents: Agent[]): Agent | null {
   for (const a of agents) {
     if (a.id === speakerId) continue;
     const refPattern = new RegExp(`@?\\b${escapeRegExp(a.refNumber)}\\b`, 'i');
-    const namePattern = a.name.trim().length > 1 ? new RegExp(`\\b${escapeRegExp(a.name.trim())}\\b`, 'i') : null;
-    if (refPattern.test(content) || namePattern?.test(content)) return a;
+    const fullName = a.name.trim();
+    const firstName = fullName.split(/\s+/)[0] ?? '';
+    const namePattern = fullName.length > 1 ? new RegExp(`\\b${escapeRegExp(fullName)}\\b`, 'i') : null;
+    const firstNamePattern = firstName.length > 1 ? new RegExp(`\\b${escapeRegExp(firstName)}\\b`, 'i') : null;
+    if (refPattern.test(content) || namePattern?.test(content) || firstNamePattern?.test(content)) return a;
   }
   return null;
 }
@@ -468,8 +474,11 @@ export function SceneView({
 
   const addressedAgent = useMemo(() => {
     if (!focusAgent || !centralMessage) return null;
-    return findAddressedAgent(centralMessage.content, focusAgent.id, activeAgents);
-  }, [focusAgent, centralMessage, activeAgents]);
+    // Search the full roster, not just activeAgents — a message can still
+    // name someone who's since been deactivated, and they can still be
+    // shown (see agentsToRender) at their flanking seat for this moment.
+    return findAddressedAgent(centralMessage.content, focusAgent.id, agents);
+  }, [focusAgent, centralMessage, agents]);
   // Tied to `focusId` (same thing driving the bubble) rather than the raw
   // `thinking` map — thinking only covers the brief network round-trip, so
   // keying drift/pulse off it alone snapped the avatar back the instant a
