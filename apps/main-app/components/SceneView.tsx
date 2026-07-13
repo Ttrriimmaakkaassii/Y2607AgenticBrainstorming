@@ -305,6 +305,19 @@ export function SceneView({
     setCursorIndex(index);
   }
 
+  /** Swipe-to-navigate on the central bubble — mobile-friendly alternative to dragging the scrubber. */
+  function swipeToNext() {
+    if (timeline.length === 0) return;
+    const base = replaying ? cursorIndex : timeline.length - 1;
+    scrubTo(Math.min(base + 1, timeline.length - 1));
+  }
+
+  function swipeToPrev() {
+    if (timeline.length === 0) return;
+    const base = replaying ? cursorIndex : timeline.length - 1;
+    scrubTo(Math.max(base - 1, 0));
+  }
+
   function goLive() {
     if (audioEnabled) onStopSpeaking();
     setPlaybackMode('live');
@@ -533,6 +546,8 @@ export function SceneView({
               onToggleStarred={onToggleStarred}
               onSetCategory={onSetCategory}
               onShareWhatsApp={onShareWhatsApp}
+              onSwipeNext={swipeToNext}
+              onSwipePrev={swipeToPrev}
             />
           </div>
         )}
@@ -636,6 +651,9 @@ interface CentralBubbleProps {
   onToggleStarred: (message: Message) => void;
   onSetCategory: (message: Message) => void;
   onShareWhatsApp: (message: Message) => void;
+  /** Swipe left/right on the bubble steps to the next/previous message (mobile-friendly alternative to the scrubber). */
+  onSwipeNext: () => void;
+  onSwipePrev: () => void;
 }
 
 function renderSpokenHighlight(text: string, range: { charIndex: number; charLength: number }) {
@@ -666,7 +684,27 @@ function CentralBubble({
   onToggleStarred,
   onSetCategory,
   onShareWhatsApp,
+  onSwipeNext,
+  onSwipePrev,
 }: CentralBubbleProps) {
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function handleSwipeStart(e: React.PointerEvent) {
+    swipeStartRef.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function handleSwipeEnd(e: React.PointerEvent) {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    // Require a clearly horizontal, deliberate drag so scrolling the
+    // (possibly overflowing) message text vertically never misfires as a swipe.
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0) onSwipeNext();
+    else onSwipePrev();
+  }
   // While the reader is actively on this message, the real spoken-word
   // position drives what's shown/highlighted, so the bubble text stays in
   // lockstep with the audio — the typewriter's own timer-based reveal only
@@ -686,7 +724,15 @@ function CentralBubble({
   }, [spokenRange?.charIndex]);
 
   return (
-    <div className="scene-central-box" style={{ borderTopColor: agent.color }} onClick={(e) => e.stopPropagation()}>
+    <div
+      className="scene-central-box"
+      style={{ borderTopColor: agent.color }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={handleSwipeStart}
+      onPointerUp={handleSwipeEnd}
+    >
+      <span className="scene-swipe-hint left">‹</span>
+      <span className="scene-swipe-hint right">›</span>
       <div className="scene-central-speaker">
         <span className="scene-central-dot" style={{ background: agent.color }} />
         {agent.refNumber} {agent.name} is speaking

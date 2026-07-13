@@ -2279,6 +2279,13 @@ body.dev-mode [data-devref]::after {
   animation: scene-talk-dot 0.9s ease-in-out infinite;
 }
 
+/* Same 3-dot affordance, recolored red, for whichever agent the speaker's
+ * message is addressing — makes "who this is aimed at" visible right on
+ * the avatar, not just in the top flash card. */
+.scene-talking-indicator.addressed span {
+  background: #ef4444;
+}
+
 .scene-talking-indicator span:nth-child(2) {
   animation-delay: 0.15s;
 }
@@ -2604,4 +2611,87 @@ body.dev-mode [data-devref]::after {
   white-space: nowrap;
   min-width: 46px;
   text-align: center;
+}
+
+/* Scene View touch targets — the desktop sizing (34-48px circular buttons)
+   is comfortable with a mouse but cramped for a thumb; bump everything up
+   on small/touch screens rather than leaving Scene View's controls the
+   only cramped part of an otherwise mobile-friendly app. */
+@media (max-width: 768px) {
+  .scene-toolbar select,
+  .scene-toolbar .control-btn {
+    min-height: 40px;
+    font-size: 14px;
+  }
+
+  .scene-transport-btn {
+    width: 46px;
+    height: 46px;
+    font-size: 18px;
+  }
+
+  .scene-play-btn {
+    width: 60px;
+    height: 60px;
+    font-size: 22px;
+  }
+
+  .scene-live-btn {
+    min-height: 40px;
+    padding: 8px 16px;
+  }
+
+  .scene-playback-bar select {
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .scene-scrubber {
+    min-height: 32px;
+  }
+
+  .scene-avatar-circle {
+    width: 52px;
+    height: 52px;
+    font-size: 13px;
+  }
+
+  .scene-avatar-nametag {
+    font-size: 13px;
+    padding: 4px 10px;
+  }
+
+  .scene-central-actions .btn-icon {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 18px;
+  }
+
+  .scene-swipe-hint {
+    display: flex;
+  }
+}
+
+/* Swipe-to-navigate hint arrows either side of the central bubble — shown
+   only on touch/narrow screens, where a swipe gesture (not a scrubber
+   drag) is the natural way to step through replay. Pure decoration; the
+   actual gesture is handled by pointer events on .scene-central-anchor. */
+.scene-swipe-hint {
+  display: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 29;
+}
+
+.scene-swipe-hint.left {
+  left: 6px;
+}
+
+.scene-swipe-hint.right {
+  right: 6px;
 }

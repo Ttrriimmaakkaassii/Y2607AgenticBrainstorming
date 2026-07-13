@@ -89,8 +89,8 @@ export function SceneAvatar({
           <span key={i}>{word}</span>
         ))}
       </div>
-      {isSpeaking && (
-        <div className="scene-talking-indicator">
+      {(isSpeaking || isAddressed) && (
+        <div className={`scene-talking-indicator ${!isSpeaking && isAddressed ? 'addressed' : ''}`}>
           <span />
           <span />
           <span />

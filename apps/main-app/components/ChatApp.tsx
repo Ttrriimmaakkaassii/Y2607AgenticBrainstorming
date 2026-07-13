@@ -2087,6 +2087,14 @@ export function ChatApp() {
           {freezeScroll ? '🧊' : '❄️'}
         </button>
         <button
+          className={`icon-btn ${sceneViewOpen ? 'active' : ''}`}
+          {...devRef('b55')}
+          title={sceneViewOpen ? 'Back to Thread View' : 'Open Scene View'}
+          onClick={() => setSceneViewOpen((v) => !v)}
+        >
+          🎬
+        </button>
+        <button
           className="icon-btn"
           {...devRef('b1')}
           onClick={() => setShowAudioRail((v) => !v)}
@@ -2297,9 +2305,6 @@ export function ChatApp() {
           </button>
           <button className="icon-btn" {...devRef('b12')} onClick={() => setActiveModal('analytics')}>
             📊 Analytics
-          </button>
-          <button className="icon-btn" {...devRef('b55')} onClick={() => setSceneViewOpen((v) => !v)}>
-            🎬 {sceneViewOpen ? 'Thread View' : 'Scene View'}
           </button>
           <button className="icon-btn" {...devRef('b13')} onClick={() => setActiveModal('export')}>
             📥 Export
