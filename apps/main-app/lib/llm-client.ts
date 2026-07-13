@@ -113,6 +113,17 @@ function effortToBudgetTokens(effort: Effort): number {
   return effort === 'high' ? 16000 : effort === 'medium' ? 4096 : 1024;
 }
 
+/** Normalized token usage, read from whichever `usage`/`usageMetadata` shape the provider's response actually returns. */
+export interface UsageInfo {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+interface DirectCallResult {
+  content: string;
+  usage: UsageInfo;
+}
+
 /**
  * Shared caller for every provider whose chat API mirrors OpenAI's
  * /v1/chat/completions shape (OpenAI, DeepSeek, Z.ai, Moonshot, xAI, Mistral).
@@ -121,7 +132,7 @@ async function callOpenAICompatibleDirect(
   connection: LLMConnection,
   systemPrompt: string,
   userPrompt: string
-): Promise<string | null> {
+): Promise<DirectCallResult | null> {
   const provider = getProvider(connection.provider);
   if (!provider) return null;
   const modelInfo = getModel(connection.provider, connection.model);
@@ -146,14 +157,22 @@ async function callOpenAICompatibleDirect(
   });
   if (!res.ok) return null;
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || null;
+  const content = data.choices?.[0]?.message?.content?.trim();
+  if (!content) return null;
+  return {
+    content,
+    usage: {
+      inputTokens: data.usage?.prompt_tokens ?? 0,
+      outputTokens: data.usage?.completion_tokens ?? 0,
+    },
+  };
 }
 
 async function callAnthropicDirect(
   connection: LLMConnection,
   systemPrompt: string,
   userPrompt: string
-): Promise<string | null> {
+): Promise<DirectCallResult | null> {
   const modelInfo = getModel('anthropic', connection.model);
   const body: Record<string, unknown> = {
     model: connection.model,
@@ -178,14 +197,22 @@ async function callAnthropicDirect(
   if (!res.ok) return null;
   const data = await res.json();
   const textBlock = data.content?.find((block: any) => block.type === 'text');
-  return textBlock?.text?.trim() || null;
+  const content = textBlock?.text?.trim();
+  if (!content) return null;
+  return {
+    content,
+    usage: {
+      inputTokens: data.usage?.input_tokens ?? 0,
+      outputTokens: data.usage?.output_tokens ?? 0,
+    },
+  };
 }
 
 async function callGoogleDirect(
   connection: LLMConnection,
   systemPrompt: string,
   userPrompt: string
-): Promise<string | null> {
+): Promise<DirectCallResult | null> {
   const modelInfo = getModel('google', connection.model);
   const body: Record<string, unknown> = {
     contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
@@ -206,14 +233,22 @@ async function callGoogleDirect(
   );
   if (!res.ok) return null;
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!content) return null;
+  return {
+    content,
+    usage: {
+      inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+    },
+  };
 }
 
 async function callDirect(
   connection: LLMConnection,
   systemPrompt: string,
   userPrompt: string
-): Promise<string | null> {
+): Promise<DirectCallResult | null> {
   try {
     if (OPENAI_COMPATIBLE_PROVIDERS.includes(connection.provider)) {
       return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt);
@@ -237,6 +272,13 @@ async function callDirect(
  * fails — callers must treat null as "this agent cannot respond right now"
  * and must never substitute a simulated/mock message for it.
  */
+export interface AgentReplyResult {
+  content: string;
+  usage: UsageInfo;
+  provider: LLMProvider;
+  model: string;
+}
+
 export async function fetchAgentReply(
   agent: Agent,
   connections: LLMConnection[],
@@ -251,7 +293,7 @@ export async function fetchAgentReply(
   traits: { name: string; value: number }[],
   extraInstruction?: string,
   wikiDigest?: string
-): Promise<string | null> {
+): Promise<AgentReplyResult | null> {
   const connection = agent.connectionId
     ? connections.find((c) => c.id === agent.connectionId)
     : undefined;
@@ -267,7 +309,13 @@ export async function fetchAgentReply(
     traits
   );
   const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction, wikiDigest);
-  return callDirect(connection, systemPrompt, userPrompt);
+  const result = await callDirect(connection, systemPrompt, userPrompt);
+  if (!result) return null;
+  // Snapshot provider/model at send time — connections are user-editable/
+  // deletable independently of message history, so resolving them later
+  // from agent.connectionId would let an edit or deletion silently corrupt
+  // historical token-usage breakdowns.
+  return { content: result.content, usage: result.usage, provider: connection.provider, model: connection.model };
 }
 
 export function reactionInstruction(type: ReactionType): string {
@@ -282,6 +330,16 @@ export function reactionInstruction(type: ReactionType): string {
 export async function testConnection(connection: LLMConnection): Promise<boolean> {
   const reply = await callDirect(connection, 'You are a connectivity test. Reply with exactly: OK', 'Test');
   return reply !== null;
+}
+
+/** Extension of `callDirect` for callers that only need the text — see `fetchAgentReply` for the one path that also needs `usage`. */
+async function callDirectText(
+  connection: LLMConnection,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string | null> {
+  const result = await callDirect(connection, systemPrompt, userPrompt);
+  return result?.content ?? null;
 }
 
 /**
@@ -306,7 +364,7 @@ export async function fetchSubjectAnalysis(
     'should score low. Order the subjects from most recently discussed to earliest. Respond with ' +
     'ONLY a JSON array, no prose, no markdown code fences, in exactly this shape: ' +
     '[{"subject": "...", "category": "...", "confidence": 0}]';
-  return callDirect(connection, systemPrompt, transcript || 'No conversation yet.');
+  return callDirectText(connection, systemPrompt, transcript || 'No conversation yet.');
 }
 
 /**
@@ -336,5 +394,5 @@ export async function fetchWikiDigest(
   const userPrompt = previousDigest
     ? `Current wiki:\n${previousDigest}\n\nNew messages since last update:\n${newTranscript}`
     : `New messages:\n${newTranscript}\n\nWrite the initial wiki.`;
-  return callDirect(connection, systemPrompt, userPrompt);
+  return callDirectText(connection, systemPrompt, userPrompt);
 }

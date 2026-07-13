@@ -71,6 +71,12 @@ export interface Message {
   replyToId: string | null;
   starred: boolean;
   category: string | null;
+  /** Token usage snapshot from whichever LLM connection generated this message — absent for user-authored messages and for messages sent before this was tracked. */
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Provider/model snapshotted at send time, independent of the LLMConnection's current (possibly edited/deleted) state. */
+  provider?: LLMProvider;
+  model?: string;
 }
 
 export interface Thread {

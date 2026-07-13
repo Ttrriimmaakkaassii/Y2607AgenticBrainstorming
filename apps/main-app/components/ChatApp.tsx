@@ -18,7 +18,7 @@ import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
-import { fetchAgentReply, fetchWikiDigest, reactionInstruction } from '@/lib/llm-client';
+import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction } from '@/lib/llm-client';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
@@ -629,24 +629,28 @@ export function ChatApp() {
     }));
   }
 
-  function createThread(agentId: string, seedContent?: string): Thread {
+  function createThread(agentId: string, seedReply?: AgentReplyResult): Thread {
     const thread: Thread = {
       id: generateId(),
       agentId,
       createdAt: Date.now(),
       messages: [],
     };
-    if (seedContent) {
+    if (seedReply) {
       thread.messages.push({
         id: generateId(),
         threadId: thread.id,
         agentId,
-        content: seedContent,
+        content: seedReply.content,
         timestamp: Date.now(),
         feedback: null,
         replyToId: null,
         starred: false,
         category: null,
+        inputTokens: seedReply.usage.inputTokens,
+        outputTokens: seedReply.usage.outputTokens,
+        provider: seedReply.provider,
+        model: seedReply.model,
       });
     }
     return thread;
@@ -657,7 +661,7 @@ export function ChatApp() {
     agent: Agent,
     precedingMessages: Message[],
     extraInstruction?: string
-  ): Promise<string | null> {
+  ): Promise<AgentReplyResult | null> {
     if (!agentIsConnected(agent)) return null;
     // Reads live settings via the ref (not the closured `state`) so changes
     // like mood/topic made mid-conversation apply immediately, even while
@@ -807,12 +811,16 @@ export function ChatApp() {
         id: generateId(),
         threadId: updatedThread.id,
         agentId: agent.id,
-        content: reply,
+        content: reply.content,
         timestamp: Date.now(),
         feedback: null,
         replyToId: null,
         starred: false,
         category: null,
+        inputTokens: reply.usage.inputTokens,
+        outputTokens: reply.usage.outputTokens,
+        provider: reply.provider,
+        model: reply.model,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       setState((prev) => ({
@@ -1081,7 +1089,7 @@ export function ChatApp() {
     }
 
     if (type === 'suggest') {
-      setInputMessage(reply);
+      setInputMessage(reply.content);
       showToast('💡 Suggestion added to the composer — edit and send, or discard.');
       return;
     }
@@ -1090,12 +1098,16 @@ export function ChatApp() {
       id: generateId(),
       threadId,
       agentId: author.id,
-      content: reply,
+      content: reply.content,
       timestamp: Date.now(),
       feedback: null,
       replyToId: message.id,
       starred: false,
       category: null,
+      inputTokens: reply.usage.inputTokens,
+      outputTokens: reply.usage.outputTokens,
+      provider: reply.provider,
+      model: reply.model,
     });
   }
 
@@ -3169,6 +3181,7 @@ export function ChatApp() {
           agents={state.agents}
           threads={state.threads}
           connections={connections}
+          archives={archives}
           onClose={() => setActiveModal(null)}
         />
       )}

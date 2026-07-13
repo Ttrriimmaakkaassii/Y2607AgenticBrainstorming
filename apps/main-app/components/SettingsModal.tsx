@@ -1199,7 +1199,7 @@ export function SettingsModal({
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
                   <input
                     type="checkbox"
-                    {...devRef('ck11')}
+                    {...devRef('ck13')}
                     checked={wikiEnabled}
                     onChange={(e) => onUpdateWiki({ wikiEnabled: e.target.checked })}
                   />

@@ -1,15 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { Agent, LLMConnection, Thread } from '@/lib/types';
+import { useMemo, useState } from 'react';
+import { ArchivedConversation, Agent, LLMConnection, Thread } from '@/lib/types';
 import { fetchSubjectAnalysis } from '@/lib/llm-client';
 import { devRef } from '@/lib/devref';
 import { useOverlayClose } from '@/lib/use-overlay-close';
+import { filterByPeriod, groupByAgentAndModel, sumTokens, UsagePeriod } from '@/lib/token-stats';
 
 interface AnalyticsModalProps {
   agents: Agent[];
   threads: Thread[];
   connections: LLMConnection[];
+  archives: ArchivedConversation[];
   onClose: () => void;
 }
 
@@ -37,7 +39,7 @@ function confidenceColor(score: number): string {
   return '#e74c3c';
 }
 
-export function AnalyticsModal({ agents, threads, connections, onClose }: AnalyticsModalProps) {
+export function AnalyticsModal({ agents, threads, connections, archives, onClose }: AnalyticsModalProps) {
   const overlayClose = useOverlayClose(onClose);
   const allMessages = threads.flatMap((t) => t.messages);
   const agentMessages = allMessages.filter((m) => m.agentId !== 'user');
@@ -57,6 +59,25 @@ export function AnalyticsModal({ agents, threads, connections, onClose }: Analyt
     }
   });
   const topAgent = agents.find((a) => a.id === topAgentId);
+
+  const [usageConversationId, setUsageConversationId] = useState('all');
+  const [usagePeriod, setUsagePeriod] = useState<UsagePeriod>('all');
+
+  const usageMessages = useMemo(() => {
+    let source: typeof allMessages;
+    if (usageConversationId === 'all') {
+      source = [...archives.flatMap((a) => a.state.threads.flatMap((t) => t.messages)), ...allMessages];
+    } else if (usageConversationId === 'current') {
+      source = allMessages;
+    } else {
+      const archive = archives.find((a) => a.id === usageConversationId);
+      source = archive ? archive.state.threads.flatMap((t) => t.messages) : [];
+    }
+    return filterByPeriod(source, usagePeriod);
+  }, [usageConversationId, usagePeriod, archives, allMessages]);
+
+  const usageRows = useMemo(() => groupByAgentAndModel(usageMessages, agents), [usageMessages, agents]);
+  const usageTotals = useMemo(() => sumTokens(usageMessages), [usageMessages]);
 
   const [subjectsExpanded, setSubjectsExpanded] = useState(false);
   const [gradingAgentId, setGradingAgentId] = useState('');
@@ -152,6 +173,70 @@ export function AnalyticsModal({ agents, threads, connections, onClose }: Analyt
                 'No messages yet'
               )}
             </div>
+          </div>
+
+          <div className="modal-section" {...devRef('s25')}>
+            <div className="modal-section-title">🔢 Token Usage</div>
+            <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 10 }}>
+              Per-agent input/output token counts, snapshotted from each LLM's own response at the
+              time it replied. "All conversations" combines this conversation with every 🗄️ archived
+              one still kept — it's only as far back as archives haven't been deleted, not a
+              guaranteed permanent ledger. Messages sent before this feature existed show no usage.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              <select {...devRef('dr28')} value={usageConversationId} onChange={(e) => setUsageConversationId(e.target.value)}>
+                <option value="all">All conversations</option>
+                <option value="current">Current conversation</option>
+                {archives.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title}
+                  </option>
+                ))}
+              </select>
+              <select {...devRef('dr29')} value={usagePeriod} onChange={(e) => setUsagePeriod(e.target.value as UsagePeriod)}>
+                <option value="all">All-time</option>
+                <option value="month">This month</option>
+                <option value="week">This week</option>
+              </select>
+            </div>
+            {usageRows.length === 0 ? (
+              <div className="empty-state">No tracked token usage for this filter yet.</div>
+            ) : (
+              <div className="table-scroll">
+                <table className="agent-table">
+                  <thead>
+                    <tr>
+                      <th>Agent</th>
+                      <th>LLM</th>
+                      <th>Input</th>
+                      <th>Output</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageRows.map((row) => (
+                      <tr key={`${row.agentId}-${row.provider}-${row.model}`}>
+                        <td>{row.agentName}</td>
+                        <td>
+                          {row.provider} · {row.model}
+                        </td>
+                        <td>{row.totals.input.toLocaleString()}</td>
+                        <td>{row.totals.output.toLocaleString()}</td>
+                        <td>{row.totals.total.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ fontWeight: 600 }}>
+                      <td colSpan={2}>Total</td>
+                      <td>{usageTotals.input.toLocaleString()}</td>
+                      <td>{usageTotals.output.toLocaleString()}</td>
+                      <td>{usageTotals.total.toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="modal-section" {...devRef('s21')}>
