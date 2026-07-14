@@ -1624,6 +1624,25 @@ body.dev-mode [data-devref]::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.model-combo-price {
+  font-size: 10px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.model-combo-selected-price {
+  position: absolute;
+  left: 0;
+  bottom: -16px;
+  font-size: 10px;
+  opacity: 0.55;
+  white-space: nowrap;
 }
 
 .model-combo-item:hover,

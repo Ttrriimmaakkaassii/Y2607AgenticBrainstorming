@@ -48,44 +48,58 @@ function maskKey(key: string): string {
 }
 
 /** Model picker: a typeable text input with a VISIBLE suggestion dropdown
- *  (catalog ids + live-fetched ids, deduped, filtered by what you type).
- *  Replaces a bare <datalist>, which had no visible affordance and hid its
- *  suggestions behind text-filtering — so a pre-filled field looked empty
- *  even right after the 🔄 live fetch loaded N models. */
+ *  (catalog models, OR live-fetched ids once 🔄 has run — live fully
+ *  overrides the catalog). Replaces a bare <datalist>, which had no visible
+ *  affordance and hid its suggestions behind text-filtering — so a
+ *  pre-filled field looked empty even right after the live fetch loaded N
+ *  models. Shows per-1M-token pricing for catalog entries that have it. */
+function formatPrice(m?: { price?: { input: number; output: number }; free?: boolean }): string {
+  if (!m) return '';
+  if (m.free) return 'Free';
+  if (!m.price) return '';
+  return `$${m.price.input} in / $${m.price.output} out`;
+}
+
 function ModelCombo({
   value,
   onChange,
-  suggestions,
+  catalogModels,
+  liveIds,
   loading,
   onRefresh,
   refreshTitle,
   placeholder,
-  inputRef,
   inputProps,
 }: {
   value: string;
   onChange: (v: string) => void;
-  suggestions: string[];
+  catalogModels: { id: string; label?: string; price?: { input: number; output: number }; free?: boolean }[];
+  liveIds: string[];
   loading: boolean;
   onRefresh: () => void;
   refreshTitle: string;
   placeholder?: string;
-  inputRef?: React.Ref<HTMLInputElement>;
   inputProps?: Record<string, unknown>;
 }) {
   const [open, setOpen] = useState(false);
+  const usingLive = liveIds.length > 0;
+  // Each dropdown row: id + (price, only available for catalog entries).
+  type Row = { id: string; priceLabel?: string };
+  const allRows: Row[] = usingLive
+    ? liveIds.map((id) => ({ id }))
+    : catalogModels.map((m) => ({ id: m.id, priceLabel: formatPrice(m as { price?: { input: number; output: number }; free?: boolean }) }));
   const filter = value.trim().toLowerCase();
   const seen = new Set<string>();
-  const filtered = suggestions.filter((id) => {
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return !filter || id.toLowerCase().includes(filter);
+  const filtered = allRows.filter((r) => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return !filter || r.id.toLowerCase().includes(filter);
   });
+  const selectedCatalog = usingLive ? undefined : catalogModels.find((m) => m.id === value);
   return (
     <div className="model-combo">
       <input
         {...(inputProps ?? {})}
-        ref={inputRef}
         className="control-input"
         value={value}
         placeholder={placeholder}
@@ -106,19 +120,20 @@ function ModelCombo({
           {filtered.length === 0 ? (
             <div className="model-combo-empty">No models match — type your own and it&apos;ll be used as-is.</div>
           ) : (
-            filtered.map((id) => (
+            filtered.map((r) => (
               <div
-                key={id}
+                key={r.id}
                 className="model-combo-item"
                 // mousedown (not click) + preventDefault so the input's
                 // onBlur doesn't close the menu before the selection lands.
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onChange(id);
+                  onChange(r.id);
                   setOpen(false);
                 }}
               >
-                {id}
+                <span>{r.id}</span>
+                {r.priceLabel && <span className="model-combo-price">{r.priceLabel}</span>}
               </div>
             ))
           )}
@@ -134,6 +149,9 @@ function ModelCombo({
       >
         {loading ? '…' : '🔄'}
       </button>
+      {!usingLive && selectedCatalog && (formatPrice(selectedCatalog as { price?: { input: number; output: number }; free?: boolean })) && (
+        <div className="model-combo-selected-price">{formatPrice(selectedCatalog as { price?: { input: number; output: number }; free?: boolean })} / 1M tokens</div>
+      )}
     </div>
   );
 }
@@ -564,11 +582,8 @@ export function LLMProvidersModal({
                 inputProps={devRef('dr9')}
                 value={model}
                 onChange={setModel}
-                suggestions={
-                  liveModels.length > 0
-                    ? liveModels
-                    : selectedProviderInfo?.models.map((m) => m.id) ?? []
-                }
+                catalogModels={selectedProviderInfo?.models ?? []}
+                liveIds={liveModels}
                 loading={liveModelsLoading}
                 onRefresh={loadLiveModels}
                 refreshTitle="Fetch the exact models your API key can access from the provider"
@@ -638,11 +653,8 @@ export function LLMProvidersModal({
                       inputProps={devRef('dr26', ci)}
                       value={editModel}
                       onChange={setEditModel}
-                      suggestions={
-                        (editLiveModels[c.id]?.length ?? 0) > 0
-                          ? editLiveModels[c.id]!
-                          : editProviderInfo?.models.map((m) => m.id) ?? []
-                      }
+                      catalogModels={editProviderInfo?.models ?? []}
+                      liveIds={editLiveModels[c.id] ?? []}
                       loading={editLiveModelsLoadingId === c.id}
                       onRefresh={() => loadEditLiveModels(c)}
                       refreshTitle="Fetch the exact models this connection's key can access"

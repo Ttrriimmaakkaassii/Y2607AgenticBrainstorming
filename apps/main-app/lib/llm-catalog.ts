@@ -4,6 +4,10 @@ export interface ModelInfo {
   id: string;
   label: string;
   supportsEffort: boolean;
+  /** USD per 1M tokens, when known — shown in the picker to help choose. Cached input price is optional. */
+  price?: { input: number; output: number; cachedInput?: number };
+  /** True for free-tier models (price omitted). */
+  free?: boolean;
 }
 
 export interface ProviderInfo {
@@ -111,13 +115,20 @@ export const LLM_CATALOG: ProviderInfo[] = [
     endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     modelsEndpoint: 'https://open.bigmodel.cn/api/paas/v4/models',
     models: [
-      { id: 'glm-5.2', label: 'GLM-5.2 (current flagship)', supportsEffort: false },
-      { id: 'glm-5.1', label: 'GLM-5.1 (agentic reasoning)', supportsEffort: false },
-      { id: 'glm-4.7', label: 'GLM-4.7', supportsEffort: false },
-      { id: 'glm-4.7-flash', label: 'GLM-4.7 Flash', supportsEffort: false },
-      { id: 'glm-4.6', label: 'GLM-4.6', supportsEffort: false },
-      { id: 'glm-4.5', label: 'GLM-4.5 (agent foundation)', supportsEffort: false },
-      { id: 'glm-4.5-air', label: 'GLM-4.5 Air (lightweight)', supportsEffort: false },
+      { id: 'glm-5.2', label: 'GLM-5.2 (flagship)', supportsEffort: false, price: { input: 1.4, output: 4.4, cachedInput: 0.26 } },
+      { id: 'glm-5.1', label: 'GLM-5.1', supportsEffort: false, price: { input: 1.4, output: 4.4, cachedInput: 0.26 } },
+      { id: 'glm-5-turbo', label: 'GLM-5 Turbo', supportsEffort: false, price: { input: 1.2, output: 4.0, cachedInput: 0.24 } },
+      { id: 'glm-5', label: 'GLM-5', supportsEffort: false, price: { input: 1.0, output: 3.2, cachedInput: 0.2 } },
+      { id: 'glm-4.7', label: 'GLM-4.7', supportsEffort: false, price: { input: 0.6, output: 2.2, cachedInput: 0.11 } },
+      { id: 'glm-4.7-flashx', label: 'GLM-4.7 FlashX (cheap)', supportsEffort: false, price: { input: 0.07, output: 0.4, cachedInput: 0.01 } },
+      { id: 'glm-4.7-flash', label: 'GLM-4.7 Flash', supportsEffort: false, free: true },
+      { id: 'glm-4.6', label: 'GLM-4.6', supportsEffort: false, price: { input: 0.6, output: 2.2, cachedInput: 0.11 } },
+      { id: 'glm-4.5', label: 'GLM-4.5 (agent foundation)', supportsEffort: false, price: { input: 0.6, output: 2.2, cachedInput: 0.11 } },
+      { id: 'glm-4.5-x', label: 'GLM-4.5 X', supportsEffort: false, price: { input: 2.2, output: 8.9, cachedInput: 0.45 } },
+      { id: 'glm-4.5-air', label: 'GLM-4.5 Air (lightweight)', supportsEffort: false, price: { input: 0.2, output: 1.1, cachedInput: 0.03 } },
+      { id: 'glm-4.5-airx', label: 'GLM-4.5 AirX', supportsEffort: false, price: { input: 1.1, output: 4.5, cachedInput: 0.22 } },
+      { id: 'glm-4.5-flash', label: 'GLM-4.5 Flash', supportsEffort: false, free: true },
+      { id: 'glm-4-32b-0414-128k', label: 'GLM-4 32B (128K context)', supportsEffort: false, price: { input: 0.1, output: 0.1 } },
     ],
   },
   {
