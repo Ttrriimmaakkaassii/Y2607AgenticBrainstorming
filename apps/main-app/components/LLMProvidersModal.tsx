@@ -469,7 +469,7 @@ export function LLMProvidersModal({
             </div>
             <div className="form-group">
               <label>Model (pick one or type your own)</label>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div className="model-combo">
                 <input
                   {...devRef('dr9')}
                   className="control-input"
@@ -477,7 +477,6 @@ export function LLMProvidersModal({
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder={selectedProviderInfo?.models[0]?.id ?? 'model id'}
-                  style={{ flex: 1 }}
                 />
                 <datalist id="llm-model-list">
                   {(liveModels.length > 0 ? liveModels : selectedProviderInfo?.models.map((m) => m.id) ?? []).map(
@@ -488,7 +487,7 @@ export function LLMProvidersModal({
                 </datalist>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-secondary model-refresh-btn"
                   onClick={loadLiveModels}
                   disabled={liveModelsLoading}
                   title="Fetch the exact models your API key can access from the provider"
@@ -556,14 +555,13 @@ export function LLMProvidersModal({
                   </div>
                   <div className="form-group compact-field">
                     <label>Model</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div className="model-combo">
                       <input
                         {...devRef('dr26', ci)}
                         className="control-input"
                         list={`llm-edit-model-list-${c.id}`}
                         value={editModel}
                         onChange={(e) => setEditModel(e.target.value)}
-                        style={{ flex: 1, minWidth: 0 }}
                       />
                       <datalist id={`llm-edit-model-list-${c.id}`}>
                         {((editLiveModels[c.id]?.length ?? 0) > 0
@@ -575,7 +573,7 @@ export function LLMProvidersModal({
                       </datalist>
                       <button
                         type="button"
-                        className="btn-secondary"
+                        className="btn-secondary model-refresh-btn"
                         onClick={() => loadEditLiveModels(c)}
                         disabled={editLiveModelsLoadingId === c.id}
                         title="Fetch the exact models this connection's key can access"

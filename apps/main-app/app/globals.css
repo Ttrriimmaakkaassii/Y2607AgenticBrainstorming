@@ -1540,6 +1540,32 @@ body.dev-mode [data-devref]::after {
   margin-bottom: 8px;
 }
 
+/* Model combobox: a text input (pick or type) + a small 🔄 live-fetch
+   button. The default .btn-secondary is full-width/tall, which made the
+   refresh button dwarf the model field — this layout makes the input
+   dominate and shrinks the button to a compact icon that matches the
+   input's height. */
+.model-combo {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.model-combo .control-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model-refresh-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 34px;
+  padding: 4px 8px;
+  margin-bottom: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .btn-secondary:hover {
   background: var(--border-color);
 }
