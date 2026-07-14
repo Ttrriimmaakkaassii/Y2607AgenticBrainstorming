@@ -104,7 +104,11 @@ export function validateSearchRequest(body: unknown): WebSearchRequestBody | { e
   return {
     query: b.query.trim(),
     maxResults: (b.maxResults as number | undefined) ?? 6,
-    searchDepth: (b.searchDepth as 'basic' | 'advanced' | undefined) ?? 'advanced',
+    // Default to "basic" depth — Tavily's dev/free keys (tvly-dev-) reject
+    // "advanced" with HTTP 403, which read as "agent failed to respond" once
+    // the retry loop exhausted. Basic still returns ranked results and costs
+    // fewer credits; advanced is opt-in only if the client explicitly asks.
+    searchDepth: (b.searchDepth as 'basic' | 'advanced' | undefined) ?? 'basic',
     topic: (b.topic as 'general' | 'news' | undefined) ?? 'general',
     includeDomains: (b.includeDomains as string[] | undefined) ?? [],
     excludeDomains: (b.excludeDomains as string[] | undefined) ?? [],

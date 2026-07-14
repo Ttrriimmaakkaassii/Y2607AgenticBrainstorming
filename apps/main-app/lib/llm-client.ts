@@ -336,6 +336,10 @@ async function callOpenAICompatibleDirect(
 ): Promise<DirectCallResult | null> {
   const provider = getProvider(connection.provider);
   if (!provider) return null;
+  // Captured into a local so the `request` closure below can use it — TS
+  // doesn't carry the !provider narrowing into nested function bodies, so
+  // `provider.endpoint` inside the closure would read as possibly-undefined.
+  const endpoint = provider.endpoint;
   const modelInfo = getModel(connection.provider, connection.model);
 
   const messages: Record<string, unknown>[] = [
@@ -346,34 +350,55 @@ async function callOpenAICompatibleDirect(
   let inputTokens = 0;
   let outputTokens = 0;
 
-  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+  // Builds + sends one request, with or without tools. Returns the parsed
+  // body, or null if the provider rejected the call (non-2xx / network).
+  async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = {
       model: connection.model,
       messages,
       max_tokens: 500,
     };
     if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
-    if (toolsEnabled) {
+    if (withTools) {
       body.tools = [OPENAI_WEB_SEARCH_TOOL, OPENAI_BROWSE_URL_TOOL];
       body.tool_choice = 'auto';
     }
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${connection.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
 
-    const res = await fetch(provider.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${connection.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
+  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+    // On the final allowed round, drop tools entirely so the model is forced
+    // to produce a text answer — this is what keeps a 🌐 agent from dying as
+    // "failed to respond" when its web backend is rejecting every call
+    // (e.g. a bad Tavily key returning 403): the model would otherwise keep
+    // retrying the tool until the loop exhausts, then return nothing.
+    const finalRound = round === MAX_TOOL_CALLS_PER_AGENT_TURN;
+    const withTools = toolsEnabled && !finalRound;
+
+    let data = await request(withTools);
+    // Some models/providers reject the tools payload outright (400). Fall
+    // back to a plain no-tools request so the agent still answers.
+    if (data === null && withTools) data = await request(false);
+    if (data === null) return null;
     inputTokens += data.usage?.prompt_tokens ?? 0;
     outputTokens += data.usage?.completion_tokens ?? 0;
 
     const message = data.choices?.[0]?.message;
     const toolCalls = message?.tool_calls;
-    if (toolsEnabled && Array.isArray(toolCalls) && toolCalls.length > 0 && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
+    if (withTools && Array.isArray(toolCalls) && toolCalls.length > 0) {
       messages.push({ role: 'assistant', content: message.content ?? null, tool_calls: toolCalls });
       for (const toolCall of toolCalls) {
         let parsedArgs: Record<string, unknown> = {};
@@ -391,7 +416,13 @@ async function callOpenAICompatibleDirect(
     }
 
     const content = message?.content?.trim();
-    if (!content) return null;
+    if (!content) {
+      // No text and no tool call this round — if rounds remain, try again
+      // rather than giving up; on the final round this genuinely means the
+      // model returned nothing.
+      if (!finalRound) continue;
+      return null;
+    }
     return { content, usage: { inputTokens, outputTokens }, ...evidence };
   }
   return null;
@@ -410,7 +441,7 @@ async function callAnthropicDirect(
   let inputTokens = 0;
   let outputTokens = 0;
 
-  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+  async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = {
       model: connection.model,
       max_tokens: 500,
@@ -420,25 +451,40 @@ async function callAnthropicDirect(
     if (modelInfo?.supportsEffort) {
       body.thinking = { type: 'enabled', budget_tokens: effortToBudgetTokens(connection.effort) };
     }
-    if (toolsEnabled) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL];
+    if (withTools) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL];
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': connection.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': connection.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
+  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+    // Final round forces no-tools so the model must produce a text answer
+    // (see callOpenAICompatibleDirect for why this matters when a web
+    // backend is rejecting calls).
+    const finalRound = round === MAX_TOOL_CALLS_PER_AGENT_TURN;
+    const withTools = toolsEnabled && !finalRound;
+
+    let data = await request(withTools);
+    if (data === null && withTools) data = await request(false);
+    if (data === null) return null;
     inputTokens += data.usage?.input_tokens ?? 0;
     outputTokens += data.usage?.output_tokens ?? 0;
 
     const toolUseBlocks = (data.content ?? []).filter((b: any) => b.type === 'tool_use');
-    if (toolsEnabled && toolUseBlocks.length > 0 && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
+    if (withTools && toolUseBlocks.length > 0) {
       messages.push({ role: 'assistant', content: data.content });
       const resultBlocks: Record<string, unknown>[] = [];
       for (const block of toolUseBlocks) {
@@ -451,7 +497,10 @@ async function callAnthropicDirect(
 
     const textBlock = (data.content ?? []).find((block: any) => block.type === 'text');
     const content = textBlock?.text?.trim();
-    if (!content) return null;
+    if (!content) {
+      if (!finalRound) continue;
+      return null;
+    }
     return { content, usage: { inputTokens, outputTokens }, ...evidence };
   }
   return null;
@@ -472,31 +521,46 @@ async function callGoogleDirect(
   let inputTokens = 0;
   let outputTokens = 0;
 
-  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+  async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = { contents };
     if (modelInfo?.supportsEffort) {
       body.generationConfig = {
         thinkingConfig: { thinkingBudget: effortToBudgetTokens(connection.effort) },
       };
     }
-    if (toolsEnabled) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL] }];
+    if (withTools) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL] }];
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
+  for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
+    // Final round forces no-tools so the model must produce a text answer
+    // (see callOpenAICompatibleDirect for why this matters when a web
+    // backend is rejecting calls).
+    const finalRound = round === MAX_TOOL_CALLS_PER_AGENT_TURN;
+    const withTools = toolsEnabled && !finalRound;
+
+    let data = await request(withTools);
+    if (data === null && withTools) data = await request(false);
+    if (data === null) return null;
     inputTokens += data.usageMetadata?.promptTokenCount ?? 0;
     outputTokens += data.usageMetadata?.candidatesTokenCount ?? 0;
 
     const candidateParts: any[] = data.candidates?.[0]?.content?.parts ?? [];
     const functionCallPart = candidateParts.find((p) => p.functionCall);
-    if (toolsEnabled && functionCallPart && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
+    if (withTools && functionCallPart) {
       contents.push({ role: 'model', parts: candidateParts });
       const toolName = functionCallPart.functionCall.name;
       const evidenceJson = await executeToolCall(toolName, functionCallPart.functionCall.args, accessToken, evidence);
@@ -508,7 +572,10 @@ async function callGoogleDirect(
     }
 
     const content = candidateParts.find((p) => p.text)?.text?.trim();
-    if (!content) return null;
+    if (!content) {
+      if (!finalRound) continue;
+      return null;
+    }
     return { content, usage: { inputTokens, outputTokens }, ...evidence };
   }
   return null;
