@@ -24,6 +24,7 @@ import { GEMINI_TTS_VOICES } from '@/lib/google-tts';
 import { generateId } from '@/lib/id';
 import { downloadHtmlAsJpeg } from '@/lib/rasterize-svg';
 import { useAuthContext } from '@/lib/auth-context';
+import { fetchWebAccessStatus, type WebAccessStatus } from '@/lib/web-access-status';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
 import { useOverlayClose } from '@/lib/use-overlay-close';
@@ -246,6 +247,20 @@ export function SettingsModal({
     setGoogleVoiceName(currentAgent.googleVoiceName ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAgentId]);
+  // Whether each web-access backend's secret is present on the deployment
+  // (presence only — the status endpoint never exposes values). Fetched once
+  // when the modal opens so the 🌐 toggle area can show what's actually
+  // wired up, not just what's enabled per-agent.
+  const [webAccessStatus, setWebAccessStatus] = useState<WebAccessStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchWebAccessStatus().then((s) => {
+      if (!cancelled) setWebAccessStatus(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -791,6 +806,24 @@ export function SettingsModal({
                     />
                     🌐 Allow internet access (browse a specific URL){!auth && ' — requires sign-in'}
                   </label>
+                  <div className="web-access-status" {...devRef('s32')}>
+                    <span className="web-access-status-title">🔧 Web Access status</span>
+                    <span className={`web-access-dot ${webAccessStatus?.searchConfigured ? 'ok' : 'no'}`} title="Tavily search key (web_search discovery tool)">
+                      {webAccessStatus?.searchConfigured ? '✅' : '❌'} Search (Tavily)
+                    </span>
+                    <span className={`web-access-dot ${webAccessStatus?.browseConfigured ? 'ok' : 'no'}`} title="Cloudflare Browser Rendering token + account id (browse_url scrape tool)">
+                      {webAccessStatus?.browseConfigured ? '✅' : '❌'} Browse (Cloudflare)
+                    </span>
+                    <span className={`web-access-dot ${webAccessStatus?.authConfigured ? 'ok' : 'no'}`} title="Supabase auth — required to use either tool; without a signed-in session both degrade to unavailable">
+                      {webAccessStatus?.authConfigured ? '✅' : '❌'} Sign-in
+                    </span>
+                    {webAccessStatus && (!webAccessStatus.searchConfigured || !webAccessStatus.browseConfigured || !webAccessStatus.authConfigured) && (
+                      <span className="web-access-status-hint">
+                        Missing keys are set as Cloudflare Pages secrets — see the setup notes. Agents with 🌐 on will
+                        honestly report &quot;unavailable&quot; for any backend not yet wired up rather than fabricate.
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="form-group">
                   <label>Skill Categories (assign as many as you like)</label>

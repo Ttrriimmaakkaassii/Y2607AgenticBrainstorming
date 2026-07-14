@@ -11,6 +11,7 @@ import {
   ResponseStyle,
 } from './types';
 import { callBrowseUrlTool } from './web-browse';
+import { callWebSearchTool } from './web-search';
 
 /** One successful browse_url call's worth of evidence — mirrors `Message.webBrowses` (see lib/types.ts), attached to whichever agent reply triggered it. */
 export interface BrowseEvidence {
@@ -19,15 +20,43 @@ export interface BrowseEvidence {
   browsedAt: string;
 }
 
+/** One successful web_search call's worth of evidence — mirrors `Message.webSearches` (see lib/types.ts). */
+export interface WebSearchEvidence {
+  query: string;
+  resultCount: number;
+  sources: { title: string; url: string }[];
+  searchedAt: string;
+}
+
 const MAX_TOOL_CALLS_PER_AGENT_TURN = 4;
 
-// Cloudflare Browser Rendering (the backend behind this tool — see
-// functions/api/research/browse.ts) has no search-by-query endpoint, only
-// fetch/render a URL you already have. So this is "open this specific
-// page", not "search the web for X" — the model has to know or guess the
-// right URL itself.
+// Two complementary tools, matching how real research actually works:
+// search discovers candidate URLs from a query (Tavily — cheap, fast,
+// ranked snippets), browse then reads one of those URLs in full (Cloudflare
+// Browser Rendering — a real headless browser, slower, complete content).
+// Neither one substitutes for the other: search alone gives only snippets,
+// and browse alone requires already knowing the right URL.
+const WEB_SEARCH_DESCRIPTION =
+  'Search the public internet for current or externally verifiable information. Returns titles, URLs, snippets, and relevance scores for CANDIDATE pages — it does not give you the full page content. Use this first to find the right URL(s), then use browse_url on the most relevant result(s) to read the actual content before making claims.';
+
 const BROWSE_URL_DESCRIPTION =
-  "Open a specific web page and return its readable content (rendered by a real headless browser, so it works on JS-heavy sites too). This is NOT a search engine — you must supply an exact URL you already believe is correct (e.g. a company's official domain, a GitHub repo URL). Use this before making claims about a specific external site's current content, and cite the URL you actually browsed.";
+  "Open ONE specific web page and return its full readable content (rendered by a real headless browser, so it works on JS-heavy sites too). This is NOT a search engine — pass an exact URL, either one you already know (e.g. a company's official domain) or one returned by a prior web_search call. Use this before making claims about a specific external page's actual content, and cite the URL you actually browsed.";
+
+const OPENAI_WEB_SEARCH_TOOL = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description: WEB_SEARCH_DESCRIPTION,
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'A precise, self-contained internet search query.' },
+        maxResults: { type: 'integer', minimum: 1, maximum: 10 },
+      },
+      required: ['query'],
+    },
+  },
+};
 
 const OPENAI_BROWSE_URL_TOOL = {
   type: 'function',
@@ -44,6 +73,19 @@ const OPENAI_BROWSE_URL_TOOL = {
   },
 };
 
+const ANTHROPIC_WEB_SEARCH_TOOL = {
+  name: 'web_search',
+  description: WEB_SEARCH_DESCRIPTION,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'A precise, self-contained internet search query.' },
+      maxResults: { type: 'integer', minimum: 1, maximum: 10 },
+    },
+    required: ['query'],
+  },
+};
+
 const ANTHROPIC_BROWSE_URL_TOOL = {
   name: 'browse_url',
   description: BROWSE_URL_DESCRIPTION,
@@ -53,6 +95,19 @@ const ANTHROPIC_BROWSE_URL_TOOL = {
       url: { type: 'string', description: 'The exact, fully-formed URL to open (including https://).' },
     },
     required: ['url'],
+  },
+};
+
+const GOOGLE_WEB_SEARCH_TOOL = {
+  name: 'web_search',
+  description: WEB_SEARCH_DESCRIPTION,
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'A precise, self-contained internet search query.' },
+      maxResults: { type: 'integer' },
+    },
+    required: ['query'],
   },
 };
 
@@ -68,19 +123,40 @@ const GOOGLE_BROWSE_URL_TOOL = {
   },
 };
 
-/** Executes one model-requested browse_url call and records its evidence — shared by all three providers, each of which hands over the tool call's arguments already parsed into a plain object (OpenAI's are a JSON string and get parsed by the caller first). */
-async function executeBrowseUrlToolCall(
-  args: { url?: string } | undefined,
+interface ToolEvidence {
+  webSearches: WebSearchEvidence[];
+  webBrowses: BrowseEvidence[];
+}
+
+/** Dispatches one model-requested tool call (by name) to the right backend and records its evidence — shared by all three providers, each of which hands over the tool call's name + arguments already parsed into a plain object (OpenAI's arguments are a JSON string and get parsed by the caller first). */
+async function executeToolCall(
+  name: string,
+  args: Record<string, unknown> | undefined,
   accessToken: string | null,
-  evidence: BrowseEvidence[]
+  evidence: ToolEvidence
 ): Promise<string> {
-  const url = typeof args?.url === 'string' ? args.url : '';
-  const result = await callBrowseUrlTool({ url }, accessToken);
+  if (name === 'browse_url') {
+    const url = typeof args?.url === 'string' ? args.url : '';
+    const result = await callBrowseUrlTool({ url }, accessToken);
+    if (result.ok) {
+      evidence.webBrowses.push({ url: result.url, contentLength: result.content.length, browsedAt: result.browsedAt });
+    }
+    return JSON.stringify(result);
+  }
+  // Default to web_search for any other/unrecognized name rather than
+  // silently no-op'ing — a model that gets the tool name slightly wrong
+  // should still get a real (if possibly empty) result to react to.
+  const query = typeof args?.query === 'string' ? args.query : '';
+  const result = await callWebSearchTool(
+    { query, maxResults: typeof args?.maxResults === 'number' ? args.maxResults : undefined },
+    accessToken
+  );
   if (result.ok) {
-    evidence.push({
-      url: result.url,
-      contentLength: result.content.length,
-      browsedAt: result.browsedAt,
+    evidence.webSearches.push({
+      query: result.query,
+      resultCount: result.results.length,
+      sources: result.results.map((r) => ({ title: r.title, url: r.url })),
+      searchedAt: result.searchedAt,
     });
   }
   return JSON.stringify(result);
@@ -164,15 +240,15 @@ const NO_FABRICATION_INSTRUCTION =
   ' You have no ability to browse the web, fetch URLs, run code, or call any external tool — you only have your own training knowledge and this conversation\'s transcript. Never claim or imply you performed an action you cannot actually do (e.g. "fetching the site now", "here is the raw HTML I retrieved", "I checked the repo"). If a task genuinely requires live or external information you don\'t have, say so plainly in your reply and answer only from general training knowledge, explicitly labeled as unverified/approximate — never presented as a retrieved fact.';
 
 // For agents with webSearchEnabled, the above is no longer true — they DO
-// have a real tool now (see the tool-calling loop spread across the three
-// callXDirect functions) — so they get this instead. Note this is a
-// browse_url tool (open one specific page), not a search engine — there's
-// no way to discover a URL from a text query, only fetch one already known.
-const BROWSE_CAPABILITY_INSTRUCTION =
-  " You have access to a real browse_url tool that opens a specific web page and returns its content — it is NOT a search engine, so you must supply an exact URL you believe is correct (e.g. a company's own domain, a GitHub repo URL) rather than a search query. Call it immediately when the assignment needs external or current information from a known site — do not announce that you're about to browse, do not ask another agent to do it, do not simulate results. Cite the exact URL you actually opened for every material claim. If the browse fails or is unavailable, say so exactly rather than guessing.";
+// have two real, complementary tools now (see the tool-calling loop spread
+// across the three callXDirect functions): web_search finds candidate
+// pages from a query, browse_url reads one specific page in full. Neither
+// substitutes for the other.
+const WEB_ACCESS_CAPABILITY_INSTRUCTION =
+  " You have access to two real tools: web_search (find candidate pages from a query — titles/URLs/snippets only, not full content) and browse_url (open one specific page and read its full content). Call web_search immediately when the assignment needs external or current information and you don't already know the right URL; then call browse_url on the most relevant result(s) before making claims about their actual content. If you already know the right URL, you can call browse_url directly without searching first. Do not announce that you're about to search/browse, do not ask another agent to do it, do not simulate results. Cite the exact URL for every material claim. If a tool call fails or is unavailable, say so exactly rather than guessing.";
 
 function capabilityInstruction(webSearchEnabled: boolean): string {
-  return webSearchEnabled ? BROWSE_CAPABILITY_INSTRUCTION : NO_FABRICATION_INSTRUCTION;
+  return webSearchEnabled ? WEB_ACCESS_CAPABILITY_INSTRUCTION : NO_FABRICATION_INSTRUCTION;
 }
 
 // The second-biggest reported failure mode: multiple agents spending many
@@ -240,6 +316,7 @@ export interface UsageInfo {
 interface DirectCallResult {
   content: string;
   usage: UsageInfo;
+  webSearches: WebSearchEvidence[];
   webBrowses: BrowseEvidence[];
 }
 
@@ -265,7 +342,7 @@ async function callOpenAICompatibleDirect(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
   ];
-  const webBrowses: BrowseEvidence[] = [];
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [] };
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -277,7 +354,7 @@ async function callOpenAICompatibleDirect(
     };
     if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
     if (toolsEnabled) {
-      body.tools = [OPENAI_BROWSE_URL_TOOL];
+      body.tools = [OPENAI_WEB_SEARCH_TOOL, OPENAI_BROWSE_URL_TOOL];
       body.tool_choice = 'auto';
     }
 
@@ -303,11 +380,11 @@ async function callOpenAICompatibleDirect(
         try {
           parsedArgs = toolCall.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
         } catch {
-          // Malformed arguments — executeBrowseUrlToolCall below just gets an
-          // empty query, which the search endpoint rejects with a structured
+          // Malformed arguments — executeToolCall below just gets an empty
+          // query/url, which the backend rejects with a structured
           // INVALID_REQUEST the model can see and react to.
         }
-        const evidenceJson = await executeBrowseUrlToolCall(parsedArgs, accessToken, webBrowses);
+        const evidenceJson = await executeToolCall(toolCall.function?.name, parsedArgs, accessToken, evidence);
         messages.push({ role: 'tool', tool_call_id: toolCall.id, content: evidenceJson });
       }
       continue;
@@ -315,7 +392,7 @@ async function callOpenAICompatibleDirect(
 
     const content = message?.content?.trim();
     if (!content) return null;
-    return { content, usage: { inputTokens, outputTokens }, webBrowses };
+    return { content, usage: { inputTokens, outputTokens }, ...evidence };
   }
   return null;
 }
@@ -329,7 +406,7 @@ async function callAnthropicDirect(
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('anthropic', connection.model);
   const messages: Record<string, unknown>[] = [{ role: 'user', content: userPrompt }];
-  const webBrowses: BrowseEvidence[] = [];
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [] };
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -343,7 +420,7 @@ async function callAnthropicDirect(
     if (modelInfo?.supportsEffort) {
       body.thinking = { type: 'enabled', budget_tokens: effortToBudgetTokens(connection.effort) };
     }
-    if (toolsEnabled) body.tools = [ANTHROPIC_BROWSE_URL_TOOL];
+    if (toolsEnabled) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL];
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -365,7 +442,7 @@ async function callAnthropicDirect(
       messages.push({ role: 'assistant', content: data.content });
       const resultBlocks: Record<string, unknown>[] = [];
       for (const block of toolUseBlocks) {
-        const evidenceJson = await executeBrowseUrlToolCall(block.input, accessToken, webBrowses);
+        const evidenceJson = await executeToolCall(block.name, block.input, accessToken, evidence);
         resultBlocks.push({ type: 'tool_result', tool_use_id: block.id, content: evidenceJson });
       }
       messages.push({ role: 'user', content: resultBlocks });
@@ -375,7 +452,7 @@ async function callAnthropicDirect(
     const textBlock = (data.content ?? []).find((block: any) => block.type === 'text');
     const content = textBlock?.text?.trim();
     if (!content) return null;
-    return { content, usage: { inputTokens, outputTokens }, webBrowses };
+    return { content, usage: { inputTokens, outputTokens }, ...evidence };
   }
   return null;
 }
@@ -391,7 +468,7 @@ async function callGoogleDirect(
   const contents: Record<string, unknown>[] = [
     { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] },
   ];
-  const webBrowses: BrowseEvidence[] = [];
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [] };
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -402,7 +479,7 @@ async function callGoogleDirect(
         thinkingConfig: { thinkingBudget: effortToBudgetTokens(connection.effort) },
       };
     }
-    if (toolsEnabled) body.tools = [{ functionDeclarations: [GOOGLE_BROWSE_URL_TOOL] }];
+    if (toolsEnabled) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL] }];
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
@@ -421,17 +498,18 @@ async function callGoogleDirect(
     const functionCallPart = candidateParts.find((p) => p.functionCall);
     if (toolsEnabled && functionCallPart && round < MAX_TOOL_CALLS_PER_AGENT_TURN) {
       contents.push({ role: 'model', parts: candidateParts });
-      const evidenceJson = await executeBrowseUrlToolCall(functionCallPart.functionCall.args, accessToken, webBrowses);
+      const toolName = functionCallPart.functionCall.name;
+      const evidenceJson = await executeToolCall(toolName, functionCallPart.functionCall.args, accessToken, evidence);
       contents.push({
         role: 'function',
-        parts: [{ functionResponse: { name: 'web_search', response: JSON.parse(evidenceJson) } }],
+        parts: [{ functionResponse: { name: toolName, response: JSON.parse(evidenceJson) } }],
       });
       continue;
     }
 
     const content = candidateParts.find((p) => p.text)?.text?.trim();
     if (!content) return null;
-    return { content, usage: { inputTokens, outputTokens }, webBrowses };
+    return { content, usage: { inputTokens, outputTokens }, ...evidence };
   }
   return null;
 }
@@ -471,6 +549,7 @@ export interface AgentReplyResult {
   usage: UsageInfo;
   provider: LLMProvider;
   model: string;
+  webSearches?: WebSearchEvidence[];
   webBrowses?: BrowseEvidence[];
 }
 
@@ -519,6 +598,7 @@ export async function fetchAgentReply(
     usage: result.usage,
     provider: connection.provider,
     model: connection.model,
+    webSearches: result.webSearches.length > 0 ? result.webSearches : undefined,
     webBrowses: result.webBrowses.length > 0 ? result.webBrowses : undefined,
   };
 }

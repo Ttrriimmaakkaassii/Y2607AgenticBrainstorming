@@ -1049,6 +1049,41 @@ mark.search-match {
   margin-bottom: 4px;
 }
 
+/* Settings > Agent "🔧 Web Access status" strip — shows which web-access
+   backends have their secret configured on this deployment. */
+.web-access-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.web-access-status-title {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.web-access-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.web-access-dot.no {
+  opacity: 0.75;
+}
+
+.web-access-status-hint {
+  flex-basis: 100%;
+  opacity: 0.65;
+  line-height: 1.35;
+}
+
 .bubble-search-evidence-toggle {
   font-size: 11px;
   color: var(--text-secondary);

@@ -731,6 +731,7 @@ export function ChatApp() {
         outputTokens: seedReply.usage.outputTokens,
         provider: seedReply.provider,
         model: seedReply.model,
+        webSearches: seedReply.webSearches,
         webBrowses: seedReply.webBrowses,
       });
     }
