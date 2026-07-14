@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { LLM_CATALOG, getProvider } from '@/lib/llm-catalog';
+import { fetchProviderModels } from '@/lib/fetch-models';
 import { Agent, Effort, LLMConnection, LLMProvider } from '@/lib/types';
 import { generateId } from '@/lib/id';
 import { loadCustomAgents, renameCustomAgent } from '@/lib/custom-agents';
@@ -89,11 +90,19 @@ export function LLMProvidersModal({
   const [effort, setEffort] = useState<Effort>('medium');
   const [apiKey, setApiKey] = useState('');
   const [label, setLabel] = useState('');
+  // Live model IDs fetched from the provider's /models endpoint using the
+  // entered key — merged into the datalist so the user can pick the exact
+  // models their key allows, or type any custom ID. Empty = fall back to the
+  // hardcoded catalog list.
+  const [liveModels, setLiveModels] = useState<string[]>([]);
+  const [liveModelsLoading, setLiveModelsLoading] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editProvider, setEditProvider] = useState<LLMProvider>('openai');
   const [editModel, setEditModel] = useState('');
   const [editEffort, setEditEffort] = useState<Effort>('medium');
+  const [editLiveModels, setEditLiveModels] = useState<Record<string, string[]>>({});
+  const [editLiveModelsLoadingId, setEditLiveModelsLoadingId] = useState<string | null>(null);
   const [editApiKey, setEditApiKey] = useState('');
   const [editLabel, setEditLabel] = useState('');
 
@@ -156,6 +165,37 @@ export function LLMProvidersModal({
     const ok = await testConnection(connection);
     setConnectionTestStatus((prev) => ({ ...prev, [connection.id]: ok ? 'ok' : 'fail' }));
     onToast(ok ? `✅ ${connection.label} is working` : `❌ ${connection.label} failed — check the key/model`);
+  }
+
+  /** Pull the live model list from the provider using the add-form's entered key, so the dropdown shows exactly what the key can use. */
+  async function loadLiveModels() {
+    const trimmed = apiKey.trim();
+    if (!trimmed) {
+      onToast('Enter an API key first to load live models.');
+      return;
+    }
+    setLiveModelsLoading(true);
+    const ids = await fetchProviderModels(provider, trimmed);
+    setLiveModelsLoading(false);
+    if (ids.length === 0) {
+      onToast('Could not load live models (CORS, bad key, or provider blocked it) — the catalog list still works.');
+      return;
+    }
+    setLiveModels(ids);
+    onToast(`Loaded ${ids.length} model(s) from ${getProvider(provider)?.name}.`);
+  }
+
+  /** Same, for the per-connection edit row keyed by connection id. */
+  async function loadEditLiveModels(conn: LLMConnection) {
+    setEditLiveModelsLoadingId(conn.id);
+    const ids = await fetchProviderModels(conn.provider, conn.apiKey);
+    setEditLiveModelsLoadingId(null);
+    if (ids.length === 0) {
+      onToast('Could not load live models for that connection — the catalog list still works.');
+      return;
+    }
+    setEditLiveModels((prev) => ({ ...prev, [conn.id]: ids }));
+    onToast(`Loaded ${ids.length} model(s) from ${getProvider(conn.provider)?.name}.`);
   }
 
   async function testTtsKey() {
@@ -428,14 +468,34 @@ export function LLMProvidersModal({
               </select>
             </div>
             <div className="form-group">
-              <label>Model</label>
-              <select {...devRef('dr9')} value={model} onChange={(e) => setModel(e.target.value)}>
-                {selectedProviderInfo?.models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+              <label>Model (pick one or type your own)</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  {...devRef('dr9')}
+                  className="control-input"
+                  list="llm-model-list"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={selectedProviderInfo?.models[0]?.id ?? 'model id'}
+                  style={{ flex: 1 }}
+                />
+                <datalist id="llm-model-list">
+                  {(liveModels.length > 0 ? liveModels : selectedProviderInfo?.models.map((m) => m.id) ?? []).map(
+                    (id) => (
+                      <option key={id} value={id} />
+                    )
+                  )}
+                </datalist>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={loadLiveModels}
+                  disabled={liveModelsLoading}
+                  title="Fetch the exact models your API key can access from the provider"
+                >
+                  {liveModelsLoading ? '…' : '🔄'}
+                </button>
+              </div>
             </div>
             {selectedModelInfo?.supportsEffort && (
               <div className="form-group">
@@ -496,13 +556,33 @@ export function LLMProvidersModal({
                   </div>
                   <div className="form-group compact-field">
                     <label>Model</label>
-                    <select {...devRef('dr26', ci)} value={editModel} onChange={(e) => setEditModel(e.target.value)}>
-                      {editProviderInfo?.models.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <input
+                        {...devRef('dr26', ci)}
+                        className="control-input"
+                        list={`llm-edit-model-list-${c.id}`}
+                        value={editModel}
+                        onChange={(e) => setEditModel(e.target.value)}
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                      <datalist id={`llm-edit-model-list-${c.id}`}>
+                        {((editLiveModels[c.id]?.length ?? 0) > 0
+                          ? editLiveModels[c.id]
+                          : editProviderInfo?.models.map((m) => m.id) ?? []
+                        ).map((id) => (
+                          <option key={id} value={id} />
+                        ))}
+                      </datalist>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => loadEditLiveModels(c)}
+                        disabled={editLiveModelsLoadingId === c.id}
+                        title="Fetch the exact models this connection's key can access"
+                      >
+                        {editLiveModelsLoadingId === c.id ? '…' : '🔄'}
+                      </button>
+                    </div>
                   </div>
                   {editModelInfo?.supportsEffort && (
                     <div className="form-group compact-field">
