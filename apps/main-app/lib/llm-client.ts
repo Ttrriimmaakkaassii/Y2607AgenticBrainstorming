@@ -130,6 +130,21 @@ interface ToolEvidence {
   webAccessFailed: boolean;
 }
 
+// Gentle client-side throttle so multiple web-enabled agents firing in the
+// same round don't burst-call one backend and trip its rate limit (the
+// 429s seen earlier). Enforces a minimum gap between consecutive calls to
+// the SAME backend; calls to different backends (search vs browse) are
+// independent. Calls are already sequential within a turn (each is awaited),
+// so this mainly paces the cross-agent/cross-turn bursts.
+const THROTTLE_GAP_MS = 300;
+const lastBackendCallAt: Record<string, number> = {};
+async function throttleBackend(key: string): Promise<void> {
+  const now = Date.now();
+  const wait = THROTTLE_GAP_MS - (now - (lastBackendCallAt[key] ?? 0));
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastBackendCallAt[key] = Date.now();
+}
+
 /** Dispatches one model-requested tool call (by name) to the right backend and records its evidence — shared by all three providers, each of which hands over the tool call's name + arguments already parsed into a plain object (OpenAI's arguments are a JSON string and get parsed by the caller first). */
 async function executeToolCall(
   name: string,
@@ -138,6 +153,7 @@ async function executeToolCall(
   evidence: ToolEvidence
 ): Promise<string> {
   if (name === 'browse_url') {
+    await throttleBackend('browse');
     const url = typeof args?.url === 'string' ? args.url : '';
     const result = await callBrowseUrlTool({ url }, accessToken);
     if (result.ok) {
@@ -150,6 +166,7 @@ async function executeToolCall(
   // Default to web_search for any other/unrecognized name rather than
   // silently no-op'ing — a model that gets the tool name slightly wrong
   // should still get a real (if possibly empty) result to react to.
+  await throttleBackend('search');
   const query = typeof args?.query === 'string' ? args.query : '';
   const result = await callWebSearchTool(
     { query, maxResults: typeof args?.maxResults === 'number' ? args.maxResults : undefined },
