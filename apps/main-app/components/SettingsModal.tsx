@@ -25,6 +25,8 @@ import { generateId } from '@/lib/id';
 import { downloadHtmlAsJpeg } from '@/lib/rasterize-svg';
 import { useAuthContext } from '@/lib/auth-context';
 import { fetchWebAccessStatus, type WebAccessStatus } from '@/lib/web-access-status';
+import { callBrowseUrlTool } from '@/lib/web-browse';
+import { callWebSearchTool } from '@/lib/web-search';
 import { devRef } from '@/lib/devref';
 import { useClickOutside } from '@/lib/use-click-outside';
 import { useOverlayClose } from '@/lib/use-overlay-close';
@@ -261,6 +263,51 @@ export function SettingsModal({
       cancelled = true;
     };
   }, []);
+  // Live "does this backend actually work?" tests — exercise the exact same
+  // /api/research/* path the agents use, with a fixed probe (browse
+  // google.com for Cloudflare; search a current question for Tavily).
+  type ProbeState = { status: 'idle' | 'testing' | 'ok' | 'fail'; detail: string };
+  const [browseProbe, setBrowseProbe] = useState<ProbeState>({ status: 'idle', detail: '' });
+  const [searchProbe, setSearchProbe] = useState<ProbeState>({ status: 'idle', detail: '' });
+
+  async function runBrowseProbe() {
+    const token = auth?.session.access_token ?? null;
+    if (!token) {
+      setBrowseProbe({ status: 'fail', detail: 'Sign in first — browse requires a session.' });
+      return;
+    }
+    setBrowseProbe({ status: 'testing', detail: '' });
+    const result = await callBrowseUrlTool({ url: 'https://www.google.com' }, token);
+    if (result.ok) {
+      setBrowseProbe({
+        status: 'ok',
+        detail: `✅ Rendered google.com — ${result.content.length} chars of content returned.`,
+      });
+    } else {
+      setBrowseProbe({ status: 'fail', detail: `❌ ${result.error?.code ?? 'FAILED'}: ${result.error?.message ?? ''}` });
+    }
+  }
+
+  async function runSearchProbe() {
+    const token = auth?.session.access_token ?? null;
+    if (!token) {
+      setSearchProbe({ status: 'fail', detail: 'Sign in first — search requires a session.' });
+      return;
+    }
+    setSearchProbe({ status: 'testing', detail: '' });
+    const result = await callWebSearchTool({ query: "who is winning the FIFA 2026 World Cup" }, token);
+    if (result.ok) {
+      const top = result.results[0];
+      setSearchProbe({
+        status: 'ok',
+        detail: `✅ ${result.results.length} result(s)${
+          top ? ` — top: ${top.title || top.url}` : ''
+        }.`,
+      });
+    } else {
+      setSearchProbe({ status: 'fail', detail: `❌ ${result.error?.code ?? 'FAILED'}: ${result.error?.message ?? ''}` });
+    }
+  }
   const [customAgents, setCustomAgents] = useState<AgentPreset[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -591,6 +638,31 @@ export function SettingsModal({
                     value={whatsappNumber}
                     onChange={(e) => onUpdateWhatsappNumber(e.target.value)}
                   />
+                </div>
+              </div>
+
+              <div className="modal-section" {...devRef('s33')}>
+                <div className="modal-section-title">🧪 Test web access</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
+                  Live probes through the same /api/research/* path the agents use. Sign in is
+                  required. Shows whether each backend actually returns real data — faster than
+                  starting a discussion to find out.
+                </div>
+                <div className="web-probe-row">
+                  <button className="btn-secondary" onClick={runBrowseProbe} disabled={browseProbe.status === 'testing'}>
+                    {browseProbe.status === 'testing' ? '🌐 Testing…' : '🌐 Test Cloudflare (browse google.com)'}
+                  </button>
+                  {browseProbe.status !== 'idle' && browseProbe.status !== 'testing' && (
+                    <span className={`web-probe-detail ${browseProbe.status}`}>{browseProbe.detail}</span>
+                  )}
+                </div>
+                <div className="web-probe-row">
+                  <button className="btn-secondary" onClick={runSearchProbe} disabled={searchProbe.status === 'testing'}>
+                    {searchProbe.status === 'testing' ? '🔍 Testing…' : '🔍 Test Tavily (search "FIFA 2026")'}
+                  </button>
+                  {searchProbe.status !== 'idle' && searchProbe.status !== 'testing' && (
+                    <span className={`web-probe-detail ${searchProbe.status}`}>{searchProbe.detail}</span>
+                  )}
                 </div>
               </div>
 

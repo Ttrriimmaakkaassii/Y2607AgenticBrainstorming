@@ -564,9 +564,11 @@ export function LLMProvidersModal({
                 inputProps={devRef('dr9')}
                 value={model}
                 onChange={setModel}
-                suggestions={Array.from(
-                  new Set([...(selectedProviderInfo?.models.map((m) => m.id) ?? []), ...liveModels])
-                )}
+                suggestions={
+                  liveModels.length > 0
+                    ? liveModels
+                    : selectedProviderInfo?.models.map((m) => m.id) ?? []
+                }
                 loading={liveModelsLoading}
                 onRefresh={loadLiveModels}
                 refreshTitle="Fetch the exact models your API key can access from the provider"
@@ -636,12 +638,11 @@ export function LLMProvidersModal({
                       inputProps={devRef('dr26', ci)}
                       value={editModel}
                       onChange={setEditModel}
-                      suggestions={Array.from(
-                        new Set([
-                          ...(editProviderInfo?.models.map((m) => m.id) ?? []),
-                          ...(editLiveModels[c.id] ?? []),
-                        ])
-                      )}
+                      suggestions={
+                        (editLiveModels[c.id]?.length ?? 0) > 0
+                          ? editLiveModels[c.id]!
+                          : editProviderInfo?.models.map((m) => m.id) ?? []
+                      }
                       loading={editLiveModelsLoadingId === c.id}
                       onRefresh={() => loadEditLiveModels(c)}
                       refreshTitle="Fetch the exact models this connection's key can access"

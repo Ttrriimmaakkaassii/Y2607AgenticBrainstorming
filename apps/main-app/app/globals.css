@@ -1113,6 +1113,34 @@ mark.search-match {
   line-height: 1.35;
 }
 
+/* Settings > Agent "🧪 Test web access" probe rows. */
+.web-probe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.web-probe-row .btn-secondary {
+  width: auto;
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
+.web-probe-detail {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.web-probe-detail.ok {
+  color: #22c55e;
+}
+
+.web-probe-detail.fail {
+  color: #ef4444;
+}
+
 .bubble-search-evidence-toggle {
   font-size: 11px;
   color: var(--text-secondary);
