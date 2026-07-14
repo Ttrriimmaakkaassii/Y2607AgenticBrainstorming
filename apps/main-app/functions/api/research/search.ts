@@ -250,7 +250,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         exclude_domains: validated.excludeDomains,
         start_date: validated.startDate,
         end_date: validated.endDate,
-        safe_search: true,
+        // NOTE: safe_search intentionally NOT sent — Tavily returns 403
+        // ("safe_search is only available on Gold and Silver Enterprise
+        // plans") for any non-Enterprise key that includes it. The original
+        // spec asked for it, but it's a paid-tier-only feature, so omitting
+        // it is the only thing that works on the free/dev tier.
       }),
       signal: AbortSignal.timeout(20_000),
     });
