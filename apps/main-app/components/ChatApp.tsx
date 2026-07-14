@@ -289,7 +289,7 @@ export function ChatApp() {
   const [expandedSearchMessageId, setExpandedSearchMessageId] = useState<string | null>(null);
   // Null when this deployment has no Supabase auth configured — agents with
   // webSearchEnabled degrade to TOOL_UNAVAILABLE in that case (see
-  // functions/api/research/search.ts's auth check) rather than erroring.
+  // functions/api/research/browse.ts's auth check) rather than erroring.
   const auth = useAuthContext();
   const [state, setState] = useState<ConversationState>(defaultState);
   const [currentAgentId, setCurrentAgentId] = useState<string>(DEFAULT_AGENTS[0].id);
@@ -666,28 +666,22 @@ export function ChatApp() {
   // prompt's NO_FABRICATION_INSTRUCTION — a model can still ignore an
   // instruction (this is exactly what happened with the reported OpenClaw
   // fetch fabrication). Checks the ACTUAL recorded tool-call evidence
-  // (reply.webSearches, populated only by a real successful web_search
-  // round-trip — see lib/llm-client.ts's runWithTools-equivalent loop)
-  // against what the reply text claims, and rejects the reply outright
-  // (never posted) instead of merely flagging it after the fact.
+  // (reply.webBrowses, populated only by a real successful browse_url
+  // round-trip — see lib/llm-client.ts's tool-calling loop) against what
+  // the reply text claims, and rejects the reply outright (never posted)
+  // instead of merely flagging it after the fact.
   const TOOL_USE_CLAIM_PATTERN =
-    /\b(i searched|i found (?:this|that|the following)|according to (?:my|the) search|search results? (?:show|indicate|reveal)|i looked (?:this|that|it) up|based on (?:my|a) (?:web )?search|i (?:just )?checked (?:the|their) (?:website|site|repo|repository|documentation)|fetching|i retrieved|retrieved from)\b/i;
+    /\b(i searched|i found (?:this|that|the following)|according to (?:my|the) search|search results? (?:show|indicate|reveal)|i looked (?:this|that|it) up|based on (?:my|a) (?:web )?search|i (?:just )?checked (?:the|their) (?:website|site|repo|repository|documentation)|i browsed|i opened (?:the|their) (?:page|site|website)|fetching|i retrieved|retrieved from)\b/i;
   const URL_CITATION_PATTERN = /https?:\/\/[^\s)]+/;
 
   function validateAgentReply(agent: Agent, reply: AgentReplyResult): string | null {
     const claimsToolUse = TOOL_USE_CLAIM_PATTERN.test(reply.content) || URL_CITATION_PATTERN.test(reply.content);
-    const searchedAtAll = (reply.webSearches?.length ?? 0) > 0;
-    const totalSources = (reply.webSearches ?? []).reduce((n, s) => n + s.sources.length, 0);
+    const browsedAtAll = (reply.webBrowses?.length ?? 0) > 0;
 
-    if (claimsToolUse && !searchedAtAll) {
-      // Claims to have searched/fetched/retrieved/cited a URL, but no
-      // web_search tool call was actually recorded this turn at all.
+    if (claimsToolUse && !browsedAtAll) {
+      // Claims to have searched/browsed/fetched/retrieved/cited a URL, but
+      // no browse_url tool call was actually recorded this turn at all.
       return 'FABRICATED_TOOL_USE';
-    }
-    if (agent.webSearchEnabled && claimsToolUse && totalSources === 0) {
-      // A search did happen, but returned zero sources — the reply still
-      // asserts an external claim anyway instead of saying so.
-      return 'RESEARCH_WITHOUT_SOURCE';
     }
     return null;
   }
@@ -737,7 +731,7 @@ export function ChatApp() {
         outputTokens: seedReply.usage.outputTokens,
         provider: seedReply.provider,
         model: seedReply.model,
-        webSearches: seedReply.webSearches,
+        webBrowses: seedReply.webBrowses,
       });
     }
     return thread;
@@ -933,7 +927,7 @@ export function ChatApp() {
         outputTokens: reply.usage.outputTokens,
         provider: reply.provider,
         model: reply.model,
-        webSearches: reply.webSearches,
+        webBrowses: reply.webBrowses,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       const finishedThread = updatedThread;
@@ -1275,7 +1269,7 @@ export function ChatApp() {
       outputTokens: reply.usage.outputTokens,
       provider: reply.provider,
       model: reply.model,
-      webSearches: reply.webSearches,
+      webBrowses: reply.webBrowses,
     });
   }
 
@@ -3380,7 +3374,7 @@ export function ChatApp() {
                         </button>
                         {msg.starred && <span className="bubble-star">⭐</span>}
                         {msg.category && <span className="bubble-category">🏷️ {msg.category}</span>}
-                        {msg.webSearches && msg.webSearches.length > 0 && (
+                        {msg.webBrowses && msg.webBrowses.length > 0 && (
                           <div className="bubble-search-evidence" {...devRef('s31', msg.id)}>
                             <button
                               className="bubble-search-evidence-toggle"
@@ -3388,28 +3382,21 @@ export function ChatApp() {
                                 setExpandedSearchMessageId((prev) => (prev === msg.id ? null : msg.id))
                               }
                             >
-                              🔍 searched the web ·{' '}
-                              {msg.webSearches.reduce((n, s) => n + s.resultCount, 0)} sources
+                              🌐 browsed {msg.webBrowses.length} page{msg.webBrowses.length === 1 ? '' : 's'}
                             </button>
                             {expandedSearchMessageId === msg.id && (
                               <div className="bubble-search-evidence-detail">
-                                {msg.webSearches.map((s, si) => (
-                                  <div key={si} className="bubble-search-evidence-query">
-                                    <div className="bubble-search-evidence-query-text">
-                                      &quot;{s.query}&quot; — {new Date(s.searchedAt).toLocaleTimeString()}
-                                    </div>
-                                    {s.sources.map((src, ci) => (
-                                      <a
-                                        key={ci}
-                                        href={src.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="bubble-search-evidence-source"
-                                      >
-                                        {src.title || src.url}
-                                      </a>
-                                    ))}
-                                  </div>
+                                {msg.webBrowses.map((b, bi) => (
+                                  <a
+                                    key={bi}
+                                    href={b.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bubble-search-evidence-source"
+                                    title={`Browsed at ${new Date(b.browsedAt).toLocaleTimeString()}`}
+                                  >
+                                    {b.url}
+                                  </a>
                                 ))}
                               </div>
                             )}

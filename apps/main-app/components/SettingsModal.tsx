@@ -789,7 +789,7 @@ export function SettingsModal({
                         onSave(currentAgent.id, { webSearchEnabled: e.target.checked });
                       }}
                     />
-                    🌐 Allow internet access (real web search){!auth && ' — requires sign-in'}
+                    🌐 Allow internet access (browse a specific URL){!auth && ' — requires sign-in'}
                   </label>
                 </div>
                 <div className="form-group">
@@ -954,7 +954,7 @@ export function SettingsModal({
                           <th>Name</th>
                           <th>Categories</th>
                           <th title="Include this agent in every new tab/conversation by default">📌 Pinned</th>
-                          <th title="Give this agent a real web_search tool">🌐 Internet</th>
+                          <th title="Give this agent a real browse_url tool (open a specific page, not search)">🌐 Internet</th>
                           {traitDefs.map((def) => (
                             <th key={def.id} title={def.category}>
                               {def.name}
@@ -1075,7 +1075,7 @@ export function SettingsModal({
                             <td style={{ textAlign: 'center' }}>
                               <input
                                 type="checkbox"
-                                title="Give this agent a real web_search tool"
+                                title="Give this agent a real browse_url tool (open a specific page, not search)"
                                 checked={agent.webSearchEnabled}
                                 onChange={(e) =>
                                   onUpdateAgentsBulk(
@@ -1139,7 +1139,7 @@ export function SettingsModal({
                           LLM{sortArrow('llm')}
                         </th>
                         <th title="Include this agent in every new tab/conversation by default">📌</th>
-                        <th title="Give this agent a real web_search tool">🌐</th>
+                        <th title="Give this agent a real browse_url tool (open a specific page, not search)">🌐</th>
                         <th>Order</th>
                         <th></th>
                       </tr>
@@ -1329,7 +1329,7 @@ export function SettingsModal({
                             <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
-                                title="Give this agent a real web_search tool"
+                                title="Give this agent a real browse_url tool (open a specific page, not search)"
                                 checked={agent.webSearchEnabled}
                                 onChange={(e) => updateDraftField(agent.id, { webSearchEnabled: e.target.checked })}
                               />

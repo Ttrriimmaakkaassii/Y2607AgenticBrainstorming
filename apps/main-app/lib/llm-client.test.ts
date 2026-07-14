@@ -1,13 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { Agent, LLMConnection } from './types';
 
-vi.mock('./web-search', () => ({
-  callWebSearchTool: vi.fn(async (args: { query: string }) => ({
+vi.mock('./web-browse', () => ({
+  callBrowseUrlTool: vi.fn(async (args: { url: string }) => ({
     ok: true,
-    query: args.query,
-    provider: 'tavily' as const,
-    searchedAt: new Date().toISOString(),
-    results: [{ title: 'Result', url: 'https://example.com', snippet: '...', rawContent: null, score: 0.9, publishedDate: null }],
+    url: args.url,
+    provider: 'cloudflare-browser-rendering' as const,
+    browsedAt: new Date().toISOString(),
+    content: '# Page content',
   })),
 }));
 
@@ -49,7 +49,7 @@ function toolCallResponse() {
         {
           message: {
             content: null,
-            tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'web_search', arguments: '{"query":"test"}' } }],
+            tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'browse_url', arguments: '{"url":"https://example.com"}' } }],
           },
         },
       ],

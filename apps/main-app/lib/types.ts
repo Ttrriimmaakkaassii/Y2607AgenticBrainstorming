@@ -81,12 +81,11 @@ export interface Message {
   /** Provider/model snapshotted at send time, independent of the LLMConnection's current (possibly edited/deleted) state. */
   provider?: LLMProvider;
   model?: string;
-  /** One entry per successful web_search tool call made while generating this reply — absent for agents without search enabled, or replies that didn't need to search. */
-  webSearches?: {
-    query: string;
-    resultCount: number;
-    sources: { title: string; url: string }[];
-    searchedAt: string;
+  /** One entry per successful browse_url tool call made while generating this reply — absent for agents without web access enabled, or replies that didn't need to browse anything. */
+  webBrowses?: {
+    url: string;
+    contentLength: number;
+    browsedAt: string;
   }[];
 }
 
