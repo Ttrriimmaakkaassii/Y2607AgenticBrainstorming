@@ -47,6 +47,97 @@ function maskKey(key: string): string {
   return `••••${key.slice(-4)}`;
 }
 
+/** Model picker: a typeable text input with a VISIBLE suggestion dropdown
+ *  (catalog ids + live-fetched ids, deduped, filtered by what you type).
+ *  Replaces a bare <datalist>, which had no visible affordance and hid its
+ *  suggestions behind text-filtering — so a pre-filled field looked empty
+ *  even right after the 🔄 live fetch loaded N models. */
+function ModelCombo({
+  value,
+  onChange,
+  suggestions,
+  loading,
+  onRefresh,
+  refreshTitle,
+  placeholder,
+  inputRef,
+  inputProps,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  suggestions: string[];
+  loading: boolean;
+  onRefresh: () => void;
+  refreshTitle: string;
+  placeholder?: string;
+  inputRef?: React.Ref<HTMLInputElement>;
+  inputProps?: Record<string, unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const filter = value.trim().toLowerCase();
+  const seen = new Set<string>();
+  const filtered = suggestions.filter((id) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return !filter || id.toLowerCase().includes(filter);
+  });
+  return (
+    <div className="model-combo">
+      <input
+        {...(inputProps ?? {})}
+        ref={inputRef}
+        className="control-input"
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onBlur={() => {
+          // delay so a click on an item registers before the menu closes
+          setTimeout(() => setOpen(false), 150);
+        }}
+        style={{ flex: 1, minWidth: 0 }}
+      />
+      {open && (
+        <div className="model-combo-menu">
+          {filtered.length === 0 ? (
+            <div className="model-combo-empty">No models match — type your own and it&apos;ll be used as-is.</div>
+          ) : (
+            filtered.map((id) => (
+              <div
+                key={id}
+                className="model-combo-item"
+                // mousedown (not click) + preventDefault so the input's
+                // onBlur doesn't close the menu before the selection lands.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(id);
+                  setOpen(false);
+                }}
+              >
+                {id}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        className="btn-secondary model-refresh-btn"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onRefresh}
+        disabled={loading}
+        title={refreshTitle}
+      >
+        {loading ? '…' : '🔄'}
+      </button>
+    </div>
+  );
+}
+
 function StatusDot({ status }: { status: TestStatus }) {
   const color =
     status === 'ok' ? '#2ecc71' : status === 'fail' ? '#e74c3c' : status === 'testing' ? '#f39c12' : '#999';
@@ -469,32 +560,18 @@ export function LLMProvidersModal({
             </div>
             <div className="form-group">
               <label>Model (pick one or type your own)</label>
-              <div className="model-combo">
-                <input
-                  {...devRef('dr9')}
-                  className="control-input"
-                  list="llm-model-list"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={selectedProviderInfo?.models[0]?.id ?? 'model id'}
-                />
-                <datalist id="llm-model-list">
-                  {(liveModels.length > 0 ? liveModels : selectedProviderInfo?.models.map((m) => m.id) ?? []).map(
-                    (id) => (
-                      <option key={id} value={id} />
-                    )
-                  )}
-                </datalist>
-                <button
-                  type="button"
-                  className="btn-secondary model-refresh-btn"
-                  onClick={loadLiveModels}
-                  disabled={liveModelsLoading}
-                  title="Fetch the exact models your API key can access from the provider"
-                >
-                  {liveModelsLoading ? '…' : '🔄'}
-                </button>
-              </div>
+              <ModelCombo
+                inputProps={devRef('dr9')}
+                value={model}
+                onChange={setModel}
+                suggestions={Array.from(
+                  new Set([...(selectedProviderInfo?.models.map((m) => m.id) ?? []), ...liveModels])
+                )}
+                loading={liveModelsLoading}
+                onRefresh={loadLiveModels}
+                refreshTitle="Fetch the exact models your API key can access from the provider"
+                placeholder={selectedProviderInfo?.models[0]?.id ?? 'model id'}
+              />
             </div>
             {selectedModelInfo?.supportsEffort && (
               <div className="form-group">
@@ -555,32 +632,20 @@ export function LLMProvidersModal({
                   </div>
                   <div className="form-group compact-field">
                     <label>Model</label>
-                    <div className="model-combo">
-                      <input
-                        {...devRef('dr26', ci)}
-                        className="control-input"
-                        list={`llm-edit-model-list-${c.id}`}
-                        value={editModel}
-                        onChange={(e) => setEditModel(e.target.value)}
-                      />
-                      <datalist id={`llm-edit-model-list-${c.id}`}>
-                        {((editLiveModels[c.id]?.length ?? 0) > 0
-                          ? editLiveModels[c.id]
-                          : editProviderInfo?.models.map((m) => m.id) ?? []
-                        ).map((id) => (
-                          <option key={id} value={id} />
-                        ))}
-                      </datalist>
-                      <button
-                        type="button"
-                        className="btn-secondary model-refresh-btn"
-                        onClick={() => loadEditLiveModels(c)}
-                        disabled={editLiveModelsLoadingId === c.id}
-                        title="Fetch the exact models this connection's key can access"
-                      >
-                        {editLiveModelsLoadingId === c.id ? '…' : '🔄'}
-                      </button>
-                    </div>
+                    <ModelCombo
+                      inputProps={devRef('dr26', ci)}
+                      value={editModel}
+                      onChange={setEditModel}
+                      suggestions={Array.from(
+                        new Set([
+                          ...(editProviderInfo?.models.map((m) => m.id) ?? []),
+                          ...(editLiveModels[c.id] ?? []),
+                        ])
+                      )}
+                      loading={editLiveModelsLoadingId === c.id}
+                      onRefresh={() => loadEditLiveModels(c)}
+                      refreshTitle="Fetch the exact models this connection's key can access"
+                    />
                   </div>
                   {editModelInfo?.supportsEffort && (
                     <div className="form-group compact-field">
