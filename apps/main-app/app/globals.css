@@ -971,6 +971,35 @@ mark.search-match {
   opacity: 0.7;
 }
 
+/* Per-message web-source tag (🌐 used live web / 🌐❌ tried but failed). */
+.web-source-tag {
+  font-size: 11px;
+  margin-left: 6px;
+  line-height: 1;
+}
+
+.web-source-tag.ok {
+  color: #22c55e;
+}
+
+.web-source-tag.failed {
+  color: #ef4444;
+}
+
+/* Scene View: top-right corner of the central bubble. */
+.scene-web-source {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 14px;
+  z-index: 31;
+  line-height: 1;
+}
+
+.scene-web-source.failed {
+  opacity: 0.85;
+}
+
 .bubble-content {
   flex: 1;
   min-width: 0;

@@ -126,6 +126,8 @@ const GOOGLE_BROWSE_URL_TOOL = {
 interface ToolEvidence {
   webSearches: WebSearchEvidence[];
   webBrowses: BrowseEvidence[];
+  /** True if ANY tool call was attempted this turn but failed — drives the 🌐❌ "tried but fell back to memory" indicator distinct from 🌐 "actually used the web". */
+  webAccessFailed: boolean;
 }
 
 /** Dispatches one model-requested tool call (by name) to the right backend and records its evidence — shared by all three providers, each of which hands over the tool call's name + arguments already parsed into a plain object (OpenAI's arguments are a JSON string and get parsed by the caller first). */
@@ -140,6 +142,8 @@ async function executeToolCall(
     const result = await callBrowseUrlTool({ url }, accessToken);
     if (result.ok) {
       evidence.webBrowses.push({ url: result.url, contentLength: result.content.length, browsedAt: result.browsedAt });
+    } else {
+      evidence.webAccessFailed = true;
     }
     return JSON.stringify(result);
   }
@@ -158,6 +162,8 @@ async function executeToolCall(
       sources: result.results.map((r) => ({ title: r.title, url: r.url })),
       searchedAt: result.searchedAt,
     });
+  } else {
+    evidence.webAccessFailed = true;
   }
   return JSON.stringify(result);
 }
@@ -318,6 +324,7 @@ interface DirectCallResult {
   usage: UsageInfo;
   webSearches: WebSearchEvidence[];
   webBrowses: BrowseEvidence[];
+  webAccessFailed: boolean;
 }
 
 /**
@@ -346,7 +353,7 @@ async function callOpenAICompatibleDirect(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
   ];
-  const evidence: ToolEvidence = { webSearches: [], webBrowses: [] };
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], webAccessFailed: false };
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -437,7 +444,7 @@ async function callAnthropicDirect(
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('anthropic', connection.model);
   const messages: Record<string, unknown>[] = [{ role: 'user', content: userPrompt }];
-  const evidence: ToolEvidence = { webSearches: [], webBrowses: [] };
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], webAccessFailed: false };
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -517,7 +524,7 @@ async function callGoogleDirect(
   const contents: Record<string, unknown>[] = [
     { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] },
   ];
-  const evidence: ToolEvidence = { webSearches: [], webBrowses: [] };
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], webAccessFailed: false };
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -618,6 +625,7 @@ export interface AgentReplyResult {
   model: string;
   webSearches?: WebSearchEvidence[];
   webBrowses?: BrowseEvidence[];
+  webAccessFailed?: boolean;
 }
 
 export async function fetchAgentReply(
@@ -667,6 +675,7 @@ export async function fetchAgentReply(
     model: connection.model,
     webSearches: result.webSearches.length > 0 ? result.webSearches : undefined,
     webBrowses: result.webBrowses.length > 0 ? result.webBrowses : undefined,
+    webAccessFailed: result.webAccessFailed || undefined,
   };
 }
 

@@ -907,6 +907,24 @@ function CentralBubble({
         className="scene-swipe-nub right"
         style={{ opacity: rightNubOpacity, transform: `translateY(-50%) scale(${dragDx > 0 ? 1 + Math.min(dragDx, SWIPE_FEEDBACK_RANGE) / 400 : 1})` }}
       />
+      {(() => {
+        // Top-right of the bubble: 🌐 if this reply used live web content,
+        // 🌐❌ if it tried and failed (so it's from training knowledge).
+        const usedWeb = !!(message.webSearches?.length || message.webBrowses?.length);
+        if (usedWeb)
+          return (
+            <span className="scene-web-source ok" title="Answer used live web content">
+              🌐
+            </span>
+          );
+        if (message.webAccessFailed)
+          return (
+            <span className="scene-web-source failed" title="Tried the web but it failed — answered from training knowledge">
+              🌐❌
+            </span>
+          );
+        return null;
+      })()}
       <div className="scene-central-speaker">
         <span className="scene-central-dot" style={{ background: agent.color }} />
         {agent.refNumber} {agent.name} · Msg #{messageNumber} is speaking

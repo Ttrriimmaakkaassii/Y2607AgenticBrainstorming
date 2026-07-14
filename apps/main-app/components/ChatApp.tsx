@@ -733,6 +733,7 @@ export function ChatApp() {
         model: seedReply.model,
         webSearches: seedReply.webSearches,
         webBrowses: seedReply.webBrowses,
+        webAccessFailed: seedReply.webAccessFailed,
       });
     }
     return thread;
@@ -929,6 +930,7 @@ export function ChatApp() {
         provider: reply.provider,
         model: reply.model,
         webBrowses: reply.webBrowses,
+        webAccessFailed: reply.webAccessFailed,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       const finishedThread = updatedThread;
@@ -1271,6 +1273,7 @@ export function ChatApp() {
       provider: reply.provider,
       model: reply.model,
       webBrowses: reply.webBrowses,
+        webAccessFailed: reply.webAccessFailed,
     });
   }
 
@@ -3346,6 +3349,29 @@ export function ChatApp() {
                       <div className="bubble-name">
                         {isUser ? 'You' : author ? `${author.refNumber} · ${author.name}` : 'Unknown'}
                         <span className="msg-number">{msgNumber}</span>
+                        {!isUser &&
+                          (() => {
+                            const usedWeb = !!(msg.webSearches?.length || msg.webBrowses?.length);
+                            // 🌐 = answer drew on real internet content;
+                            // 🌐❌ = agent tried web access but it failed, so
+                            // this answer is from training knowledge instead.
+                            if (usedWeb)
+                              return (
+                                <span className="web-source-tag ok" title="Answer used live web content">
+                                  🌐
+                                </span>
+                              );
+                            if (msg.webAccessFailed)
+                              return (
+                                <span
+                                  className="web-source-tag failed"
+                                  title="Tried the web but it failed — answered from training knowledge"
+                                >
+                                  🌐❌
+                                </span>
+                              );
+                            return null;
+                          })()}
                         <span className="msg-timestamp">
                           {new Date(msg.timestamp).toLocaleTimeString([], {
                             hour: '2-digit',

@@ -94,6 +94,8 @@ export interface Message {
     contentLength: number;
     browsedAt: string;
   }[];
+  /** True if the agent attempted a web call this turn but it failed (so the answer came from training knowledge, not the web). Absent/undefined = no web attempt was made at all. Drives the 🌐❌ vs 🌐 indicator. */
+  webAccessFailed?: boolean;
 }
 
 export interface Thread {
