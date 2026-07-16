@@ -20,6 +20,7 @@ import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/cu
 import { generateId } from '@/lib/id';
 import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction, DEFAULT_MAX_TOKENS } from '@/lib/llm-client';
 import { judgeRepetition } from '@/lib/orchestrator';
+import { loadGlobalWikiKeeper, saveGlobalWikiKeeper } from '@/lib/wiki-keeper';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
@@ -836,7 +837,10 @@ export function ChatApp() {
    */
   async function refreshWikiDigest() {
     const live = settingsRef.current;
-    const connection = connections.find((c) => c.id === live.wikiKeeperConnectionId);
+    // Resolve the keeper: the conversation's own choice, else the GLOBAL
+    // default (persisted across refreshes) so the user sets it once.
+    const keeperId = live.wikiKeeperConnectionId ?? loadGlobalWikiKeeper();
+    const connection = connections.find((c) => c.id === keeperId);
     if (!connection || wikiRefreshInFlightRef.current) return;
     wikiRefreshInFlightRef.current = true;
     try {
@@ -882,7 +886,10 @@ export function ChatApp() {
     const live = settingsRef.current;
     if (!live.wikiEnabled) return;
     if (totalMessageCount - live.wikiMessageCountAtLastUpdate < live.wikiRefreshInterval) return;
-    if (!live.wikiKeeperConnectionId) {
+    // Keeper = conversation choice OR the persisted global default, so a user
+    // who already picked one doesn't get asked again on every refresh.
+    const keeperId = live.wikiKeeperConnectionId ?? loadGlobalWikiKeeper();
+    if (!keeperId) {
       if (!wikiNoKeeperNotifiedRef.current) {
         wikiNoKeeperNotifiedRef.current = true;
         showToast('📚 The shared wiki is on but has no Wiki Keeper — pick a connection in Settings → Wiki.');
@@ -3967,12 +3974,19 @@ export function ChatApp() {
             void syncAgentIdentityAcrossTabs(nextAgents);
           }}
           wikiEnabled={state.settings.wikiEnabled}
-          wikiKeeperConnectionId={state.settings.wikiKeeperConnectionId}
+          wikiKeeperConnectionId={state.settings.wikiKeeperConnectionId ?? loadGlobalWikiKeeper()}
           wikiRefreshInterval={state.settings.wikiRefreshInterval}
           wikiDigest={state.settings.wikiDigest}
           wikiUpdatedAt={state.settings.wikiUpdatedAt}
           wikiHistory={state.settings.wikiHistory}
-          onUpdateWiki={(updates) => updateSettings(updates)}
+          onUpdateWiki={(updates) => {
+            // Persist the keeper choice globally too, so it survives refresh
+            // and applies to new conversations without re-picking.
+            if (Object.prototype.hasOwnProperty.call(updates, 'wikiKeeperConnectionId')) {
+              saveGlobalWikiKeeper(updates.wikiKeeperConnectionId ?? null);
+            }
+            updateSettings(updates);
+          }}
           onRefreshWikiNow={refreshWikiDigest}
           onOpenMindmap={openMindmapFromSettings}
           textSize={state.settings.textSize}
