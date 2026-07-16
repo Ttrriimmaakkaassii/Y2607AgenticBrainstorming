@@ -1632,6 +1632,28 @@ body.dev-mode [data-devref]::after {
   cursor: help;
 }
 
+/* Charts emitted by a Chart-expert agent, rendered inline in its bubble. */
+.bubble-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.agent-chart {
+  margin: 0;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--text, #eee);
+}
+.agent-chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  opacity: 0.9;
+}
+
 /* ☰ Parameters toggle now lives at the far left of the tabs bar (b5). */
 .conversation-tabs-bar .params-toggle {
   margin-right: 6px;

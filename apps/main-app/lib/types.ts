@@ -1,6 +1,30 @@
 export type Feedback = 'like' | 'dislike' | 'clarify';
 /** Built-in suggestions are 'debate' | 'complementary' | 'research', but users can add their own. */
 export type Mood = string;
+
+/** Chart types a Chart-expert agent can emit as its reply (lib/chart-render.tsx renders each). */
+export type ChartType = 'bar' | 'line' | 'multiAxis' | 'heatmap';
+export interface ChartSeries {
+  name: string;
+  data: number[];
+  /** For multiAxis only: which y-axis (0=left, 1=right) this series binds to. */
+  axis?: 0 | 1;
+  color?: string;
+}
+export interface ChartSpec {
+  type: ChartType;
+  title?: string;
+  xLabel?: string;
+  yLabel?: string;
+  /** X-axis category labels (bar/line/multiAxis). */
+  categories?: string[];
+  /** Data series (bar/line/multiAxis). Omitted for heatmaps (which use rows/cols/values). */
+  series?: ChartSeries[];
+  /** Heatmap only: row labels, column labels, and values[row][col]. */
+  rows?: string[];
+  cols?: string[];
+  values?: number[][];
+}
 export type LLMProvider =
   | 'openai'
   | 'anthropic'
@@ -51,6 +75,8 @@ export interface Agent {
   pinnedToAllConversations: boolean;
   /** When true, this agent gets a real web_search tool (see lib/llm-client.ts's runWithTools) instead of just being told it can't browse the web. */
   webSearchEnabled: boolean;
+  /** When true, this agent gets a generate_chart tool and may emit charts (bar/line/multiAxis/heatmap) as its reply — a "Chart expert". */
+  chartEnabled: boolean;
   /** Explicit TTS voice override (SpeechSynthesisVoice.voiceURI). Null = auto-assigned. */
   voiceURI: string | null;
   /** Explicit Google Cloud TTS voice override (e.g. "en-US-Neural2-A"). Null = auto-assigned. */
@@ -106,6 +132,8 @@ export interface Message {
   }[];
   /** True if the agent attempted a web call this turn but it failed (so the answer came from training knowledge, not the web). Absent/undefined = no web attempt was made at all. Drives the 🌐❌ vs 🌐 indicator. */
   webAccessFailed?: boolean;
+  /** Charts the agent emitted this turn via its generate_chart tool (Chart-expert agents). Rendered inline in the bubble by lib/chart-render.tsx. */
+  charts?: ChartSpec[];
 }
 
 export interface Thread {

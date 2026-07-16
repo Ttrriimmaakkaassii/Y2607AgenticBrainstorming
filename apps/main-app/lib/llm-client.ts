@@ -1,6 +1,7 @@
 import { getModel, getProvider } from './llm-catalog';
 import {
   Agent,
+  ChartSpec,
   Effort,
   InteractionStyle,
   LLMConnection,
@@ -126,9 +127,58 @@ const GOOGLE_BROWSE_URL_TOOL = {
 interface ToolEvidence {
   webSearches: WebSearchEvidence[];
   webBrowses: BrowseEvidence[];
+  /** Charts the agent emitted this turn via generate_chart (Chart-expert agents). */
+  charts: ChartSpec[];
   /** True if ANY tool call was attempted this turn but failed — drives the 🌐❌ "tried but fell back to memory" indicator distinct from 🌐 "actually used the web". */
   webAccessFailed: boolean;
 }
+
+const CHART_DESCRIPTION =
+  'Render a chart as part of your reply when the answer is best shown visually. Choose the type that best fits the data: ' +
+  '"bar" (compare categories), "line" (trend over an ordered axis), "multiAxis" (two related series with different units, e.g. revenue vs %), ' +
+  '"heatmap" (intensity across a row×col grid). Pass REAL, specific numbers from the discussion — never placeholders. The chart IS part of your answer; ' +
+  'you may add a sentence of interpretation alongside it, but do not repeat the numbers in prose.';
+
+// Shared JSON-schema body for the generate_chart arguments (provider wrappers below).
+const CHART_PARAMETERS = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['bar', 'line', 'multiAxis', 'heatmap'] },
+    title: { type: 'string', description: 'Short chart title.' },
+    xLabel: { type: 'string' },
+    yLabel: { type: 'string' },
+    categories: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'X-axis category labels (bar/line/multiAxis).',
+    },
+    series: {
+      type: 'array',
+      description: 'Data series (bar/line/multiAxis). For multiAxis, set axis 0 (left) or 1 (right) per series.',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          data: { type: 'array', items: { type: 'number' } },
+          axis: { type: 'integer', enum: [0, 1] },
+        },
+        required: ['name', 'data'],
+      },
+    },
+    rows: { type: 'array', items: { type: 'string' }, description: 'Heatmap row labels.' },
+    cols: { type: 'array', items: { type: 'string' }, description: 'Heatmap column labels.' },
+    values: {
+      type: 'array',
+      description: 'Heatmap values: values[row][col].',
+      items: { type: 'array', items: { type: 'number' } },
+    },
+  },
+  required: ['type'],
+};
+
+const OPENAI_CHART_TOOL = { type: 'function', function: { name: 'generate_chart', description: CHART_DESCRIPTION, parameters: CHART_PARAMETERS } };
+const ANTHROPIC_CHART_TOOL = { name: 'generate_chart', description: CHART_DESCRIPTION, input_schema: CHART_PARAMETERS };
+const GOOGLE_CHART_TOOL = { name: 'generate_chart', description: CHART_DESCRIPTION, parameters: CHART_PARAMETERS };
 
 // Gentle client-side throttle so multiple web-enabled agents firing in the
 // same round don't burst-call one backend and trip its rate limit (the
@@ -219,6 +269,48 @@ export async function fetchJsonWithRateLimitRetry(
 }
 
 /** Dispatches one model-requested tool call (by name) to the right backend and records its evidence — shared by all three providers, each of which hands over the tool call's name + arguments already parsed into a plain object (OpenAI's arguments are a JSON string and get parsed by the caller first). */
+/** Coerces loose tool-call args into a valid ChartSpec, or null if unusable.
+ * Tolerant — models pass numbers as strings, miss fields, etc. — but strict
+ * enough that a garbage call doesn't render a broken chart. */
+function coerceChartSpec(args: Record<string, unknown> | undefined): ChartSpec | null {
+  if (!args || typeof args !== 'object') return null;
+  const type = args.type as ChartSpec['type'];
+  if (type !== 'bar' && type !== 'line' && type !== 'multiAxis' && type !== 'heatmap') return null;
+  const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '');
+  const strArr = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.map(str).filter((x) => x !== '') : undefined;
+  const numArr = (v: unknown): number[] =>
+    Array.isArray(v) ? v.map((n) => Number(n)).filter((n) => Number.isFinite(n)) : [];
+
+  if (type === 'heatmap') {
+    const rows = strArr(args.rows);
+    const cols = strArr(args.cols);
+    const values = Array.isArray(args.values)
+      ? (args.values as unknown[]).map((row) => numArr(row))
+      : [];
+    if (!rows?.length || !cols?.length || !values.length) return null;
+    return { type, title: str(args.title) || undefined, rows, cols, values };
+  }
+
+  const categories = strArr(args.categories);
+  const series = Array.isArray(args.series)
+    ? (args.series as Record<string, unknown>[])
+        .map((s) => ({
+          name: str(s?.name) || 'Series',
+          data: numArr(s?.data),
+          axis: s?.axis === 1 ? (1 as const) : (0 as const),
+        }))
+        .filter((s) => s.data.length > 0)
+    : [];
+  if (series.length === 0) return null;
+  if (!categories || categories.length === 0) {
+    // Default numeric categories if the model omitted them.
+    const len = series[0].data.length;
+    return { type, title: str(args.title) || undefined, xLabel: str(args.xLabel) || undefined, yLabel: str(args.yLabel) || undefined, categories: Array.from({ length: len }, (_, i) => String(i + 1)), series };
+  }
+  return { type, title: str(args.title) || undefined, xLabel: str(args.xLabel) || undefined, yLabel: str(args.yLabel) || undefined, categories, series };
+}
+
 async function executeToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -235,6 +327,16 @@ async function executeToolCall(
       evidence.webAccessFailed = true;
     }
     return JSON.stringify(result);
+  }
+  if (name === 'generate_chart') {
+    // Local tool — no network. Validate + store the chart spec; it's rendered
+    // inline as part of the agent's reply (see ChatApp bubble + chart-render).
+    const spec = coerceChartSpec(args);
+    if (!spec) {
+      return JSON.stringify({ ok: false, error: 'Invalid chart spec — need at least a type and matching categories/series (or rows/cols/values for a heatmap).' });
+    }
+    evidence.charts.push(spec);
+    return JSON.stringify({ ok: true, message: `Chart "${spec.title || spec.type}" recorded. You may stop calling tools and write your short interpretation now (do not repeat the numbers).` });
   }
   // Default to web_search for any other/unrecognized name rather than
   // silently no-op'ing — a model that gets the tool name slightly wrong
@@ -350,8 +452,11 @@ const NO_FABRICATION_INSTRUCTION =
 const WEB_ACCESS_CAPABILITY_INSTRUCTION =
   " You have access to two real tools: web_search (find candidate pages from a query — titles/URLs/snippets only, not full content) and browse_url (open one specific page and read its full content). Call web_search immediately when the assignment needs external or current information and you don't already know the right URL; then call browse_url on the most relevant result(s) before making claims about their actual content. If you already know the right URL, you can call browse_url directly without searching first. Do not announce that you're about to search/browse, do not ask another agent to do it, do not simulate results. Cite the exact URL for every material claim. If a tool call fails or is unavailable, say so exactly rather than guessing.";
 
-function capabilityInstruction(webSearchEnabled: boolean): string {
-  return webSearchEnabled ? WEB_ACCESS_CAPABILITY_INSTRUCTION : NO_FABRICATION_INSTRUCTION;
+function capabilityInstruction(webSearchEnabled: boolean, chartEnabled: boolean): string {
+  const chartClause = chartEnabled
+    ? ' You have a generate_chart tool: when the answer is best shown visually, call it with the most fitting chart type (bar/line/multiAxis/heatmap) and REAL numbers from the discussion. The rendered chart becomes part of your reply, so keep any prose brief and do not restate the charted numbers.'
+    : '';
+  return (webSearchEnabled ? WEB_ACCESS_CAPABILITY_INSTRUCTION : NO_FABRICATION_INSTRUCTION) + chartClause;
 }
 
 // The second-biggest reported failure mode: multiple agents spending many
@@ -412,7 +517,7 @@ export function buildSystemPrompt(
     ' ' +
     interactionInstruction(interactionStyle) +
     USER_PRIORITY_INSTRUCTION +
-    capabilityInstruction(agent.webSearchEnabled) +
+    capabilityInstruction(agent.webSearchEnabled, agent.chartEnabled) +
     STAY_ON_TASK_INSTRUCTION +
     ' ' +
     styleInstruction(style, maxSentences, bulletCount) +
@@ -473,6 +578,7 @@ interface DirectCallResult {
   usage: UsageInfo;
   webSearches: WebSearchEvidence[];
   webBrowses: BrowseEvidence[];
+  charts: ChartSpec[];
   webAccessFailed: boolean;
 }
 
@@ -507,7 +613,8 @@ async function callOpenAICompatibleDirect(
   toolsEnabled: boolean,
   accessToken: string | null,
   maxTokens: number,
-  errorSink?: ErrorSink
+  errorSink?: ErrorSink,
+  chartEnabled = false
 ): Promise<DirectCallResult | null> {
   const provider = getProvider(connection.provider);
   if (!provider) return null;
@@ -521,9 +628,10 @@ async function callOpenAICompatibleDirect(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
   ];
-  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], webAccessFailed: false };
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], charts: [], webAccessFailed: false };
   let inputTokens = 0;
   let outputTokens = 0;
+  const anyTools = toolsEnabled || chartEnabled;
 
   // Builds + sends one request, with or without tools. Returns the parsed
   // body, or null if the provider rejected the call (non-2xx / network).
@@ -535,7 +643,10 @@ async function callOpenAICompatibleDirect(
     };
     if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
     if (withTools) {
-      body.tools = [OPENAI_WEB_SEARCH_TOOL, OPENAI_BROWSE_URL_TOOL];
+      const tools: unknown[] = [];
+      if (toolsEnabled) tools.push(OPENAI_WEB_SEARCH_TOOL, OPENAI_BROWSE_URL_TOOL);
+      if (chartEnabled) tools.push(OPENAI_CHART_TOOL);
+      body.tools = tools;
       body.tool_choice = 'auto';
     }
     await throttleLLM(connection.provider, connection.apiKey);
@@ -560,7 +671,7 @@ async function callOpenAICompatibleDirect(
     // (e.g. a bad Tavily key returning 403): the model would otherwise keep
     // retrying the tool until the loop exhausts, then return nothing.
     const finalRound = round === MAX_TOOL_CALLS_PER_AGENT_TURN;
-    const withTools = toolsEnabled && !finalRound;
+    const withTools = anyTools && !finalRound;
 
     let data = await request(withTools);
     // Some models/providers reject the tools payload outright (400). Fall
@@ -609,13 +720,15 @@ async function callAnthropicDirect(
   toolsEnabled: boolean,
   accessToken: string | null,
   maxTokens: number,
-  errorSink?: ErrorSink
+  errorSink?: ErrorSink,
+  chartEnabled = false
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('anthropic', connection.model);
   const messages: Record<string, unknown>[] = [{ role: 'user', content: userPrompt }];
-  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], webAccessFailed: false };
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], charts: [], webAccessFailed: false };
   let inputTokens = 0;
   let outputTokens = 0;
+  const anyTools = toolsEnabled || chartEnabled;
 
   async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = {
@@ -634,7 +747,12 @@ async function callAnthropicDirect(
       body.thinking = { type: 'enabled', budget_tokens: budget };
     }
     body.max_tokens = cap;
-    if (withTools) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL];
+    if (withTools) {
+      const tools: unknown[] = [];
+      if (toolsEnabled) tools.push(ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL);
+      if (chartEnabled) tools.push(ANTHROPIC_CHART_TOOL);
+      body.tools = tools;
+    }
     await throttleLLM(connection.provider, connection.apiKey);
     return fetchJsonWithRateLimitRetry(
       'https://api.anthropic.com/v1/messages',
@@ -657,7 +775,7 @@ async function callAnthropicDirect(
     // (see callOpenAICompatibleDirect for why this matters when a web
     // backend is rejecting calls).
     const finalRound = round === MAX_TOOL_CALLS_PER_AGENT_TURN;
-    const withTools = toolsEnabled && !finalRound;
+    const withTools = anyTools && !finalRound;
 
     let data = await request(withTools);
     if (data === null && withTools) data = await request(false);
@@ -695,15 +813,17 @@ async function callGoogleDirect(
   toolsEnabled: boolean,
   accessToken: string | null,
   maxTokens: number,
-  errorSink?: ErrorSink
+  errorSink?: ErrorSink,
+  chartEnabled = false
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('google', connection.model);
   const contents: Record<string, unknown>[] = [
     { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] },
   ];
-  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], webAccessFailed: false };
+  const evidence: ToolEvidence = { webSearches: [], webBrowses: [], charts: [], webAccessFailed: false };
   let inputTokens = 0;
   let outputTokens = 0;
+  const anyTools = toolsEnabled || chartEnabled;
 
   async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = { contents };
@@ -717,7 +837,12 @@ async function callGoogleDirect(
       generationConfig.thinkingConfig = { thinkingBudget: effortToBudgetTokens(connection.effort) };
     }
     body.generationConfig = generationConfig;
-    if (withTools) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL] }];
+    if (withTools) {
+      const decls: unknown[] = [];
+      if (toolsEnabled) decls.push(GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL);
+      if (chartEnabled) decls.push(GOOGLE_CHART_TOOL);
+      body.tools = [{ functionDeclarations: decls }];
+    }
     await throttleLLM(connection.provider, connection.apiKey);
     return fetchJsonWithRateLimitRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
@@ -735,7 +860,7 @@ async function callGoogleDirect(
     // (see callOpenAICompatibleDirect for why this matters when a web
     // backend is rejecting calls).
     const finalRound = round === MAX_TOOL_CALLS_PER_AGENT_TURN;
-    const withTools = toolsEnabled && !finalRound;
+    const withTools = anyTools && !finalRound;
 
     let data = await request(withTools);
     if (data === null && withTools) data = await request(false);
@@ -773,17 +898,18 @@ async function callDirect(
   toolsEnabled = false,
   accessToken: string | null = null,
   maxTokens: number = DEFAULT_MAX_TOKENS,
-  errorSink?: ErrorSink
+  errorSink?: ErrorSink,
+  chartEnabled = false
 ): Promise<DirectCallResult | null> {
   try {
     if (OPENAI_COMPATIBLE_PROVIDERS.includes(connection.provider)) {
-      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink);
+      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink, chartEnabled);
     }
     switch (connection.provider) {
       case 'anthropic':
-        return await callAnthropicDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink);
+        return await callAnthropicDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink, chartEnabled);
       case 'google':
-        return await callGoogleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink);
+        return await callGoogleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink, chartEnabled);
       default:
         return null;
     }
@@ -806,6 +932,7 @@ export interface AgentReplyResult {
   model: string;
   webSearches?: WebSearchEvidence[];
   webBrowses?: BrowseEvidence[];
+  charts?: ChartSpec[];
   webAccessFailed?: boolean;
 }
 
@@ -856,7 +983,8 @@ export async function fetchAgentReply(
     agent.webSearchEnabled,
     accessToken ?? null,
     maxTokens ?? DEFAULT_MAX_TOKENS,
-    errorSink
+    errorSink,
+    agent.chartEnabled
   );
   if (!result) return null;
   // Snapshot provider/model at send time — connections are user-editable/
@@ -870,6 +998,7 @@ export async function fetchAgentReply(
     model: connection.model,
     webSearches: result.webSearches.length > 0 ? result.webSearches : undefined,
     webBrowses: result.webBrowses.length > 0 ? result.webBrowses : undefined,
+    charts: result.charts.length > 0 ? result.charts : undefined,
     webAccessFailed: result.webAccessFailed || undefined,
   };
 }

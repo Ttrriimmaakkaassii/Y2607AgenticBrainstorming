@@ -59,6 +59,7 @@ import { SettingsModal } from './SettingsModal';
 import { AudioModal } from './AudioModal';
 import { AudioRail } from './AudioRail';
 import { MessageContent } from './MessageContent';
+import { ChartRenderer } from '@/lib/chart-render';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
 import { LLMProvidersModal } from './LLMProvidersModal';
@@ -87,7 +88,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true, participant: true,
     pinnedToAllConversations: false,
-    webSearchEnabled: false,
+    webSearchEnabled: false, chartEnabled: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -107,7 +108,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true, participant: true,
     pinnedToAllConversations: false,
-    webSearchEnabled: false,
+    webSearchEnabled: false, chartEnabled: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -127,7 +128,7 @@ const DEFAULT_AGENTS: Agent[] = [
     connectionId: null,
     active: true, participant: true,
     pinnedToAllConversations: false,
-    webSearchEnabled: false,
+    webSearchEnabled: false, chartEnabled: false,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
@@ -193,6 +194,7 @@ function migrateState(state: ConversationState): ConversationState {
       participant,
       pinnedToAllConversations: agent.pinnedToAllConversations ?? false,
       webSearchEnabled: agent.webSearchEnabled ?? false,
+      chartEnabled: agent.chartEnabled ?? false,
       identity: agent.identity ?? '',
       skills: agent.skills ?? '',
       loopGuidance: agent.loopGuidance ?? '',
@@ -1034,6 +1036,7 @@ export function ChatApp() {
         model: finalReply.model,
         webBrowses: finalReply.webBrowses,
         webAccessFailed: finalReply.webAccessFailed,
+        charts: finalReply.charts,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       const finishedThread = updatedThread;
@@ -2398,7 +2401,7 @@ export function ChatApp() {
       connectionId: null,
       active: true, participant: true,
       pinnedToAllConversations: false,
-      webSearchEnabled: false,
+      webSearchEnabled: false, chartEnabled: false,
       voiceURI: null,
       googleVoiceName: null,
       traits: {},
@@ -2475,7 +2478,7 @@ export function ChatApp() {
       connectionId: null,
       active: true, participant: true,
       pinnedToAllConversations: false,
-      webSearchEnabled: false,
+      webSearchEnabled: false, chartEnabled: false,
       voiceURI: null,
       googleVoiceName: null,
       traits: {},
@@ -3817,6 +3820,13 @@ export function ChatApp() {
                           }
                           searchQuery={searchQuery}
                         />
+                        {msg.charts && msg.charts.length > 0 && (
+                          <div className="bubble-charts">
+                            {msg.charts.map((spec, ci) => (
+                              <ChartRenderer key={ci} spec={spec} />
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="feedback-controls">
                         {(() => {

@@ -1223,6 +1223,17 @@ export function SettingsModal({
                     />
                     🌐 Allow internet access (browse a specific URL){!auth && ' — requires sign-in'}
                   </label>
+                  <label className="control-label">
+                    <input
+                      type="checkbox"
+                      checked={currentAgent?.chartEnabled ?? false}
+                      onChange={(e) => {
+                        if (!currentAgent) return;
+                        onSave(currentAgent.id, { chartEnabled: e.target.checked });
+                      }}
+                    />
+                    📊 Chart expert (emit bar/line/multiAxis/heatmap charts as this agent's reply)
+                  </label>
                   <div className="web-access-status" {...devRef('s32')}>
                     <span className="web-access-status-title">🔧 Web Access status</span>
                     <span className={`web-access-dot ${webAccessStatus?.searchConfigured ? 'ok' : 'no'}`} title="Tavily search key (web_search discovery tool)">
@@ -1407,6 +1418,7 @@ export function SettingsModal({
                           <th title="Joins the visible discussion rounds (participant ⇒ active)">🗣️ Participant</th>
                           <th title="Include this agent in every new tab/conversation by default">📌 Pinned</th>
                           <th title="Give this agent a real browse_url tool (open a specific page, not search)">🌐 Internet</th>
+                          <th title="Let this agent emit charts (bar/line/multiAxis/heatmap) as its reply — a Chart expert">📊 Charts</th>
                           {traitDefs.map((def) => (
                             <th key={def.id} title={def.category}>
                               {def.name}
@@ -1583,6 +1595,20 @@ export function SettingsModal({
                                 }
                               />
                             </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                title="Let this agent emit charts (bar/line/multiAxis/heatmap) as its reply"
+                                checked={agent.chartEnabled}
+                                onChange={(e) =>
+                                  onUpdateAgentsBulk(
+                                    agents.map((a) =>
+                                      a.id === agent.id ? { ...a, chartEnabled: e.target.checked } : a
+                                    )
+                                  )
+                                }
+                              />
+                            </td>
                             {traitDefs.map((def) => {
                               const value = agent.traits?.[def.id] ?? 50;
                               return (
@@ -1639,6 +1665,7 @@ export function SettingsModal({
                         <th title="Joins the visible discussion rounds (participant ⇒ active)">🗣️</th>
                         <th title="Include this agent in every new tab/conversation by default">📌</th>
                         <th title="Give this agent a real browse_url tool (open a specific page, not search)">🌐</th>
+                        <th title="Let this agent emit charts (bar/line/multiAxis/heatmap) as its reply">📊</th>
                         <th>Order</th>
                         <th></th>
                       </tr>
@@ -1860,6 +1887,14 @@ export function SettingsModal({
                                 title="Give this agent a real browse_url tool (open a specific page, not search)"
                                 checked={agent.webSearchEnabled}
                                 onChange={(e) => updateDraftField(agent.id, { webSearchEnabled: e.target.checked })}
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                title="Let this agent emit charts (bar/line/multiAxis/heatmap) as its reply"
+                                checked={agent.chartEnabled}
+                                onChange={(e) => updateDraftField(agent.id, { chartEnabled: e.target.checked })}
                               />
                             </td>
                             <td onClick={(e) => e.stopPropagation()}>
