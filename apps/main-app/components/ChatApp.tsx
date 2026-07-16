@@ -18,7 +18,7 @@ import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
-import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction } from '@/lib/llm-client';
+import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction, DEFAULT_MAX_TOKENS } from '@/lib/llm-client';
 import { judgeRepetition } from '@/lib/orchestrator';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
@@ -787,6 +787,11 @@ export function ChatApp() {
       name: def.name,
       value: agent.traits?.[def.id] ?? 50,
     }));
+    // Error sink captures the real provider error (status + body slice) when
+    // the call fails, so runAgentRound can show WHY instead of a generic
+    // "failed to respond". Reset per call.
+    const errorSink: { message?: string } = {};
+    lastReplyErrorRef.current = null;
     const reply = await fetchAgentReply(
       agent,
       connections,
@@ -802,8 +807,11 @@ export function ChatApp() {
       resolvedTraits,
       extraInstruction,
       live.wikiEnabled ? live.wikiDigest : undefined,
-      auth?.session.access_token ?? null
+      auth?.session.access_token ?? null,
+      live.maxTokens ?? DEFAULT_MAX_TOKENS,
+      errorSink
     );
+    if (!reply && errorSink.message) lastReplyErrorRef.current = errorSink.message;
     if (reply) {
       setLiveMode(true);
     } else {
@@ -813,6 +821,10 @@ export function ChatApp() {
   }
 
   const wikiRefreshInFlightRef = useRef(false);
+  // Last provider error captured by getReply's error sink (status + body
+  // slice). Read by runAgentRound to show WHY a reply failed instead of the
+  // old opaque "failed to respond".
+  const lastReplyErrorRef = useRef<string | null>(null);
 
   /**
    * Regenerates the shared cross-thread wiki digest from just the newest
@@ -931,7 +943,7 @@ export function ChatApp() {
       const reply = await getReply(agent, updatedThread.messages);
       stopThinking(agent.id);
       if (!reply) {
-        showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
+        showToast(`⚠️ ${agent.refNumber} failed to respond${lastReplyErrorRef.current ? `: ${lastReplyErrorRef.current}` : ''} — check its LLM connection.`);
         consecutiveFailures += 1;
         // Only abort the whole round once every agent in rotation has failed
         // back-to-back — one agent's bad key/CORS issue shouldn't silence
@@ -1043,7 +1055,7 @@ export function ChatApp() {
     const openingLine = await getReply(opener, []);
     stopThinking(opener.id);
     if (!openingLine) {
-      showToast(`⚠️ ${opener.refNumber} failed to respond — check its LLM connection.`);
+      showToast(`⚠️ ${opener.refNumber} failed to respond${lastReplyErrorRef.current ? `: ${lastReplyErrorRef.current}` : ''} — check its LLM connection.`);
       return;
     }
     const openingRejection = validateAgentReply(opener, openingLine);
@@ -1075,7 +1087,7 @@ export function ChatApp() {
     const openingLine = await getReply(agent, []);
     stopThinking(agent.id);
     if (!openingLine) {
-      showToast(`⚠️ ${agent.refNumber} failed to respond — check its LLM connection.`);
+      showToast(`⚠️ ${agent.refNumber} failed to respond${lastReplyErrorRef.current ? `: ${lastReplyErrorRef.current}` : ''} — check its LLM connection.`);
       return;
     }
     const openingRejection = validateAgentReply(agent, openingLine);
@@ -1309,7 +1321,7 @@ export function ChatApp() {
     const reply = await getReply(author, precedingMessages, instruction);
     stopThinking(author.id);
     if (!reply) {
-      showToast(`⚠️ ${author.refNumber} failed to respond — check its LLM connection.`);
+      showToast(`⚠️ ${author.refNumber} failed to respond${lastReplyErrorRef.current ? `: ${lastReplyErrorRef.current}` : ''} — check its LLM connection.`);
       return;
     }
     const reactionRejection = validateAgentReply(author, reply);

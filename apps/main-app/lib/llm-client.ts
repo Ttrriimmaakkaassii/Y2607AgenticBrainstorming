@@ -396,6 +396,23 @@ interface DirectCallResult {
 }
 
 /**
+ * Mutable holder threaded down through callDirect → callXDirect → request so a
+ * failing call can record the REAL provider error (status + a short body slice)
+ * instead of returning a silent null. The return type stays null on failure
+ * (graceful degradation unchanged); callers that care read `sink.message`.
+ */
+export interface ErrorSink {
+  message?: string;
+}
+
+/** Default completion cap when the user hasn't set ConversationSettings.maxTokens.
+ * Large enough for reasoning/thinking models (GLM-5.x, GLM-4.5/4.6, o-series)
+ * to think AND answer — the old hardcoded 500 was exhausted mid-reasoning,
+ * which is why GLM-5.2 came back empty while the non-reasoning GLM-4.7-flash
+ * worked on the identical endpoint. */
+export const DEFAULT_MAX_TOKENS = 4096;
+
+/**
  * Shared caller for every provider whose chat API mirrors OpenAI's
  * /v1/chat/completions shape (OpenAI, DeepSeek, Z.ai, Moonshot, xAI, Mistral).
  * When `toolsEnabled`, loops on tool_calls (up to
@@ -407,7 +424,9 @@ async function callOpenAICompatibleDirect(
   systemPrompt: string,
   userPrompt: string,
   toolsEnabled: boolean,
-  accessToken: string | null
+  accessToken: string | null,
+  maxTokens: number,
+  errorSink?: ErrorSink
 ): Promise<DirectCallResult | null> {
   const provider = getProvider(connection.provider);
   if (!provider) return null;
@@ -431,7 +450,7 @@ async function callOpenAICompatibleDirect(
     const body: Record<string, unknown> = {
       model: connection.model,
       messages,
-      max_tokens: 500,
+      max_tokens: maxTokens,
     };
     if (modelInfo?.supportsEffort) body.reasoning_effort = connection.effort;
     if (withTools) {
@@ -447,9 +466,23 @@ async function callOpenAICompatibleDirect(
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // Capture the real provider error so the caller can surface it
+        // instead of a silent null (was the reported "GLM-5.2 just fails,
+        // must be the base URL" mystery — it was a 500-token cap, but a
+        // 400/403 model-id/key error would look identical without this).
+        let detail = '';
+        try {
+          detail = (await res.text()).slice(0, 300);
+        } catch {
+          /* ignore */
+        }
+        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
       return null;
     }
   }
@@ -508,7 +541,9 @@ async function callAnthropicDirect(
   systemPrompt: string,
   userPrompt: string,
   toolsEnabled: boolean,
-  accessToken: string | null
+  accessToken: string | null,
+  maxTokens: number,
+  errorSink?: ErrorSink
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('anthropic', connection.model);
   const messages: Record<string, unknown>[] = [{ role: 'user', content: userPrompt }];
@@ -519,13 +554,20 @@ async function callAnthropicDirect(
   async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = {
       model: connection.model,
-      max_tokens: 500,
       system: systemPrompt,
       messages,
     };
+    // Anthropic requires max_tokens to be an integer and, when extended
+    // thinking is on, strictly greater than thinking.budget_tokens — so size
+    // the cap to whichever is larger, guaranteeing the thinking budget always
+    // has room plus headroom for the final answer.
+    let cap = Math.max(1, Math.floor(maxTokens));
     if (modelInfo?.supportsEffort) {
-      body.thinking = { type: 'enabled', budget_tokens: effortToBudgetTokens(connection.effort) };
+      const budget = effortToBudgetTokens(connection.effort);
+      cap = Math.max(cap, budget + 1024);
+      body.thinking = { type: 'enabled', budget_tokens: budget };
     }
+    body.max_tokens = cap;
     if (withTools) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL];
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -538,9 +580,19 @@ async function callAnthropicDirect(
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = (await res.text()).slice(0, 300);
+        } catch {
+          /* ignore */
+        }
+        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
       return null;
     }
   }
@@ -586,7 +638,9 @@ async function callGoogleDirect(
   systemPrompt: string,
   userPrompt: string,
   toolsEnabled: boolean,
-  accessToken: string | null
+  accessToken: string | null,
+  maxTokens: number,
+  errorSink?: ErrorSink
 ): Promise<DirectCallResult | null> {
   const modelInfo = getModel('google', connection.model);
   const contents: Record<string, unknown>[] = [
@@ -598,11 +652,16 @@ async function callGoogleDirect(
 
   async function request(withTools: boolean): Promise<any | null> {
     const body: Record<string, unknown> = { contents };
+    const generationConfig: Record<string, unknown> = {
+      // Gemini previously had NO output cap (worked fine), but set one
+      // explicitly now that maxTokens is plumbed — generous so reasoning
+      // models keep their headroom.
+      maxOutputTokens: Math.max(1024, Math.floor(maxTokens)),
+    };
     if (modelInfo?.supportsEffort) {
-      body.generationConfig = {
-        thinkingConfig: { thinkingBudget: effortToBudgetTokens(connection.effort) },
-      };
+      generationConfig.thinkingConfig = { thinkingBudget: effortToBudgetTokens(connection.effort) };
     }
+    body.generationConfig = generationConfig;
     if (withTools) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL] }];
     try {
       const res = await fetch(
@@ -613,9 +672,19 @@ async function callGoogleDirect(
           body: JSON.stringify(body),
         }
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = (await res.text()).slice(0, 300);
+        } catch {
+          /* ignore */
+        }
+        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
       return null;
     }
   }
@@ -661,21 +730,24 @@ async function callDirect(
   systemPrompt: string,
   userPrompt: string,
   toolsEnabled = false,
-  accessToken: string | null = null
+  accessToken: string | null = null,
+  maxTokens: number = DEFAULT_MAX_TOKENS,
+  errorSink?: ErrorSink
 ): Promise<DirectCallResult | null> {
   try {
     if (OPENAI_COMPATIBLE_PROVIDERS.includes(connection.provider)) {
-      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken);
+      return await callOpenAICompatibleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink);
     }
     switch (connection.provider) {
       case 'anthropic':
-        return await callAnthropicDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken);
+        return await callAnthropicDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink);
       case 'google':
-        return await callGoogleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken);
+        return await callGoogleDirect(connection, systemPrompt, userPrompt, toolsEnabled, accessToken, maxTokens, errorSink);
       default:
         return null;
     }
-  } catch {
+  } catch (err) {
+    if (errorSink) errorSink.message = err instanceof Error ? err.message : 'call failed';
     return null;
   }
 }
@@ -712,7 +784,11 @@ export async function fetchAgentReply(
   extraInstruction?: string,
   wikiDigest?: string,
   /** Current Supabase session access token, or null if not signed in — required for agent.webSearchEnabled to actually work (see functions/api/research/browse.ts's auth check); a signed-out session just gets TOOL_UNAVAILABLE from the browse call instead of erroring. */
-  accessToken?: string | null
+  accessToken?: string | null,
+  /** Completion token cap for the reply (was hardcoded 500 — too small for reasoning models like GLM-5.2, which exhausted it thinking). Defaults to DEFAULT_MAX_TOKENS. */
+  maxTokens?: number,
+  /** Optional mutable sink; when the call fails, the real provider error is written here so callers can surface it instead of a silent null. */
+  errorSink?: ErrorSink
 ): Promise<AgentReplyResult | null> {
   const connection = agent.connectionId
     ? connections.find((c) => c.id === agent.connectionId)
@@ -730,7 +806,15 @@ export async function fetchAgentReply(
     traits
   );
   const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction, wikiDigest);
-  const result = await callDirect(connection, systemPrompt, userPrompt, agent.webSearchEnabled, accessToken ?? null);
+  const result = await callDirect(
+    connection,
+    systemPrompt,
+    userPrompt,
+    agent.webSearchEnabled,
+    accessToken ?? null,
+    maxTokens ?? DEFAULT_MAX_TOKENS,
+    errorSink
+  );
   if (!result) return null;
   // Snapshot provider/model at send time — connections are user-editable/
   // deletable independently of message history, so resolving them later
