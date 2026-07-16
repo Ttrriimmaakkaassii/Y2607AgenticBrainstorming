@@ -84,7 +84,7 @@ const DEFAULT_AGENTS: Agent[] = [
     color: '#3b99fc',
     llmProvider: 'openai',
     connectionId: null,
-    active: true,
+    active: true, participant: true,
     pinnedToAllConversations: false,
     webSearchEnabled: false,
     voiceURI: null,
@@ -104,7 +104,7 @@ const DEFAULT_AGENTS: Agent[] = [
     color: '#2ecc71',
     llmProvider: 'anthropic',
     connectionId: null,
-    active: true,
+    active: true, participant: true,
     pinnedToAllConversations: false,
     webSearchEnabled: false,
     voiceURI: null,
@@ -124,7 +124,7 @@ const DEFAULT_AGENTS: Agent[] = [
     color: '#f39c12',
     llmProvider: 'google',
     connectionId: null,
-    active: true,
+    active: true, participant: true,
     pinnedToAllConversations: false,
     webSearchEnabled: false,
     voiceURI: null,
@@ -175,6 +175,10 @@ function migrateState(state: ConversationState): ConversationState {
   let maxSeen = 0;
   const agents = state.agents.map((agent) => {
     const active = agent.active ?? true;
+    // participant joins the visible rounds; preserve the old `active` meaning
+    // (which was "participates in rounds") on migration, then the user can
+    // demote some active agents to background advisors.
+    const participant = agent.participant ?? active;
     let refNumber = agent.refNumber;
     if (!refNumber) {
       refNumber = `Agt${maxSeen + 1}`;
@@ -185,6 +189,7 @@ function migrateState(state: ConversationState): ConversationState {
       ...agent,
       refNumber,
       active,
+      participant,
       pinnedToAllConversations: agent.pinnedToAllConversations ?? false,
       webSearchEnabled: agent.webSearchEnabled ?? false,
       identity: agent.identity ?? '',
@@ -689,7 +694,7 @@ export function ChatApp() {
   // A brand-new tab starts with nobody active (see
   // freshConversationWithCurrentAgents) — the Participants bar shows a
   // category picker in that state instead of an empty/degenerate chip row.
-  const noActiveParticipants = state.agents.length > 0 && state.agents.every((a) => !a.active);
+  const noActiveParticipants = state.agents.length > 0 && state.agents.every((a) => !a.participant);
 
   function agentIsConnected(agent: Agent): boolean {
     return !!agent.connectionId && connections.some((c) => c.id === agent.connectionId);
@@ -942,7 +947,7 @@ export function ChatApp() {
       // agent since the round began. Skip its turn rather than calling an
       // LLM it's no longer authorized to speak for.
       const liveAgent = agentsRef.current.find((a) => a.id === agent.id);
-      if (!liveAgent || !liveAgent.active || !agentIsConnected(liveAgent)) {
+      if (!liveAgent || !liveAgent.participant || !agentIsConnected(liveAgent)) {
         continue;
       }
 
@@ -1047,7 +1052,7 @@ export function ChatApp() {
   }
 
   async function startDiscussion() {
-    const activeAgents = state.agents.filter((a) => a.active);
+    const activeAgents = state.agents.filter((a) => a.participant);
     const connectedActive = activeAgents.filter(agentIsConnected);
     if (connectedActive.length === 0) {
       showToast(
@@ -1265,7 +1270,7 @@ export function ChatApp() {
     // default — not just the first one in rotation — unless @mentioning a
     // specific agent (handled above) says otherwise.
     const threadWithUserMsg = { ...targetThread, messages: [...targetThread.messages, userMessage] };
-    runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.active));
+    runAgentRound(threadWithUserMsg, state.agents.filter((a) => a.participant));
   }
 
   /** Quick-action shortcuts for steering an in-progress discussion, sent
@@ -1791,13 +1796,21 @@ export function ChatApp() {
   function toggleAgentActive(id: string) {
     const agent = state.agents.find((a) => a.id === id);
     if (!agent) return;
-    if (!agent.active && !agentIsConnected(agent)) {
+    // Toggling the participant chip flips whether this agent joins the visible
+    // rounds. participant ⇒ active (can't participate if not enabled), so
+    // turning participation on also enables the agent.
+    const nextParticipant = !agent.participant;
+    if (nextParticipant && !agentIsConnected(agent)) {
       showToast(`${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs first.`);
       return;
     }
     setState((prev) => ({
       ...prev,
-      agents: prev.agents.map((a) => (a.id === id ? { ...a, active: !a.active } : a)),
+      agents: prev.agents.map((a) =>
+        a.id === id
+          ? { ...a, participant: nextParticipant, active: nextParticipant ? true : a.active }
+          : a
+      ),
     }));
   }
 
@@ -2002,7 +2015,7 @@ export function ChatApp() {
       showToast('Start a discussion first.');
       return;
     }
-    const connectedActive = state.agents.filter((a) => a.active && agentIsConnected(a));
+    const connectedActive = state.agents.filter((a) => a.participant && agentIsConnected(a));
     if (connectedActive.length === 0) {
       showToast('No connected, participating agents to resume with.');
       return;
@@ -2273,7 +2286,10 @@ export function ChatApp() {
       const mergedAgents: Agent[] = loaded.agents.map((existing) => {
         seen.add(existing.id);
         const src = sourceById.get(existing.id);
-        return src ? { ...src, active: existing.active } : existing;
+        // active is shared roster identity (comes from src); participant is
+        // per-conversation (who joins THIS tab's rounds) so preserve the
+        // target tab's own value.
+        return src ? { ...src, participant: existing.participant } : existing;
       });
       for (const src of nextAgents) {
         if (!seen.has(src.id)) mergedAgents.push({ ...src });
@@ -2347,7 +2363,7 @@ export function ChatApp() {
       color: '#8e44ad',
       llmProvider: 'openai',
       connectionId: null,
-      active: true,
+      active: true, participant: true,
       pinnedToAllConversations: false,
       webSearchEnabled: false,
       voiceURI: null,
@@ -2392,7 +2408,7 @@ export function ChatApp() {
       refNumber,
       name: `${base} #${existingCount + 1}`,
       traits: { ...src.traits },
-      active: true,
+      active: true, participant: true,
     };
     const insertAt = state.agents.findIndex((a) => a.id === id);
     const nextAgents =
@@ -2424,7 +2440,7 @@ export function ChatApp() {
       color: preset.color,
       llmProvider: 'openai',
       connectionId: null,
-      active: true,
+      active: true, participant: true,
       pinnedToAllConversations: false,
       webSearchEnabled: false,
       voiceURI: null,
@@ -3059,7 +3075,7 @@ export function ChatApp() {
           </>
         ) : (
           state.agents
-          .filter((agent) => chipBarShowAll || agent.active)
+          .filter((agent) => chipBarShowAll || agent.participant)
           .map((agent) => {
             const connected = agentIsConnected(agent);
             return (
@@ -3068,10 +3084,10 @@ export function ChatApp() {
                 {...devRef('b15', agent.id)}
                 // Every agent always renders here, in stable state.agents
                 // order — only styling (not presence/position) reflects
-                // active/connected, so toggling one never reflows/reorders
+                // participant/connected, so toggling one never reflows/reorders
                 // its neighbors.
                 className={`participant-chip ${connected ? 'active' : 'disconnected'} ${
-                  !agent.active ? 'inactive' : ''
+                  !agent.participant ? 'inactive' : ''
                 }`}
                 style={{ borderColor: agent.color }}
                 onClick={() => {
@@ -3097,9 +3113,9 @@ export function ChatApp() {
                 title={
                   !connected
                     ? `${agent.refNumber} has no LLM connected — assign one in 🔌 LLMs (double-click to open Settings)`
-                    : agent.active
-                    ? 'Click to deactivate, double-click to open Settings'
-                    : 'Click to activate, double-click to open Settings'
+                    : agent.participant
+                    ? 'Click to remove from this conversation, double-click to open Settings'
+                    : 'Click to add to this conversation, double-click to open Settings'
                 }
               >
                 <span className="participant-dot" style={{ background: agent.color }} />
@@ -3109,7 +3125,7 @@ export function ChatApp() {
             );
           })
         )}
-        {!noActiveParticipants && state.agents.some((a) => !a.active) && (
+        {!noActiveParticipants && state.agents.some((a) => !a.participant) && (
           <button
             className="control-btn"
             {...devRef('b86')}
@@ -3118,18 +3134,18 @@ export function ChatApp() {
           >
             {chipBarShowAll
               ? '▲ Active only'
-              : `▼ +${state.agents.filter((a) => !a.active).length} inactive`}
+              : `▼ +${state.agents.filter((a) => !a.participant).length} inactive`}
           </button>
         )}
         <button
           className="control-btn"
           {...devRef('b75')}
           onClick={() =>
-            setState((prev) => ({ ...prev, agents: prev.agents.map((a) => ({ ...a, active: false })) }))
+            setState((prev) => ({ ...prev, agents: prev.agents.map((a) => ({ ...a, participant: false })) }))
           }
-          title="Deactivate every agent in this conversation"
+          title="Remove every agent from this conversation's rounds"
         >
-          🚫 Deactivate All
+          🚫 Remove All
         </button>
         <div className="participants-menu-wrap" ref={participantsMenuRef}>
           <button
@@ -3138,7 +3154,7 @@ export function ChatApp() {
             onClick={() => setParticipantsMenuOpen((v) => !v)}
             title="Manage which agents are active in this session"
           >
-            👥 Manage ({state.agents.filter((a) => a.active).length}/{state.agents.length}) ▾
+            👥 Manage ({state.agents.filter((a) => a.participant).length}/{state.agents.length}) ▾
           </button>
           {participantsMenuOpen && (
             <div
@@ -3177,9 +3193,9 @@ export function ChatApp() {
                 // active (see freshConversationWithCurrentAgents), and
                 // filtering THAT down to active-only would show a
                 // confusingly empty list instead of the full roster.
-                const hasAnyActiveAgent = state.agents.some((a) => a.active);
+                const hasAnyActiveAgent = state.agents.some((a) => a.participant);
                 const filtered = state.agents.filter((a) => {
-                  if (!showInactiveParticipants && hasAnyActiveAgent && !a.active) return false;
+                  if (!showInactiveParticipants && hasAnyActiveAgent && !a.participant) return false;
                   const categories = categoriesForParticipant(a.name);
                   if (
                     participantCategoryFilters.size > 0 &&
@@ -3301,7 +3317,7 @@ export function ChatApp() {
                           <label key={agent.id} className="participants-menu-row" {...devRef('32d', fi)}>
                             <input
                               type="checkbox"
-                              checked={agent.active}
+                              checked={agent.participant}
                               onChange={() => toggleAgentActive(agent.id)}
                             />
                             <span

@@ -1385,6 +1385,8 @@ export function SettingsModal({
                           <th>Ref</th>
                           <th>Name</th>
                           <th>Categories</th>
+                          <th title="Enabled/on. Active agents feed the background moderator even if they don't join rounds.">⚡ Active</th>
+                          <th title="Joins the visible discussion rounds (participant ⇒ active)">🗣️ Participant</th>
                           <th title="Include this agent in every new tab/conversation by default">📌 Pinned</th>
                           <th title="Give this agent a real browse_url tool (open a specific page, not search)">🌐 Internet</th>
                           {traitDefs.map((def) => (
@@ -1498,6 +1500,46 @@ export function SettingsModal({
                             <td style={{ textAlign: 'center' }}>
                               <input
                                 type="checkbox"
+                                title="Enabled/on. Turning off also removes from rounds (participant ⇒ active)."
+                                checked={agent.active}
+                                onChange={(e) =>
+                                  onUpdateAgentsBulk(
+                                    agents.map((a) =>
+                                      a.id === agent.id
+                                        ? {
+                                            ...a,
+                                            active: e.target.checked,
+                                            participant: e.target.checked ? a.participant : false,
+                                          }
+                                        : a
+                                    )
+                                  )
+                                }
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                title="Joins the visible discussion rounds (participant ⇒ active)"
+                                checked={agent.participant}
+                                onChange={(e) =>
+                                  onUpdateAgentsBulk(
+                                    agents.map((a) =>
+                                      a.id === agent.id
+                                        ? {
+                                            ...a,
+                                            participant: e.target.checked,
+                                            active: e.target.checked ? true : a.active,
+                                          }
+                                        : a
+                                    )
+                                  )
+                                }
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
                                 title="Include this agent in every new tab/conversation by default"
                                 checked={agent.pinnedToAllConversations}
                                 onChange={(e) =>
@@ -1575,6 +1617,8 @@ export function SettingsModal({
                         <th className="sortable" onClick={() => toggleAgentSort('llm')}>
                           LLM{sortArrow('llm')}
                         </th>
+                        <th title="Enabled/on. Active agents feed the background moderator even if they don't join rounds.">⚡</th>
+                        <th title="Joins the visible discussion rounds (participant ⇒ active)">🗣️</th>
                         <th title="Include this agent in every new tab/conversation by default">📌</th>
                         <th title="Give this agent a real browse_url tool (open a specific page, not search)">🌐</th>
                         <th>Order</th>
@@ -1757,6 +1801,32 @@ export function SettingsModal({
                                   </option>
                                 ))}
                               </select>
+                            </td>
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                title="Enabled/on. Turning off also removes from rounds (participant ⇒ active)."
+                                checked={agent.active}
+                                onChange={(e) =>
+                                  updateDraftField(agent.id, {
+                                    active: e.target.checked,
+                                    participant: e.target.checked ? agent.participant : false,
+                                  })
+                                }
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                title="Joins the visible discussion rounds (participant ⇒ active)"
+                                checked={agent.participant}
+                                onChange={(e) =>
+                                  updateDraftField(agent.id, {
+                                    participant: e.target.checked,
+                                    active: e.target.checked ? true : agent.active,
+                                  })
+                                }
+                              />
                             </td>
                             <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                               <input

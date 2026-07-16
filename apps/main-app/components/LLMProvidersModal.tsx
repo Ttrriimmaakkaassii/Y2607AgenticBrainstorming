@@ -980,12 +980,18 @@ export function LLMProvidersModal({
                           <input
                             type="checkbox"
                             {...devRef('ck10')}
-                            checked={agent.active}
-                            title={agent.active ? 'Active' : 'Not active'}
+                            checked={agent.participant}
+                            title={agent.participant ? 'Participates in rounds' : 'Not participating'}
                             onChange={(e) =>
                               setTableAgents((prev) =>
                                 prev.map((a) =>
-                                  a.id === agent.id ? { ...a, active: e.target.checked } : a
+                                  a.id === agent.id
+                                    ? {
+                                        ...a,
+                                        participant: e.target.checked,
+                                        active: e.target.checked ? true : a.active,
+                                      }
+                                    : a
                                 )
                               )
                             }

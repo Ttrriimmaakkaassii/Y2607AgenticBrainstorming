@@ -15,7 +15,7 @@ const baseAgent: Agent = {
   color: '#3b99fc',
   llmProvider: 'openai',
   connectionId: 'c1',
-  active: true,
+  active: true, participant: true,
   pinnedToAllConversations: false,
   webSearchEnabled: false,
   voiceURI: null,

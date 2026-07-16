@@ -34,7 +34,7 @@ function baseAgent(overrides: Partial<Agent> = {}): Agent {
     color: '#3b99fc',
     llmProvider: 'openai',
     connectionId: connection.id,
-    active: true,
+    active: true, participant: true,
     pinnedToAllConversations: false,
     webSearchEnabled: true,
     voiceURI: null,

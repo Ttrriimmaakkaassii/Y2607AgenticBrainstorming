@@ -43,8 +43,10 @@ export interface Agent {
   color: string;
   llmProvider: LLMProvider;
   connectionId: string | null;
-  /** Whether this agent participates in new discussion rounds. */
+  /** Whether this agent is enabled/on. Active agents feed the background moderator (see lib/orchestrator + ChatApp's advisor polling); they do NOT necessarily speak in the rounds — that's `participant`. */
   active: boolean;
+  /** Whether this agent joins the visible discussion rounds. participant implies active (participant ⇒ active); an active agent that is NOT a participant is a background "advisor" that only feeds the moderator. */
+  participant: boolean;
   /** When true, this agent starts active by default in every brand-new tab/conversation, instead of needing a category pick or manual activation each time. */
   pinnedToAllConversations: boolean;
   /** When true, this agent gets a real web_search tool (see lib/llm-client.ts's runWithTools) instead of just being told it can't browse the web. */

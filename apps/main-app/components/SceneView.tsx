@@ -127,7 +127,7 @@ export function SceneView({
   defaultTextSize,
 }: SceneViewProps) {
   const speakingMessageId = spokenRange?.messageId ?? null;
-  const activeAgents = useMemo(() => agents.filter((a) => a.active), [agents]);
+  const activeAgents = useMemo(() => agents.filter((a) => a.participant), [agents]);
   const seats = useMemo(() => sideLayout(activeAgents.length), [activeAgents.length]);
 
   const stageRef = useRef<HTMLDivElement>(null);
