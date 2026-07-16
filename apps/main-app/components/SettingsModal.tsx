@@ -1109,6 +1109,7 @@ export function SettingsModal({
                       </label>
                       <textarea
                         {...(f.key === 'instructions' ? devRef('t5') : {})}
+                        rows={f.key === 'instructions' ? 5 : 3}
                         value={f.value}
                         onChange={(e) => f.set(e.target.value)}
                       />
