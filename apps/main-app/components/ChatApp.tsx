@@ -2292,8 +2292,8 @@ export function ChatApp() {
       id: generateId(),
       refNumber,
       name: `Agent ${state.agents.length + 1}`,
-      role: 'Contributor',
-      instructions: 'Share a distinct perspective on the topic.',
+      role: '',
+      instructions: '',
       identity: '',
       skills: '',
       loopGuidance: '',
@@ -2331,12 +2331,20 @@ export function ChatApp() {
   function duplicateAgent(id: string) {
     const src = state.agents.find((a) => a.id === id);
     if (!src) return;
+    // Strip any existing " #N" suffix to find the root name, then number the
+    // clone as the next in the series (Maya → Maya #2 → Maya #3 …) so each
+    // duplicate is distinct and traceable to its original.
+    const base = src.name.replace(/\s*#\d+$/, '').trim() || src.name;
+    const existingCount = state.agents.filter((a) => {
+      const b = a.name.replace(/\s*#\d+$/, '').trim() || a.name;
+      return b === base;
+    }).length;
     const refNumber = `Agt${state.nextAgentNumber}`;
     const clone: Agent = {
       ...src,
       id: generateId(),
       refNumber,
-      name: `${src.name} (copy)`,
+      name: `${base} #${existingCount + 1}`,
       traits: { ...src.traits },
       active: true,
     };
@@ -2352,7 +2360,7 @@ export function ChatApp() {
     }));
     void syncAgentIdentityAcrossTabs(nextAgents);
     setCurrentAgentId(clone.id);
-    showToast(`⧉ Duplicated “${src.name}” → ${refNumber}`);
+    showToast(`⧉ Duplicated “${base}” → ${clone.name} (${refNumber})`);
   }
 
   function addAgentFromPreset(preset: AgentPreset) {

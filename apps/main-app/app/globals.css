@@ -1624,6 +1624,14 @@ body.dev-mode [data-devref]::after {
   font-size: 11px;
 }
 
+/* Asterisk marking an agent that has one or more duplicates (roots only). */
+.dup-asterisk {
+  margin-left: 3px;
+  color: #f39c12;
+  font-weight: 700;
+  cursor: help;
+}
+
 /* Agent profile sub-section (Identity / Instructions / Skills / Loops) — sits
    inside the Configure Agent section, so render as a subtle nested block
    rather than a second boxed modal-section (avoids a double-border look). */

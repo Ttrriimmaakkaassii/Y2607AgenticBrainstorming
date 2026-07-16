@@ -534,6 +534,16 @@ export function SettingsModal({
     onToast(`📥 Downloaded ${agent.name}.`);
   }
 
+  // A "root" agent (name has no " #N" suffix) that has at least one numbered
+  // duplicate in the roster shows an asterisk, signalling "this agent has been
+  // duplicated". Numbered duplicates themselves are not flagged.
+  const rootName = (name: string) => name.replace(/\s*#\d+$/, '').trim() || name;
+  function hasDuplicate(agent: Agent): boolean {
+    if (/\s*#\d+$/.test(agent.name)) return false; // only roots are flagged
+    const base = rootName(agent.name);
+    return agents.some((a) => a.id !== agent.id && rootName(a.name) === base);
+  }
+
   function importAgentsBackup(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1403,7 +1413,12 @@ export function SettingsModal({
                             >
                               {agent.refNumber}
                             </td>
-                            <td>{agent.name}</td>
+                            <td>
+                              {agent.name}
+                              {hasDuplicate(agent) && (
+                                <span className="dup-asterisk" title="This agent has one or more duplicates">*</span>
+                              )}
+                            </td>
                             <td
                               style={{ position: 'relative' }}
                               ref={categoryMenuAgentId === agent.id ? tableCategoryMenuRef : undefined}
@@ -1624,6 +1639,9 @@ export function SettingsModal({
                                 value={agent.name}
                                 onChange={(e) => updateDraftField(agent.id, { name: e.target.value })}
                               />
+                              {hasDuplicate(agent) && (
+                                <span className="dup-asterisk" title="This agent has one or more duplicates">*</span>
+                              )}
                             </td>
                             <td>
                               <input
