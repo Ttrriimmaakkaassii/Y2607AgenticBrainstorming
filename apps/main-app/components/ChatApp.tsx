@@ -3937,6 +3937,12 @@ export function ChatApp() {
           onOpenMindmap={openMindmapFromSettings}
           textSize={state.settings.textSize}
           onUpdateTextSize={(size) => updateSettings({ textSize: size })}
+          maxTokens={state.settings.maxTokens}
+          onUpdateMaxTokens={(v) => updateSettings({ maxTokens: v })}
+          onOpenAnalytics={() => {
+            setSettingsInitialTab(null);
+            setActiveModal('analytics');
+          }}
         />
       )}
       {activeModal === 'library' && (

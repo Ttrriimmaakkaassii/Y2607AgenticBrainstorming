@@ -145,6 +145,79 @@ async function throttleBackend(key: string): Promise<void> {
   lastBackendCallAt[key] = Date.now();
 }
 
+// Same idea as throttleBackend, but for LLM calls keyed by provider+apiKey —
+// within one agent's turn the tool-calling loop (up to 4 rounds) plus the
+// orchestrator re-prompt can fire several calls back-to-back at the SAME
+// low-RPM key (e.g. a Z.ai free/dev tier), which trips 429s. A small minimum
+// gap per key caps that burst without slowing calls to other keys/providers.
+const LLM_THROTTLE_GAP_MS = 800;
+const lastLLMCallAt: Record<string, number> = {};
+async function throttleLLM(provider: string, apiKey: string): Promise<void> {
+  const key = `${provider}:${apiKey.slice(-4)}`;
+  const now = Date.now();
+  const wait = LLM_THROTTLE_GAP_MS - (now - (lastLLMCallAt[key] ?? 0));
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastLLMCallAt[key] = Date.now();
+}
+
+const RATE_LIMITED_MESSAGE =
+  'rate-limited by the provider (429) — your key hit its requests-per-minute or quota limit. Wait a moment, lower Max output tokens in 🪙 Tokens, or check your provider balance/quota.';
+
+/**
+ * Wraps fetch for LLM calls: on HTTP 429, honors Retry-After (or backs off
+ * ~3s then ~6s) and retries up to 2 times so a TRANSIENT rate limit (very
+ * common on free/dev Z.ai keys under burst) becomes a brief wait instead of a
+ * dead reply. Returns the parsed JSON body on success, or null on terminal
+ * failure — writing a clear message into errorSink so the caller's toast
+ * explains it's quota, not a bug.
+ */
+const RATE_LIMIT_MAX_RETRIES = 2;
+export async function fetchJsonWithRateLimitRetry(
+  url: string,
+  opts: RequestInit,
+  errorSink?: ErrorSink,
+  json = true
+): Promise<any | null> {
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    let res: Response;
+    try {
+      res = await fetch(url, opts);
+    } catch (err) {
+      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
+      return null;
+    }
+    if (res.status === 429 && attempt < RATE_LIMIT_MAX_RETRIES) {
+      const retryAfter = Number(res.headers.get('retry-after'));
+      const delayMs = Number.isFinite(retryAfter) && retryAfter >= 0 ? Math.min(retryAfter * 1000, 10000) : 3000 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      attempt += 1;
+      continue;
+    }
+    if (!res.ok) {
+      if (res.status === 429) {
+        if (errorSink) errorSink.message = RATE_LIMITED_MESSAGE;
+      } else {
+        let detail = '';
+        try {
+          detail = (await res.text()).slice(0, 300);
+        } catch {
+          /* ignore */
+        }
+        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+      }
+      return null;
+    }
+    try {
+      return json ? await res.json() : await res.text();
+    } catch {
+      if (errorSink) errorSink.message = 'provider returned a non-JSON response';
+      return null;
+    }
+  }
+}
+
 /** Dispatches one model-requested tool call (by name) to the right backend and records its evidence — shared by all three providers, each of which hands over the tool call's name + arguments already parsed into a plain object (OpenAI's arguments are a JSON string and get parsed by the caller first). */
 async function executeToolCall(
   name: string,
@@ -457,34 +530,19 @@ async function callOpenAICompatibleDirect(
       body.tools = [OPENAI_WEB_SEARCH_TOOL, OPENAI_BROWSE_URL_TOOL];
       body.tool_choice = 'auto';
     }
-    try {
-      const res = await fetch(endpoint, {
+    await throttleLLM(connection.provider, connection.apiKey);
+    return fetchJsonWithRateLimitRetry(
+      endpoint,
+      {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${connection.apiKey}`,
         },
         body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        // Capture the real provider error so the caller can surface it
-        // instead of a silent null (was the reported "GLM-5.2 just fails,
-        // must be the base URL" mystery — it was a 500-token cap, but a
-        // 400/403 model-id/key error would look identical without this).
-        let detail = '';
-        try {
-          detail = (await res.text()).slice(0, 300);
-        } catch {
-          /* ignore */
-        }
-        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
-        return null;
-      }
-      return await res.json();
-    } catch (err) {
-      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
-      return null;
-    }
+      },
+      errorSink
+    );
   }
 
   for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
@@ -569,8 +627,10 @@ async function callAnthropicDirect(
     }
     body.max_tokens = cap;
     if (withTools) body.tools = [ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_BROWSE_URL_TOOL];
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+    await throttleLLM(connection.provider, connection.apiKey);
+    return fetchJsonWithRateLimitRetry(
+      'https://api.anthropic.com/v1/messages',
+      {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -579,22 +639,9 @@ async function callAnthropicDirect(
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = (await res.text()).slice(0, 300);
-        } catch {
-          /* ignore */
-        }
-        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
-        return null;
-      }
-      return await res.json();
-    } catch (err) {
-      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
-      return null;
-    }
+      },
+      errorSink
+    );
   }
 
   for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {
@@ -663,30 +710,16 @@ async function callGoogleDirect(
     }
     body.generationConfig = generationConfig;
     if (withTools) body.tools = [{ functionDeclarations: [GOOGLE_WEB_SEARCH_TOOL, GOOGLE_BROWSE_URL_TOOL] }];
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }
-      );
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = (await res.text()).slice(0, 300);
-        } catch {
-          /* ignore */
-        }
-        if (errorSink) errorSink.message = `HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
-        return null;
-      }
-      return await res.json();
-    } catch (err) {
-      if (errorSink) errorSink.message = err instanceof Error ? err.message : 'network error';
-      return null;
-    }
+    await throttleLLM(connection.provider, connection.apiKey);
+    return fetchJsonWithRateLimitRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${connection.model}:generateContent?key=${connection.apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      errorSink
+    );
   }
 
   for (let round = 0; round <= MAX_TOOL_CALLS_PER_AGENT_TURN; round++) {

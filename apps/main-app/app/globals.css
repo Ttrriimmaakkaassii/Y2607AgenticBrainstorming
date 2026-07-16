@@ -1590,6 +1590,40 @@ body.dev-mode [data-devref]::after {
   background: rgba(127, 127, 127, 0.12);
 }
 
+/* 🪙 Tokens tab — output cap + per-agent/model consumption summary. */
+.token-totals-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.token-totals-row strong {
+  font-size: 15px;
+}
+.token-usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.token-usage-table th,
+.token-usage-table td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+.token-usage-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.7;
+}
+.token-usage-table td.muted {
+  opacity: 0.7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
 /* Agent profile sub-section (Identity / Instructions / Skills / Loops) — sits
    inside the Configure Agent section, so render as a subtle nested block
    rather than a second boxed modal-section (avoids a double-border look). */

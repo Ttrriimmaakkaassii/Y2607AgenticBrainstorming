@@ -41,10 +41,12 @@ import {
   autoPopulateField,
   autoPopulateAll,
   elaborateField,
+  DEFAULT_MAX_TOKENS,
   type AgentAutoField,
 } from '@/lib/llm-client';
+import { sumTokens, groupByAgentAndModel } from '@/lib/token-stats';
 
-type SettingsTab = 'agent' | 'llm' | 'audio' | 'display' | 'wiki' | 'archives' | 'log' | 'account';
+type SettingsTab = 'agent' | 'llm' | 'tokens' | 'audio' | 'display' | 'wiki' | 'archives' | 'log' | 'account';
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -177,6 +179,11 @@ interface SettingsModalProps {
   /** Message bubble text size in Thread View — also the default for Scene View's central bubble text size. */
   textSize: 'xs' | 'sm' | 'md' | 'lg';
   onUpdateTextSize: (size: 'xs' | 'sm' | 'md' | 'lg') => void;
+  /** Per-reply output-token cap (null = DEFAULT_MAX_TOKENS, 4096). Functional as of the GLM-5.2 fix — was previously a dead UI field. */
+  maxTokens: number | null;
+  onUpdateMaxTokens: (v: number | null) => void;
+  /** Open the full 📊 Analytics modal (period-filtered usage) from the Tokens tab. */
+  onOpenAnalytics: () => void;
 }
 
 export function SettingsModal({
@@ -222,6 +229,9 @@ export function SettingsModal({
   onOpenMindmap,
   textSize,
   onUpdateTextSize,
+  maxTokens,
+  onUpdateMaxTokens,
+  onOpenAnalytics,
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'agent');
   // Deep-link support: when the parent passes/changes initialTab (e.g. a
@@ -763,6 +773,7 @@ export function SettingsModal({
   const TABS: { id: SettingsTab; label: string }[] = [
     { id: 'agent', label: '🧑 Agent' },
     { id: 'llm', label: '🔌 LLM' },
+    { id: 'tokens', label: '🪙 Tokens' },
     { id: 'audio', label: '🎧 Audio' },
     { id: 'display', label: '🔠 Display' },
     { id: 'wiki', label: '📚 Wiki' },
@@ -1781,6 +1792,98 @@ export function SettingsModal({
                 googleTtsModel={googleTtsModel}
                 onUpdateTtsModel={(model) => onUpdateTts({ googleTtsModel: model })}
               />
+            </div>
+          )}
+
+          {tab === 'tokens' && (
+            <div {...devRef('s30')}>
+              <div className="modal-section">
+                <div className="modal-section-title">Output token cap (per reply)</div>
+                <div className="form-group">
+                  <label>
+                    Max output tokens per reply{' '}
+                    <span className="field-hint">
+                      (blank = {DEFAULT_MAX_TOKENS} default)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder={String(DEFAULT_MAX_TOKENS)}
+                    value={maxTokens ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      onUpdateMaxTokens(v === '' ? null : Math.max(1, Math.floor(Number(v) || DEFAULT_MAX_TOKENS)));
+                    }}
+                  />
+                  <p className="field-hint" style={{ marginTop: 6 }}>
+                    Caps how many tokens a single agent reply may use. Reasoning models (GLM-5.2,
+                    GLM-4.5/4.6, o-series) need a larger budget to think AND answer; the old default
+                    of 500 is why GLM-5.2 came back empty while GLM-4.7-flash worked. Lower this if
+                    you hit provider rate limits (429).
+                  </p>
+                  {maxTokens != null && (
+                    <button
+                      className="btn-secondary"
+                      style={{ width: 'auto', marginTop: 6 }}
+                      onClick={() => onUpdateMaxTokens(null)}
+                    >
+                      Reset to default ({DEFAULT_MAX_TOKENS})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="modal-section">
+                <div className="modal-section-title">Consumption — this conversation</div>
+                {(() => {
+                  const all = threads.flatMap((t) => t.messages);
+                  const totals = sumTokens(all);
+                  const rows = groupByAgentAndModel(all, agents);
+                  return (
+                    <>
+                      <div className="token-totals-row">
+                        <span><strong>{totals.input.toLocaleString()}</strong> input</span>
+                        <span><strong>{totals.output.toLocaleString()}</strong> output</span>
+                        <span><strong>{totals.total.toLocaleString()}</strong> total</span>
+                      </div>
+                      {rows.length === 0 ? (
+                        <p className="field-hint">No tracked usage yet — token counts appear once agents reply.</p>
+                      ) : (
+                        <table className="token-usage-table">
+                          <thead>
+                            <tr>
+                              <th>Agent</th>
+                              <th>Provider · Model</th>
+                              <th>In</th>
+                              <th>Out</th>
+                              <th>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((r, i) => (
+                              <tr key={`${r.agentId}-${r.provider}-${r.model}-${i}`}>
+                                <td>{r.agentName}</td>
+                                <td className="muted">{r.provider} · {r.model}</td>
+                                <td>{r.totals.input.toLocaleString()}</td>
+                                <td>{r.totals.output.toLocaleString()}</td>
+                                <td>{r.totals.total.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                      <button
+                        className="btn-secondary"
+                        style={{ width: 'auto', marginTop: 10 }}
+                        onClick={onOpenAnalytics}
+                      >
+                        📊 Open full Analytics (all conversations, by period)
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           )}
 
