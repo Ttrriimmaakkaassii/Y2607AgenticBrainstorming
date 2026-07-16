@@ -924,6 +924,33 @@ export async function fetchSubjectAnalysis(
 }
 
 /**
+ * Asks the given connection (typically the Wiki Keeper) to SYNTHESIZE a real,
+ * conclusive mind map from `sourceText` — not a line-by-line restatement. The
+ * model organizes the material into a clean hierarchy and draws conclusions,
+ * returning markmap-flavored markdown (# title, ## branches, ### sub-branches,
+ * - leaves) that MindmapModal renders directly. Returns null on failure so the
+ * caller can fall back to the naive text-splitting builder.
+ */
+export async function fetchMindmap(
+  connection: LLMConnection,
+  title: string,
+  sourceText: string
+): Promise<string | null> {
+  const systemPrompt =
+    'You synthesize a CONCLUSIVE mind map from source text. Do NOT restate the source line by line — ' +
+    'organize it into a clean, logical hierarchy and draw the conclusions/decisions/open-questions it ' +
+    'implies. Output ONLY markmap-flavored markdown: a single "# <title>" root line, then "## " branch ' +
+    'headings (3-6), each with 2-5 "- " leaf items, and optionally one level of "  - " sub-items under a ' +
+    'leaf that needs detail. Keep each node short (<= 9 words). Where the source reaches a conclusion or ' +
+    'decision, state it as a leaf node. No prose outside the outline, no code fences.';
+  const userPrompt = `Title: ${title}\n\nSource:\n${sourceText}`;
+  const out = await callDirectText(connection, systemPrompt, userPrompt);
+  // Require a root heading so an empty/garbage reply is treated as failure.
+  const trimmed = (out ?? '').trim();
+  return trimmed.startsWith('#') ? trimmed : null;
+}
+
+/**
  * Asks the given connection to fold `newTranscript` into `previousDigest`,
  * producing an updated compact "wiki" — the only cross-thread memory every
  * agent gets injected into its prompt (see buildUserPrompt's `wikiDigest`
