@@ -1945,6 +1945,45 @@ export function ChatApp() {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  /** Whole conversation as readable text (every message, chronological). */
+  function conversationText(): string {
+    const chronological = allMessages.slice().sort((a, b) => a.timestamp - b.timestamp);
+    const header = state.settings.topic ? `Topic: ${state.settings.topic}\n\n` : '';
+    return (
+      header +
+      chronological.map((m) => `${authorLabel(m.agentId)}: ${m.content}`).join('\n\n')
+    );
+  }
+
+  function downloadTextFile(filename: string, text: string) {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function conversationFileBase(): string {
+    const title = tabs.find((t) => t.id === state.id)?.title || state.settings.topic || 'conversation';
+    return title.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40) || 'conversation';
+  }
+
+  function downloadSelectedMessages() {
+    if (selectedMessageIds.length === 0) {
+      showToast('Select at least one message first.');
+      return;
+    }
+    downloadTextFile(`${conversationFileBase()}-selected.txt`, selectedMessagesText());
+    showToast(`📥 Downloaded ${selectedMessageIds.length} messages`);
+  }
+
+  function downloadConversation() {
+    downloadTextFile(`${conversationFileBase()}.txt`, conversationText());
+    showToast('📥 Downloaded conversation');
+  }
+
   function pauseConversation() {
     statusRef.current = 'paused';
     setState((prev) => ({ ...prev, status: 'paused' }));
@@ -3493,6 +3532,9 @@ export function ChatApp() {
               <button className="control-btn" {...devRef('b79')} onClick={copySelectedMessages}>
                 📋 Copy
               </button>
+              <button className="control-btn" onClick={downloadSelectedMessages} title="Download the selected messages as a text file">
+                📥 Download Selected
+              </button>
               <button className="control-btn" {...devRef('b80')} onClick={shareSelectedToWhatsApp}>
                 💬 Share to WhatsApp
               </button>
@@ -3501,6 +3543,9 @@ export function ChatApp() {
               </button>
             </>
           )}
+          <button className="control-btn" onClick={downloadConversation} title="Download the whole conversation as a text file">
+            📥 Download Conversation
+          </button>
         </div>
       )}
 
