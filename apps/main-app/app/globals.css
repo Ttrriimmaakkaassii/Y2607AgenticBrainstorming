@@ -1632,6 +1632,12 @@ body.dev-mode [data-devref]::after {
   cursor: help;
 }
 
+/* ☰ Parameters toggle now lives at the far left of the tabs bar (b5). */
+.conversation-tabs-bar .params-toggle {
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
 /* Agent profile sub-section (Identity / Instructions / Skills / Loops) — sits
    inside the Configure Agent section, so render as a subtle nested block
    rather than a second boxed modal-section (avoids a double-border look). */

@@ -142,7 +142,7 @@ function defaultState(): ConversationState {
       topic: '',
       maxSentences: 5,
       bulletCount: 5,
-      maxExchanges: null,
+      maxExchanges: 10,
       maxTokens: null,
       orchestratorEnabled: true,
       repetitionGuardEnabled: true,
@@ -2480,6 +2480,14 @@ export function ChatApp() {
   return (
     <div className="app-shell">
       <div className="conversation-tabs-bar" {...devRef('s24')}>
+        <button
+          className={`icon-btn params-toggle ${topPanelOpen ? 'active' : ''}`}
+          {...devRef('b5')}
+          onClick={() => setTopPanelOpen((v) => !v)}
+          title={topPanelOpen ? 'Close parameters (topic/search/participants/controls)' : 'Open parameters (topic/search/participants/controls)'}
+        >
+          ☰
+        </button>
         <div className="conversation-tabs-list">
           {(() => {
             // Cluster tabs by group/category (ungrouped last), inserting a
@@ -2675,14 +2683,6 @@ export function ChatApp() {
             title="Settings (Agents, LLMs, Audio, Archives, Account)"
           >
             ⚙️
-          </button>
-          <button
-            className={`icon-btn ${topPanelOpen ? 'active' : ''}`}
-            {...devRef('b5')}
-            onClick={() => setTopPanelOpen((v) => !v)}
-            title={topPanelOpen ? 'Close parameters (topic/search/participants/controls)' : 'Open parameters (topic/search/participants/controls)'}
-          >
-            ☰
           </button>
           <span
             className="app-version"
