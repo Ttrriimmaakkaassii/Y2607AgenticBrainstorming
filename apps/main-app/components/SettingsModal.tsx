@@ -40,6 +40,7 @@ import { buildTextFieldMindmapMarkdown } from '@/lib/mindmap';
 import {
   autoPopulateField,
   autoPopulateAll,
+  elaborateField,
   type AgentAutoField,
 } from '@/lib/llm-client';
 
@@ -257,7 +258,9 @@ export function SettingsModal({
   // defaults to the opened agent's own connection, but the user can repoint it
   // on the fly to any saved connection ("use the llm user chooses on the go").
   const [autoConnId, setAutoConnId] = useState<string | null>(currentAgent?.connectionId ?? null);
-  const [autoBusy, setAutoBusy] = useState<'' | AgentAutoField | 'all'>('');
+  // Tracks which field/action is generating: a field key (per-field ✨ or 📈),
+  // or 'all' for the Auto-populate-all button. Empty = idle.
+  const [autoBusy, setAutoBusy] = useState<'' | AgentAutoField | `${AgentAutoField}-elab` | 'all'>('');
   const [autoError, setAutoError] = useState<string | null>(null);
   // 🧠 Per-field "view as mind map" — set to open MindmapModal over this modal.
   const [mindmapField, setMindmapField] = useState<{ title: string; markdown: string } | null>(null);
@@ -677,6 +680,48 @@ export function SettingsModal({
     }
   }
 
+  // 📈 Elaborate: expand THIS field's existing text into a richer version
+  // (builds on what's already there, unlike ✨ which drafts from the
+  // description). Operates on the opened agent only; needs existing text.
+  async function runElaborate(field: AgentAutoField) {
+    const agent = snapshotForAuto();
+    const connection = connections.find((c) => c.id === autoConnId);
+    const current = (
+      field === 'identity' ? identity : field === 'instructions' ? instructions : field === 'skills' ? skills : loopGuidance
+    ).trim();
+    if (!agent || !connection) {
+      setAutoError('Pick an LLM connection to generate with.');
+      return;
+    }
+    if (!current) {
+      setAutoError(`Add some text to ${field} first — Elaborate expands what’s already there.`);
+      return;
+    }
+    setAutoError(null);
+    setAutoBusy(`${field}-elab`);
+    try {
+      const text = await elaborateField(agent, field, connection);
+      if (!text) {
+        setAutoError(`Couldn’t elaborate ${field} — try again or pick another connection.`);
+        return;
+      }
+      if (field === 'identity') setIdentity(text);
+      if (field === 'instructions') setInstructions(text);
+      if (field === 'skills') setSkills(text);
+      if (field === 'loopGuidance') setLoopGuidance(text);
+      onSave(agent.id, {
+        identity: field === 'identity' ? text : identity,
+        instructions: field === 'instructions' ? text : instructions,
+        skills: field === 'skills' ? text : skills,
+        loopGuidance: field === 'loopGuidance' ? text : loopGuidance,
+      });
+    } catch {
+      setAutoError('Generation failed — check the connection/key and retry.');
+    } finally {
+      setAutoBusy('');
+    }
+  }
+
   async function runAutoAll() {
     const agent = snapshotForAuto();
     const connection = connections.find((c) => c.id === autoConnId);
@@ -962,6 +1007,15 @@ export function SettingsModal({
                             onClick={() => runAutoField(f.key)}
                           >
                             {autoBusy === f.key ? '✨ …' : '✨'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title="Elaborate — expand this field’s existing text into a richer version"
+                            disabled={!f.value.trim() || autoBusy !== ''}
+                            onClick={() => runElaborate(f.key)}
+                          >
+                            {autoBusy === `${f.key}-elab` ? '📈 …' : '📈'}
                           </button>
                           <button
                             type="button"

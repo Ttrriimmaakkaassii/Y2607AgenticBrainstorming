@@ -875,6 +875,35 @@ export async function autoPopulateField(
   return (out ?? '').trim();
 }
 
+/**
+ * 📈 Elaborate: takes a field's EXISTING text and expands it into a richer,
+ * more complete, better-structured version — adding specificity and detail
+ * while staying true to the agent's role and the field's purpose. Unlike
+ * autoPopulateField (which generates from the description), this builds on
+ * what the user already wrote. Returns '' on failure/empty so the UI can
+ * surface an error instead of blanking the field.
+ */
+export async function elaborateField(
+  agent: Agent,
+  field: AgentAutoField,
+  connection: LLMConnection
+): Promise<string> {
+  const current = (field === 'identity' ? agent.identity : field === 'instructions' ? agent.instructions : field === 'skills' ? agent.skills : agent.loopGuidance).trim();
+  if (!current) return '';
+  const systemPrompt =
+    `You expand and enrich ONE field of a multi-agent discussion participant's profile. The user wrote a ` +
+    `rough draft; rewrite it as a fuller, more specific, better-structured version of ${AUTO_FIELD_BRIEF[field]} ` +
+    `that preserves every intent in the original and adds concrete detail, examples, or clarifying clauses. ` +
+    `Stay true to the agent's role and voice. Keep the app's terse, imperative style — no filler, no "Sure!", ` +
+    `no preamble, no quotes, no markdown headings. Output ONLY the elaborated field text.`;
+  const userPrompt =
+    `Agent name: ${agent.name}\nAgent role: ${agent.role}\n\n` +
+    `Current ${field} text (expand this):\n${current}\n\n` +
+    `Rewrite it as a richer, more complete version.`;
+  const out = await callDirectText(connection, systemPrompt, userPrompt);
+  return (out ?? '').trim();
+}
+
 export interface AutoPopulatedProfile {
   identity: string;
   instructions: string;
