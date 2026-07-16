@@ -2324,6 +2324,37 @@ export function ChatApp() {
     showToast(`➕ New agent added (${refNumber})`);
   }
 
+  /** One-click duplicate: deep-clones an agent with a fresh id/refNumber and a
+   * "(copy)" name suffix, inserted right after the original. Shares the same
+   * connection/identity/traits so it's immediately usable, then the user can
+   * tweak. `active` starts true so the duplicate joins the current roster. */
+  function duplicateAgent(id: string) {
+    const src = state.agents.find((a) => a.id === id);
+    if (!src) return;
+    const refNumber = `Agt${state.nextAgentNumber}`;
+    const clone: Agent = {
+      ...src,
+      id: generateId(),
+      refNumber,
+      name: `${src.name} (copy)`,
+      traits: { ...src.traits },
+      active: true,
+    };
+    const insertAt = state.agents.findIndex((a) => a.id === id);
+    const nextAgents =
+      insertAt === -1
+        ? [...state.agents, clone]
+        : [...state.agents.slice(0, insertAt + 1), clone, ...state.agents.slice(insertAt + 1)];
+    setState((prev) => ({
+      ...prev,
+      agents: nextAgents,
+      nextAgentNumber: prev.nextAgentNumber + 1,
+    }));
+    void syncAgentIdentityAcrossTabs(nextAgents);
+    setCurrentAgentId(clone.id);
+    showToast(`⧉ Duplicated “${src.name}” → ${refNumber}`);
+  }
+
   function addAgentFromPreset(preset: AgentPreset) {
     const refNumber = `Agt${state.nextAgentNumber}`;
     const newAgent: Agent = {
@@ -3893,6 +3924,7 @@ export function ChatApp() {
           onSave={saveAgent}
           onAdd={addAgent}
           onDelete={deleteAgent}
+          onDuplicateAgent={duplicateAgent}
           onOpenLibrary={openLibraryFromSettings}
           onClose={() => {
             setSettingsInitialTab(null);

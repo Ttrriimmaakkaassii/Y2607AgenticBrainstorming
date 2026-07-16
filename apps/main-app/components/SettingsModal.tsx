@@ -135,6 +135,8 @@ interface SettingsModalProps {
   onSave: (id: string, updates: Partial<Agent>) => void;
   onAdd: () => void;
   onDelete: (id: string) => void;
+  /** Clone an agent (new id/refNumber, name suffixed "(copy)") — single-click duplicate from the table. */
+  onDuplicateAgent: (id: string) => void;
   onOpenLibrary: () => void;
   onClose: () => void;
   onToast: (message: string) => void;
@@ -195,6 +197,7 @@ export function SettingsModal({
   onSave,
   onAdd,
   onDelete,
+  onDuplicateAgent,
   onOpenLibrary,
   onClose,
   onToast,
@@ -479,6 +482,56 @@ export function SettingsModal({
     link.click();
     URL.revokeObjectURL(url);
     onToast('📥 Downloaded agents backup.');
+  }
+
+  function fileBase(name: string): string {
+    return name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'agent';
+  }
+
+  // Per-agent download — each agent as its OWN file (the user's "choose what
+  // agents to download, each with its file"). Markdown so it reads as a
+  // profile, with every field that defines the agent. Pairs with the existing
+  // all-in-one JSON backup above.
+  function downloadAgentProfile(agent: Agent) {
+    const conn = connections.find((c) => c.id === agent.connectionId);
+    const md = [
+      `# ${agent.name}`,
+      '',
+      `- **Ref:** ${agent.refNumber}`,
+      `- **Role:** ${agent.role}`,
+      `- **LLM:** ${conn ? `${conn.label} (${conn.provider} · ${conn.model})` : 'none (simulated)'}`,
+      `- **Pinned to all conversations:** ${agent.pinnedToAllConversations ? 'yes' : 'no'}`,
+      `- **Web access:** ${agent.webSearchEnabled ? 'enabled' : 'disabled'}`,
+      '',
+      '## Identity',
+      agent.identity.trim() || '_(empty)_',
+      '',
+      '## Skills',
+      agent.skills.trim() || '_(empty)_',
+      '',
+      '## Instructions',
+      agent.instructions.trim() || '_(empty)_',
+      '',
+      '## Loop participation',
+      agent.loopGuidance.trim() || '_(empty — uses the default anti-repeat fallback)_',
+      '',
+      '## Description (auto-populate source)',
+      agent.description.trim() || '_(empty)_',
+      '',
+      '## Traits',
+      Object.keys(agent.traits ?? {}).length === 0
+        ? '_(none set)_'
+        : Object.entries(agent.traits).map(([k, v]) => `- ${k}: ${v}/100`).join('\n'),
+      '',
+    ].join('\n');
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileBase(agent.name)}-${agent.refNumber}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+    onToast(`📥 Downloaded ${agent.name}.`);
   }
 
   function importAgentsBackup(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1725,15 +1778,31 @@ export function SettingsModal({
                               </div>
                             </td>
                             <td onClick={(e) => e.stopPropagation()}>
-                              <button
-                                className="btn-icon delete"
-                                {...devRef('b36', index)}
-                                onClick={() => onDelete(agent.id)}
-                                disabled={agents.length <= 1}
-                                title={agents.length <= 1 ? 'At least one agent is required' : 'Delete agent'}
-                              >
-                                🗑️
-                              </button>
+                              <div style={{ display: 'inline-flex', gap: 2 }}>
+                                <button
+                                  className="btn-icon"
+                                  onClick={() => onDuplicateAgent(agent.id)}
+                                  title="Duplicate this agent (one click)"
+                                >
+                                  ⧉
+                                </button>
+                                <button
+                                  className="btn-icon"
+                                  onClick={() => downloadAgentProfile(agent)}
+                                  title="Download this agent’s profile (.md)"
+                                >
+                                  ⬇️
+                                </button>
+                                <button
+                                  className="btn-icon delete"
+                                  {...devRef('b36', index)}
+                                  onClick={() => onDelete(agent.id)}
+                                  disabled={agents.length <= 1}
+                                  title={agents.length <= 1 ? 'At least one agent is required' : 'Delete agent'}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
