@@ -125,6 +125,8 @@ function CategorySelect({
 interface SettingsModalProps {
   agents: Agent[];
   currentAgentId: string;
+  /** Optional deep-link: open the modal focused on this tab (e.g. from a notification's "take me there" action). When set/changed while mounted, the tab switches to it. */
+  initialTab?: SettingsTab;
   connections: LLMConnection[];
   onSelectAgent: (id: string) => void;
   onSave: (id: string, updates: Partial<Agent>) => void;
@@ -179,6 +181,7 @@ interface SettingsModalProps {
 export function SettingsModal({
   agents,
   currentAgentId,
+  initialTab,
   connections,
   onSelectAgent,
   onSave,
@@ -219,7 +222,14 @@ export function SettingsModal({
   textSize,
   onUpdateTextSize,
 }: SettingsModalProps) {
-  const [tab, setTab] = useState<SettingsTab>('agent');
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'agent');
+  // Deep-link support: when the parent passes/changes initialTab (e.g. a
+  // notification's "take me there" action opening Settings straight to the
+  // Wiki tab), switch to it.
+  useEffect(() => {
+    if (initialTab) setTab(initialTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? agents[0];
   const configureAgentRef = useRef<HTMLDivElement>(null);
   const overlayClose = useOverlayClose(onClose);

@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/write-version.mjs",
+    "prebuild": "node scripts/write-version.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -32,6 +32,9 @@ lerna-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Auto-generated build version (regenerated each build from the current git commit)
+apps/main-app/lib/build-version.ts
+
 # IDE
 .vscode/
 .idea/

@@ -63,6 +63,7 @@ import { LLMProvidersModal } from './LLMProvidersModal';
 import { AgentLibraryModal } from './AgentLibraryModal';
 import { MindmapModal } from './MindmapModal';
 import { ArchivesModal } from './ArchivesModal';
+import { BUILD_VERSION, BUILD_COMMIT, BUILD_COMMIT_COUNT } from '@/lib/build-version';
 
 const CONVERSATION_ID_KEY = 'multi-agent-conversation-id';
 const DEFAULT_WHATSAPP_NUMBER = '212661320000';
@@ -326,6 +327,14 @@ export function ChatApp() {
   const [activeModal, setActiveModal] = useState<
     'settings' | 'analytics' | 'export' | 'library' | 'mindmap' | null
   >(null);
+  // Deep-link target for Settings: when a notification's "take me there"
+  // action opens Settings, it sets this so SettingsModal lands on the right
+  // tab (e.g. 'wiki'). Cleared on close.
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    'agent' | 'llm' | 'audio' | 'display' | 'wiki' | 'archives' | 'log' | 'account' | null
+  >(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
   // When opening the Library from inside Settings, remember to return there
   // on close instead of dropping the user out with no modal open at all.
   const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
@@ -436,6 +445,10 @@ export function ChatApp() {
   const participantsMenuRef = useClickOutside<HTMLDivElement>(
     () => setParticipantsMenuOpen(false),
     participantsMenuOpen
+  );
+  const notificationsMenuRef = useClickOutside<HTMLDivElement>(
+    () => setNotificationsOpen(false),
+    notificationsOpen
   );
   const [guidelines, setGuidelines] = useState<Guideline[]>([]);
   const [traitDefs, setTraitDefs] = useState<TraitDef[]>([]);
@@ -2361,6 +2374,51 @@ export function ChatApp() {
     return agent ? `${agent.refNumber} · ${agent.name}` : 'Unknown';
   }
 
+  // Derived notifications — recomputed every render, so they auto-clear the
+  // moment the underlying issue is fixed (e.g. a Wiki Keeper gets picked).
+  // Each carries a deep-link action that opens Settings straight to the
+  // relevant tab.
+  type AppNotification = {
+    id: string;
+    icon: string;
+    title: string;
+    body: string;
+    openTab: 'agent' | 'llm' | 'audio' | 'display' | 'wiki' | 'archives' | 'log' | 'account';
+  };
+  const notifications: AppNotification[] = useMemo(() => {
+    const list: AppNotification[] = [];
+    if (state.settings.wikiEnabled && !state.settings.wikiKeeperConnectionId) {
+      list.push({
+        id: 'wiki-no-keeper',
+        icon: '📚',
+        title: 'Wiki has no Keeper',
+        body: 'The shared wiki is on but no connection generates it — pick a Wiki Keeper so agents can reference past conversations.',
+        openTab: 'wiki',
+      });
+    }
+    const unconnectedActive = state.agents.filter(
+      (a) => a.active && !a.connectionId && !connections.some((c) => c.id === a.connectionId)
+    );
+    if (unconnectedActive.length > 0) {
+      list.push({
+        id: 'agents-no-llm',
+        icon: '🔌',
+        title: `${unconnectedActive.length} active agent${unconnectedActive.length === 1 ? '' : 's'} ha${unconnectedActive.length === 1 ? 's' : 've'} no LLM`,
+        body: 'These agents can’t speak live until a connection is assigned.',
+        openTab: 'llm',
+      });
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.settings.wikiEnabled, state.settings.wikiKeeperConnectionId, state.agents, connections]);
+
+  function openSettingsToTab(tab: AppNotification['openTab']) {
+    setSettingsInitialTab(tab);
+    setModalReturnTo(null);
+    setActiveModal('settings');
+    setNotificationsOpen(false);
+  }
+
   return (
     <div className="app-shell">
       <div className="conversation-tabs-bar" {...devRef('s24')}>
@@ -2513,10 +2571,46 @@ export function ChatApp() {
           >
             🛠️
           </button>
+          <div className="notifications-wrap" ref={notificationsMenuRef}>
+            <button
+              className={`icon-btn notifications-btn ${notifications.length > 0 ? 'has-notifs' : ''} ${notificationsOpen ? 'active' : ''}`}
+              onClick={() => setNotificationsOpen((v) => !v)}
+              title="Notifications"
+            >
+              🔔
+              {notifications.length > 0 && (
+                <span className="notif-badge">{notifications.length}</span>
+              )}
+            </button>
+            {notificationsOpen && (
+              <div className="notifications-dropdown">
+                <div className="notifications-header">Notifications</div>
+                {notifications.length === 0 ? (
+                  <div className="notifications-empty">You’re all caught up ✅</div>
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      className="notif-row"
+                      onClick={() => openSettingsToTab(n.openTab)}
+                    >
+                      <span className="notif-icon">{n.icon}</span>
+                      <span className="notif-text">
+                        <span className="notif-title">{n.title}</span>
+                        <span className="notif-body">{n.body}</span>
+                        <span className="notif-action">Take me there →</span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <button
             className="icon-btn"
             {...devRef('b4')}
             onClick={() => {
+              setSettingsInitialTab(null);
               setModalReturnTo(null);
               setActiveModal('settings');
             }}
@@ -2532,6 +2626,12 @@ export function ChatApp() {
           >
             ☰
           </button>
+          <span
+            className="app-version"
+            title={`Built from commit ${BUILD_COMMIT} (#${BUILD_COMMIT_COUNT})${BUILD_VERSION ? ` · v${BUILD_VERSION}` : ''}`}
+          >
+            v{BUILD_VERSION} · {BUILD_COMMIT}
+          </span>
         </div>
       </div>
 
@@ -3775,13 +3875,17 @@ export function ChatApp() {
         <SettingsModal
           agents={state.agents}
           currentAgentId={currentAgentId}
+          initialTab={settingsInitialTab ?? undefined}
           connections={connections}
           onSelectAgent={setCurrentAgentId}
           onSave={saveAgent}
           onAdd={addAgent}
           onDelete={deleteAgent}
           onOpenLibrary={openLibraryFromSettings}
-          onClose={() => setActiveModal(null)}
+          onClose={() => {
+            setSettingsInitialTab(null);
+            setActiveModal(null);
+          }}
           onToast={showToast}
           onChangeConnections={updateConnections}
           onUpdateAgentsBulk={updateAgentsBulk}
