@@ -251,6 +251,13 @@ export function AudioModal({
             <option value="google">✨ Gemini TTS (higher quality — needs an API key in 🔌 LLM)</option>
             <option value="custom">🎙️ Txt2Audio (needs a base URL + key in 🔌 LLM)</option>
           </select>
+          {ttsProvider !== 'browser' && (
+            <p className="field-hint" style={{ marginTop: 6 }}>
+              Word-by-word highlight is an estimate here — Gemini/Txt2Audio return audio without
+              per-word timestamps, so the highlight tracks progress but can drift. Browser voice
+              syncs precisely (real word-boundary events).
+            </p>
+          )}
         </div>
         {ttsProvider === 'google' && (
           <div className="form-group">

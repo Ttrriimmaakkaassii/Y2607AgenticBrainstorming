@@ -225,10 +225,17 @@ function interactionInstruction(style: InteractionStyle): string {
 
 function moodInstruction(moods: Mood[]): string {
   if (moods.length === 0) return '';
+  // DELIBERATELY DEMOTED to "tone only". Previously this clause sat glued onto
+  // the personal Instructions with "must clearly reflect that mood throughout
+  // your reply" wording, which let the per-conversation mood silently override
+  // an agent's personal instructions (the reported #1 priority problem). Mood
+  // now colours delivery (energy, word choice) but must never change WHAT the
+  // agent argues or override its instructions — and the ranked ladder at the
+  // top of the system prompt states this explicitly.
   if (moods.length === 1) {
-    return ` The discussion mood is "${moods[0]}" — your tone, word choice, and energy must clearly reflect that mood throughout your reply.`;
+    return ` The discussion mood is "${moods[0]}" — let it colour your tone only (energy, word choice). It must not change what you actually argue, and it must never override your instructions.`;
   }
-  return ` The discussion moods are ${moods.map((m) => `"${m}"`).join(' and ')} — blend all of them in tone throughout your reply.`;
+  return ` The discussion moods are ${moods.map((m) => `"${m}"`).join(' and ')} — blend them into your tone only (energy, word choice). They must not change what you actually argue, and must never override your instructions.`;
 }
 
 function guidelinesInstruction(guidelines: string[]): string {
@@ -283,7 +290,22 @@ function capabilityInstruction(webSearchEnabled: boolean): string {
 const STAY_ON_TASK_INSTRUCTION =
   " Do not spend your reply debating process, methodology, or who should do what — decide your own approach silently and use this reply to make actual progress on the user's question (real content, findings, or a direct answer), not meta-commentary about how the discussion should be run. If a previous agent's reply was itself just process debate with no new substance, break the loop by answering directly instead of continuing the debate.";
 
-function buildSystemPrompt(
+// The prompt-level half of the anti-repeat fix (#4). When an agent hasn't
+// been given explicit loop-participation guidance, this default still nudges
+// it away from restating earlier points — complemented at runtime by the
+// orchestrator repetition judge in lib/orchestrator.ts.
+const LOOP_GUIDANCE_FALLBACK =
+  'Do not repeat points already made in this discussion by you or others. If your next thought would restate something already covered, elaborate on that same subject from a new angle, depth, or concrete example instead of repeating it.';
+
+// Render only non-empty labeled blocks so an agent with just `instructions`
+// (the legacy shape) renders almost identically to before — no ghost headings
+// for fields the user left blank.
+function optionalBlock(heading: string, body: string): string {
+  const trimmed = body.trim();
+  return trimmed ? `\n\n## ${heading}\n${trimmed}` : '';
+}
+
+export function buildSystemPrompt(
   agent: Agent,
   moods: Mood[],
   style: ResponseStyle,
@@ -293,7 +315,36 @@ function buildSystemPrompt(
   guidelines: string[],
   traits: { name: string; value: number }[]
 ): string {
-  return `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.${guidelinesInstruction(guidelines)}\nInstructions: ${agent.instructions}${moodInstruction(moods)}${traitsInstruction(traits)} ${interactionInstruction(interactionStyle)}${USER_PRIORITY_INSTRUCTION}${capabilityInstruction(agent.webSearchEnabled)}${STAY_ON_TASK_INSTRUCTION} ${styleInstruction(style, maxSentences, bulletCount)} Stay in character, without restating your name.`;
+  // Explicit resolution ladder — the fix for the reported "mood overrides
+  // instructions" problem. Previously the system prompt was a run-on
+  // paragraph with guidelines, personal instructions, and mood all sitting
+  // side by side and no stated ranking, so the per-conversation mood (with
+  // "must ... throughout your reply" wording) could silently win. Now the
+  // model is told up front how to resolve conflicts.
+  const ladder =
+    ' If any of the following ever conflict, resolve them in this order: (1) a direct message from the user, (2) the general guidelines, (3) your instructions, (4) your identity & skills, (5) the mood — the mood only colours your tone and must never override substance or instructions.';
+
+  const identity = `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.`;
+
+  return (
+    identity +
+    ladder +
+    guidelinesInstruction(guidelines) +
+    optionalBlock('Identity', agent.identity) +
+    optionalBlock('Skills', agent.skills) +
+    optionalBlock('Instructions', agent.instructions) +
+    optionalBlock('Loop participation', agent.loopGuidance || LOOP_GUIDANCE_FALLBACK) +
+    moodInstruction(moods) +
+    traitsInstruction(traits) +
+    ' ' +
+    interactionInstruction(interactionStyle) +
+    USER_PRIORITY_INSTRUCTION +
+    capabilityInstruction(agent.webSearchEnabled) +
+    STAY_ON_TASK_INSTRUCTION +
+    ' ' +
+    styleInstruction(style, maxSentences, bulletCount) +
+    ' Stay in character, without restating your name.'
+  );
 }
 
 function buildUserPrompt(
@@ -710,8 +761,8 @@ export async function testConnection(connection: LLMConnection): Promise<boolean
   return reply !== null;
 }
 
-/** Extension of `callDirect` for callers that only need the text — see `fetchAgentReply` for the one path that also needs `usage`. */
-async function callDirectText(
+/** Extension of `callDirect` for callers that only need the text — see `fetchAgentReply` for the one path that also needs `usage`. Exported so sibling modules (orchestrator, agent-autopopulate) can reuse the same provider dispatch instead of each reinventing HTTP to the three provider families. */
+export async function callDirectText(
   connection: LLMConnection,
   systemPrompt: string,
   userPrompt: string
@@ -773,4 +824,104 @@ export async function fetchWikiDigest(
     ? `Current wiki:\n${previousDigest}\n\nNew messages since last update:\n${newTranscript}`
     : `New messages:\n${newTranscript}\n\nWrite the initial wiki.`;
   return callDirectText(connection, systemPrompt, userPrompt);
+}
+
+/**
+ * ✨ Auto-populate for the Agent profile fields. Driven by `agent.description`
+ * (free text the user writes) + the agent's name/role, sent to an LLM
+ * connection the user picks on the fly. Operates on the OPENED agent only —
+ * callers pass the agent being edited. On any failure returns null/empty so
+ * the UI can surface the error rather than silently filling garbage
+ * (consistent with the app's anti-fabrication posture: never invent an agent
+ * definition and present it as authoritative).
+ */
+export type AgentAutoField = 'identity' | 'instructions' | 'skills' | 'loopGuidance';
+
+const AUTO_FIELD_BRIEF: Record<AgentAutoField, string> = {
+  identity:
+    'the agent\'s persona, voice, and background — who they ARE (1-3 sentences, second person "You are...")',
+  instructions:
+    'what the agent should do in discussions — its approach, focus, and operating principles (2-4 short imperative clauses)',
+  skills:
+    'the agent\'s areas of expertise and capabilities — a comma-separated list or short bullets (no preamble)',
+  loopGuidance:
+    'how this agent should participate in and pace the discussion loop, including how to avoid repeating itself or others (2-4 short imperative clauses)',
+};
+
+function autoPopulateUserPrompt(agent: Agent): string {
+  const ctx = [
+    `Agent name: ${agent.name}`,
+    `Agent role: ${agent.role}`,
+    agent.identity.trim() ? `Existing identity: ${agent.identity.trim()}` : '',
+    agent.instructions.trim() ? `Existing instructions: ${agent.instructions.trim()}` : '',
+    agent.skills.trim() ? `Existing skills: ${agent.skills.trim()}` : '',
+    agent.loopGuidance.trim() ? `Existing loop guidance: ${agent.loopGuidance.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return `Agent description (the source of truth for who this agent is):\n${agent.description.trim()}\n\n${ctx}\n\nWrite content that fits this specific agent. Match the app's terse, imperative style — no filler, no "Sure!", output only the requested text.`;
+}
+
+export async function autoPopulateField(
+  agent: Agent,
+  field: AgentAutoField,
+  connection: LLMConnection
+): Promise<string> {
+  if (!agent.description.trim()) return '';
+  const systemPrompt =
+    `You draft ONE field of a multi-agent discussion participant's profile from a human-written description. ` +
+    `Write ONLY ${AUTO_FIELD_BRIEF[field]}. Respond with just that field's text, no labels, no markdown headings, no quotes, no preamble.`;
+  const out = await callDirectText(connection, systemPrompt, autoPopulateUserPrompt(agent));
+  return (out ?? '').trim();
+}
+
+export interface AutoPopulatedProfile {
+  identity: string;
+  instructions: string;
+  skills: string;
+  loopGuidance: string;
+}
+
+/** Tolerant JSON object extraction — models wrap output in prose/fences often enough to handle. */
+function extractJsonObject(text: string): string | null {
+  const t = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/g, '').trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return t.slice(start, end + 1);
+}
+
+export async function autoPopulateAll(
+  agent: Agent,
+  connection: LLMConnection
+): Promise<AutoPopulatedProfile | null> {
+  if (!agent.description.trim()) return null;
+  const systemPrompt =
+    `You draft the full profile of a multi-agent discussion participant from a human-written description. ` +
+    `Respond with ONLY a JSON object (no prose, no code fences) with exactly these string keys: ` +
+    `"identity" (1-3 sentences, "You are..."), "instructions" (2-4 short imperative clauses on approach/focus), ` +
+    `"skills" (comma-separated expertise list), "loopGuidance" (2-4 short imperative clauses on pacing the discussion and avoiding repetition). ` +
+    `Match the app's terse, imperative style — no filler.`;
+  const out = await callDirectText(connection, systemPrompt, autoPopulateUserPrompt(agent));
+  if (!out) return null;
+  const jsonText = extractJsonObject(out);
+  if (!jsonText) return null;
+  try {
+    const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+    const profile: AutoPopulatedProfile = {
+      identity: str(parsed.identity),
+      instructions: str(parsed.instructions),
+      skills: str(parsed.skills),
+      loopGuidance: str(parsed.loopGuidance),
+    };
+    // Require at least one non-empty field so a totally-empty/garbage reply
+    // is treated as a failure rather than blanking the agent's profile.
+    if (!profile.identity && !profile.instructions && !profile.skills && !profile.loopGuidance) {
+      return null;
+    }
+    return profile;
+  } catch {
+    return null;
+  }
 }

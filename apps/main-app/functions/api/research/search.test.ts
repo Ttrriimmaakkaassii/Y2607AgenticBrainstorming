@@ -8,7 +8,10 @@ describe('validateSearchRequest', () => {
     if (!('error' in result)) {
       expect(result.query).toBe('OpenClaw architecture');
       expect(result.maxResults).toBe(6);
-      expect(result.searchDepth).toBe('advanced');
+      // Default is 'basic' — Tavily's free/dev keys reject 'advanced' with
+      // HTTP 403, so the validator defaults to basic (the safe tier) unless
+      // the client explicitly asks for advanced.
+      expect(result.searchDepth).toBe('basic');
       expect(result.topic).toBe('general');
     }
   });

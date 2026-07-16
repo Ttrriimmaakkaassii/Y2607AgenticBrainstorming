@@ -1477,6 +1477,58 @@ body.dev-mode [data-devref]::after {
   margin-bottom: 16px;
 }
 
+/* Agent profile sub-section (Identity / Instructions / Skills / Loops) — sits
+   inside the Configure Agent section, so render as a subtle nested block
+   rather than a second boxed modal-section (avoids a double-border look). */
+.agent-profile-section {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.05);
+}
+.agent-profile-section .autopopulate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.agent-profile-section .autopopulate-row .control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.agent-profile-section .autopopulate-row .control-label select {
+  width: auto;
+}
+.agent-profile-section .autopopulate-error {
+  color: #e5484d;
+  font-size: 12px;
+}
+.agent-profile-section .field-hint {
+  font-weight: 400;
+  opacity: 0.7;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.agent-profile-section .field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-profile-section .field-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+.agent-profile-section .field-actions .btn-icon {
+  padding: 2px 6px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .modal-section-title {
   font-weight: 600;
   font-size: 13px;

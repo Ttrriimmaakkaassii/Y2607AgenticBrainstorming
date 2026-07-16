@@ -19,6 +19,7 @@ import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
 import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction } from '@/lib/llm-client';
+import { judgeRepetition } from '@/lib/orchestrator';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
@@ -74,6 +75,10 @@ const DEFAULT_AGENTS: Agent[] = [
     name: 'Agent A',
     role: 'Researcher',
     instructions: 'Research recent developments and gather supporting evidence.',
+    identity: '',
+    skills: '',
+    loopGuidance: '',
+    description: '',
     color: '#3b99fc',
     llmProvider: 'openai',
     connectionId: null,
@@ -90,6 +95,10 @@ const DEFAULT_AGENTS: Agent[] = [
     name: 'Agent B',
     role: 'Analyst',
     instructions: 'Weigh tradeoffs and challenge assumptions with data.',
+    identity: '',
+    skills: '',
+    loopGuidance: '',
+    description: '',
     color: '#2ecc71',
     llmProvider: 'anthropic',
     connectionId: null,
@@ -106,6 +115,10 @@ const DEFAULT_AGENTS: Agent[] = [
     name: 'Agent C',
     role: 'Moderator',
     instructions: 'Keep the discussion balanced and summarize consensus.',
+    identity: '',
+    skills: '',
+    loopGuidance: '',
+    description: '',
     color: '#f39c12',
     llmProvider: 'google',
     connectionId: null,
@@ -130,6 +143,7 @@ function defaultState(): ConversationState {
       maxExchanges: null,
       maxTokens: null,
       orchestratorEnabled: true,
+      repetitionGuardEnabled: true,
       moods: ['debate'],
       responseStyle: 'sentences',
       interactionStyle: 'dialogue',
@@ -171,6 +185,10 @@ function migrateState(state: ConversationState): ConversationState {
       active,
       pinnedToAllConversations: agent.pinnedToAllConversations ?? false,
       webSearchEnabled: agent.webSearchEnabled ?? false,
+      identity: agent.identity ?? '',
+      skills: agent.skills ?? '',
+      loopGuidance: agent.loopGuidance ?? '',
+      description: agent.description ?? '',
       voiceURI: agent.voiceURI ?? null,
       googleVoiceName: agent.googleVoiceName ?? null,
       traits: agent.traits ?? {},
@@ -211,6 +229,7 @@ function migrateState(state: ConversationState): ConversationState {
       wikiHistory: state.settings.wikiHistory ?? [],
       pauseOnTabSwitch: state.settings.pauseOnTabSwitch ?? true,
       textSize: state.settings.textSize ?? 'sm',
+      repetitionGuardEnabled: state.settings.repetitionGuardEnabled ?? true,
     },
     nextAgentNumber: Math.max(maxSeen + 1, state.nextAgentNumber ?? 0),
   };
@@ -915,22 +934,49 @@ export function ChatApp() {
         continue;
       }
       consecutiveFailures = 0;
+
+      // Orchestrator repetition judge (#4). When repetitionGuardEnabled is on
+      // and the speaking agent has a usable connection, check whether this
+      // draft substantively restates recent points. If it does, re-prompt the
+      // SAME agent ONCE with a "elaborate on this subject differently" nudge —
+      // bounded to a single re-prompt so it can never spin on itself. Any
+      // judge error keeps the original draft (the round must survive the
+      // judge failing, same graceful-degradation rule as the web tools).
+      let finalReply = reply;
+      if (settingsRef.current.repetitionGuardEnabled) {
+        const judgeConn = connections.find((c) => c.id === liveAgent.connectionId);
+        if (judgeConn) {
+          try {
+            const recent = updatedThread.messages.slice(-6);
+            const verdict = await judgeRepetition(finalReply.content, recent, liveAgent, judgeConn);
+            if (verdict.isRepetitive && verdict.guidance) {
+              const redone = await getReply(liveAgent, updatedThread.messages, verdict.guidance);
+              if (redone && redone.content.trim()) {
+                finalReply = redone;
+              }
+            }
+          } catch {
+            // Keep finalReply as the original draft.
+          }
+        }
+      }
+
       const message: Message = {
         id: generateId(),
         threadId: updatedThread.id,
         agentId: agent.id,
-        content: reply.content,
+        content: finalReply.content,
         timestamp: Date.now(),
         feedback: null,
         replyToId: null,
         starred: false,
         category: null,
-        inputTokens: reply.usage.inputTokens,
-        outputTokens: reply.usage.outputTokens,
-        provider: reply.provider,
-        model: reply.model,
-        webBrowses: reply.webBrowses,
-        webAccessFailed: reply.webAccessFailed,
+        inputTokens: finalReply.usage.inputTokens,
+        outputTokens: finalReply.usage.outputTokens,
+        provider: finalReply.provider,
+        model: finalReply.model,
+        webBrowses: finalReply.webBrowses,
+        webAccessFailed: finalReply.webAccessFailed,
       };
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       const finishedThread = updatedThread;
@@ -1152,8 +1198,15 @@ export function ChatApp() {
     setState((prev) => ({ ...prev, status: 'running' }));
 
     // If the exchange limit was already reached, extend it automatically
-    // rather than silently going quiet right after the user's message.
-    if (settingsRef.current.maxExchanges != null && !withinLimits(targetThread)) {
+    // rather than silently going quiet right after the user's message — UNLESS
+    // the orchestrator repetition judge is on, in which case quality is
+    // handled by re-prompting rather than by inflating the loop length (the
+    // reported "agents repeat themselves and extend the loop" problem).
+    if (
+      settingsRef.current.maxExchanges != null &&
+      !withinLimits(targetThread) &&
+      !settingsRef.current.repetitionGuardEnabled
+    ) {
       extendExchanges(10);
     }
 
@@ -1447,14 +1500,34 @@ export function ChatApp() {
       const words = splitIntoWords(chunkText);
       const cumulativeEnds = buildWeightedWordCumulative(chunkText, words);
       let progressTimer: ReturnType<typeof setInterval> | null = null;
+      // Gemini/Custom TTS return NO per-word timestamps, so the highlight is
+      // an ESTIMATE derived from audio progress mapped through a char-weighted
+      // word distribution — it will always drift somewhat vs. real prosody.
+      // Tightened from 80ms→45ms polling (smoother, lower perceptible lag) and
+      // made robust to providers that report duration as Infinity until the
+      // blob is fully decoded (otherwise frac stayed 0 and the highlight froze
+      // on the first word for the whole chunk). When duration is unknown we
+      // fall back to a wall-clock estimate so the highlight at least advances.
+      const POLL_MS = 45;
+      const estMsPerWord = words.length > 0 ? (320 / Math.max(state.settings.ttsRate, 0.25)) : 320;
+      let startedAt = 0;
       audio.onloadedmetadata = () => {
         setSpeaking({ messageId: msg.id, charIndex: chunkOffset, charLength: 0 });
+        startedAt = performance.now();
         progressTimer = setInterval(() => {
-          if (!audio.duration || words.length === 0) return;
-          const frac = Math.min(audio.currentTime / audio.duration, 1);
+          if (words.length === 0) return;
+          const dur = audio.duration;
+          let frac: number;
+          if (isFinite(dur) && dur > 0) {
+            frac = Math.min(audio.currentTime / dur, 1);
+          } else {
+            const elapsedSec = (performance.now() - startedAt) / 1000;
+            const estSec = (words.length * estMsPerWord) / 1000;
+            frac = estSec > 0 ? Math.min(elapsedSec / estSec, 1) : 0;
+          }
           const w = words[wordIndexAtFraction(cumulativeEnds, frac)];
           setSpeaking({ messageId: msg.id, charIndex: chunkOffset + w.start, charLength: w.length });
-        }, 80);
+        }, POLL_MS);
       };
       audio.onended = () => {
         if (progressTimer) clearInterval(progressTimer);
@@ -2114,11 +2187,26 @@ export function ChatApp() {
       if (tab.id === state.id) continue;
       const loaded = await loadConversation(tab.id);
       if (!loaded) continue;
-      const targetById = new Map(loaded.agents.map((a) => [a.id, a]));
-      const mergedAgents = nextAgents.map((src) => {
-        const existing = targetById.get(src.id);
-        return { ...src, active: existing ? existing.active : src.active };
+      // UNION merge — never a replacement. Previously this mapped over the
+      // current tab's agents only, which meant any agent that existed in the
+      // target tab but NOT in the current one (e.g. the current tab's
+      // in-memory roster was stale and predated an agent added elsewhere) was
+      // silently overwritten and erased the moment any agent edit/reorder/
+      // add/delete ran here. Reported as agents "disappearing without being
+      // deleted". Now: keep target-tab agents that aren't in the source
+      // (unchanged), apply the source's shared identity to agents present in
+      // both while preserving the target tab's OWN `active` flag (active is
+      // per-tab by design), and append source agents that are new to target.
+      const sourceById = new Map(nextAgents.map((a) => [a.id, a]));
+      const seen = new Set<string>();
+      const mergedAgents: Agent[] = loaded.agents.map((existing) => {
+        seen.add(existing.id);
+        const src = sourceById.get(existing.id);
+        return src ? { ...src, active: existing.active } : existing;
       });
+      for (const src of nextAgents) {
+        if (!seen.has(src.id)) mergedAgents.push({ ...src });
+      }
       await saveConversation({
         ...loaded,
         agents: mergedAgents,
@@ -2181,6 +2269,10 @@ export function ChatApp() {
       name: `Agent ${state.agents.length + 1}`,
       role: 'Contributor',
       instructions: 'Share a distinct perspective on the topic.',
+      identity: '',
+      skills: '',
+      loopGuidance: '',
+      description: '',
       color: '#8e44ad',
       llmProvider: 'openai',
       connectionId: null,
@@ -2215,6 +2307,10 @@ export function ChatApp() {
       name: preset.name,
       role: preset.role,
       instructions: preset.instructions,
+      identity: '',
+      skills: '',
+      loopGuidance: '',
+      description: '',
       color: preset.color,
       llmProvider: 'openai',
       connectionId: null,
@@ -2568,7 +2664,13 @@ export function ChatApp() {
             <button
               className="control-btn"
               {...devRef('b7')}
-              onClick={() => setMoodsMenuOpen((v) => !v)}
+              onClick={() => {
+                // Reload on open (not just once on mount) so moods added in
+                // another tab/session appear here without a page reload, and
+                // so the catalog never silently desyncs from localStorage.
+                setCustomMoods(loadCustomMoods());
+                setMoodsMenuOpen((v) => !v);
+              }}
               title="Select one or more discussion moods to blend"
             >
               🎭 Moods ({state.settings.moods.length}) ▾
@@ -2604,6 +2706,20 @@ export function ChatApp() {
                     ...BUILTIN_MOODS.map((name) => ({ key: name, name, custom: null })),
                     ...customMoods.map((m) => ({ key: m.id, name: m.name, custom: m })),
                   ];
+                  // Reconcile orphan selections: a mood name present in this
+                  // conversation's settings.moods but NOT in the catalog
+                  // (carried over from a legacy single-mood migration, or from
+                  // a custom mood that was since deleted) used to be COUNTED in
+                  // the header "(N)" badge but never rendered as a row — so it
+                  // couldn't be unchecked. Fold those names in here so every
+                  // selected mood is visible and removable.
+                  const seenNames = new Set(allMoods.map((m) => m.name.toLowerCase()));
+                  for (const name of state.settings.moods) {
+                    if (!seenNames.has(name.toLowerCase())) {
+                      allMoods.push({ key: `orphan:${name}`, name, custom: null });
+                      seenNames.add(name.toLowerCase());
+                    }
+                  }
                   const q = moodFilter.trim().toLowerCase();
                   const filtered = allMoods.filter((m) => !q || m.name.toLowerCase().includes(q));
                   const exactMatch = allMoods.some((m) => m.name.toLowerCase() === q);
@@ -3120,6 +3236,17 @@ export function ChatApp() {
           />
           <label htmlFor="orchestrator" className="control-label">
             🔁 Auto Mode
+          </label>
+        </div>
+        <div className="control-group">
+          <input
+            type="checkbox"
+            id="repetitionGuard"
+            checked={state.settings.repetitionGuardEnabled}
+            onChange={(e) => updateSettings({ repetitionGuardEnabled: e.target.checked })}
+          />
+          <label htmlFor="repetitionGuard" className="control-label" title="If an agent's draft restates recent points, it's re-prompted once to elaborate on the same subject differently.">
+            ↻ No-repeat guard
           </label>
         </div>
         <div className="control-group">

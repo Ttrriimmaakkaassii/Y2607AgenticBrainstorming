@@ -35,6 +35,13 @@ import { AudioModal } from './AudioModal';
 import { ArchivesModal } from './ArchivesModal';
 import { ChangeLogPanel } from './ChangeLogPanel';
 import { AccountSettingsPanel } from './AccountSettingsPanel';
+import { MindmapModal } from './MindmapModal';
+import { buildTextFieldMindmapMarkdown } from '@/lib/mindmap';
+import {
+  autoPopulateField,
+  autoPopulateAll,
+  type AgentAutoField,
+} from '@/lib/llm-client';
 
 type SettingsTab = 'agent' | 'llm' | 'audio' | 'display' | 'wiki' | 'archives' | 'log' | 'account';
 
@@ -224,6 +231,10 @@ export function SettingsModal({
   const [name, setName] = useState(currentAgent?.name ?? '');
   const [role, setRole] = useState(currentAgent?.role ?? '');
   const [instructions, setInstructions] = useState(currentAgent?.instructions ?? '');
+  const [identity, setIdentity] = useState(currentAgent?.identity ?? '');
+  const [skills, setSkills] = useState(currentAgent?.skills ?? '');
+  const [loopGuidance, setLoopGuidance] = useState(currentAgent?.loopGuidance ?? '');
+  const [description, setDescription] = useState(currentAgent?.description ?? '');
   const [color, setColor] = useState(currentAgent?.color ?? '#3b99fc');
   const [connectionId, setConnectionId] = useState<string | null>(
     currentAgent?.connectionId ?? null
@@ -232,6 +243,14 @@ export function SettingsModal({
   const [googleVoiceName, setGoogleVoiceName] = useState<string | null>(
     currentAgent?.googleVoiceName ?? null
   );
+  // ✨ Auto-populate state. The connection used to generate profile fields —
+  // defaults to the opened agent's own connection, but the user can repoint it
+  // on the fly to any saved connection ("use the llm user chooses on the go").
+  const [autoConnId, setAutoConnId] = useState<string | null>(currentAgent?.connectionId ?? null);
+  const [autoBusy, setAutoBusy] = useState<'' | AgentAutoField | 'all'>('');
+  const [autoError, setAutoError] = useState<string | null>(null);
+  // 🧠 Per-field "view as mind map" — set to open MindmapModal over this modal.
+  const [mindmapField, setMindmapField] = useState<{ title: string; markdown: string } | null>(null);
   // These only had their initial useState value — fine while currentAgentId
   // never changes without a manual row click (selectAgent already handles
   // that), but if it's ever changed from outside while this modal stays
@@ -243,8 +262,14 @@ export function SettingsModal({
     setName(currentAgent.name);
     setRole(currentAgent.role);
     setInstructions(currentAgent.instructions);
+    setIdentity(currentAgent.identity ?? '');
+    setSkills(currentAgent.skills ?? '');
+    setLoopGuidance(currentAgent.loopGuidance ?? '');
+    setDescription(currentAgent.description ?? '');
     setColor(currentAgent.color);
     setConnectionId(currentAgent.connectionId);
+    setAutoConnId(currentAgent.connectionId ?? null);
+    setAutoError(null);
     setVoiceURI(currentAgent.voiceURI ?? null);
     setGoogleVoiceName(currentAgent.googleVoiceName ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -583,12 +608,100 @@ export function SettingsModal({
       name,
       role,
       instructions,
+      identity,
+      skills,
+      loopGuidance,
+      description,
       color,
       connectionId,
       voiceURI,
       googleVoiceName,
       llmProvider: connection?.provider ?? currentAgent.llmProvider,
     });
+  }
+
+  // ✨ Auto-populate operates on the OPENED agent only (currentAgent). Uses
+  // the connection picked in autoConnId (defaults to the agent's own) and the
+  // agent's `description` as the source of truth. Generated text is written
+  // into the local form fields for immediate editing AND persisted via onSave
+  // so it survives a modal close. Never silently blanks a field — a failed
+  // generation surfaces an error and leaves the field untouched.
+  function snapshotForAuto(): Agent | null {
+    if (!currentAgent) return null;
+    return { ...currentAgent, identity, instructions, skills, loopGuidance, description };
+  }
+
+  async function runAutoField(field: AgentAutoField) {
+    const agent = snapshotForAuto();
+    const connection = connections.find((c) => c.id === autoConnId);
+    if (!agent || !connection) {
+      setAutoError('Pick an LLM connection to generate with.');
+      return;
+    }
+    if (!description.trim()) {
+      setAutoError('Add a description first — it’s the source of truth for generation.');
+      return;
+    }
+    setAutoError(null);
+    setAutoBusy(field);
+    try {
+      const text = await autoPopulateField(agent, field, connection);
+      if (!text) {
+        setAutoError(`Couldn’t generate ${field} — try again or pick another connection.`);
+        return;
+      }
+      if (field === 'identity') setIdentity(text);
+      if (field === 'instructions') setInstructions(text);
+      if (field === 'skills') setSkills(text);
+      if (field === 'loopGuidance') setLoopGuidance(text);
+      onSave(agent.id, {
+        identity: field === 'identity' ? text : identity,
+        instructions: field === 'instructions' ? text : instructions,
+        skills: field === 'skills' ? text : skills,
+        loopGuidance: field === 'loopGuidance' ? text : loopGuidance,
+      });
+    } catch {
+      setAutoError('Generation failed — check the connection/key and retry.');
+    } finally {
+      setAutoBusy('');
+    }
+  }
+
+  async function runAutoAll() {
+    const agent = snapshotForAuto();
+    const connection = connections.find((c) => c.id === autoConnId);
+    if (!agent || !connection) {
+      setAutoError('Pick an LLM connection to generate with.');
+      return;
+    }
+    if (!description.trim()) {
+      setAutoError('Add a description first — it’s the source of truth for generation.');
+      return;
+    }
+    setAutoError(null);
+    setAutoBusy('all');
+    try {
+      const profile = await autoPopulateAll(agent, connection);
+      if (!profile) {
+        setAutoError('Couldn’t generate the full profile — try again or pick another connection.');
+        return;
+      }
+      const next = {
+        identity: profile.identity || identity,
+        instructions: profile.instructions || instructions,
+        skills: profile.skills || skills,
+        loopGuidance: profile.loopGuidance || loopGuidance,
+      };
+      setIdentity(next.identity);
+      setInstructions(next.instructions);
+      setSkills(next.skills);
+      setLoopGuidance(next.loopGuidance);
+      onSave(agent.id, next);
+    } catch {
+      setAutoError('Generation failed — check the connection/key and retry.');
+    } finally {
+      setAutoBusy('');
+    }
   }
 
   const auth = useAuthContext();
@@ -781,13 +894,88 @@ export function SettingsModal({
                   <label>Role / Personality</label>
                   <input {...devRef('i12')} value={role} onChange={(e) => setRole(e.target.value)} />
                 </div>
-                <div className="form-group">
-                  <label>Instructions</label>
-                  <textarea
-                    {...devRef('t5')}
-                    value={instructions}
-                    onChange={(e) => setInstructions(e.target.value)}
-                  />
+                <div className="modal-section agent-profile-section" {...devRef('s14b')}>
+                  <div className="modal-section-title">Agent profile</div>
+                  <div className="form-group">
+                    <label>
+                      Description <span className="field-hint">(source of truth for ✨ Auto-populate)</span>
+                    </label>
+                    <textarea
+                      {...devRef('t-desc')}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Describe this agent in plain language — its expertise, voice, and purpose. The ✨ buttons below draft the profile fields from this."
+                    />
+                  </div>
+                  <div className="autopopulate-row">
+                    <label className="control-label">
+                      Generate with:
+                      <select
+                        value={autoConnId ?? ''}
+                        onChange={(e) => setAutoConnId(e.target.value || null)}
+                      >
+                        <option value="">Pick a connection…</option>
+                        {connections.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label} ({getProvider(c.provider)?.name} · {c.model})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="btn-secondary"
+                      style={{ width: 'auto' }}
+                      disabled={!description.trim() || autoBusy !== ''}
+                      onClick={runAutoAll}
+                    >
+                      ✨ {autoBusy === 'all' ? 'Generating…' : 'Auto-populate all'}
+                    </button>
+                    {autoError && <span className="autopopulate-error">{autoError}</span>}
+                  </div>
+                  {(
+                    [
+                      { key: 'identity', label: 'Identity', value: identity, set: setIdentity },
+                      { key: 'instructions', label: 'Instructions', value: instructions, set: setInstructions },
+                      { key: 'skills', label: 'Skills', value: skills, set: setSkills },
+                      { key: 'loopGuidance', label: 'Loops (participation & anti-repeat)', value: loopGuidance, set: setLoopGuidance },
+                    ] as const
+                  ).map((f) => (
+                    <div className="form-group" key={f.key}>
+                      <label className="field-label-row">
+                        <span>{f.label}</span>
+                        <span className="field-actions">
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title="Draft this field from the description"
+                            disabled={!description.trim() || autoBusy !== ''}
+                            onClick={() => runAutoField(f.key)}
+                          >
+                            {autoBusy === f.key ? '✨ …' : '✨'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title="View as mind map"
+                            disabled={!f.value.trim()}
+                            onClick={() =>
+                              setMindmapField({
+                                title: `${name || 'Agent'} — ${f.label}`,
+                                markdown: buildTextFieldMindmapMarkdown(f.label, f.value),
+                              })
+                            }
+                          >
+                            🧠
+                          </button>
+                        </span>
+                      </label>
+                      <textarea
+                        {...(f.key === 'instructions' ? devRef('t5') : {})}
+                        value={f.value}
+                        onChange={(e) => f.set(e.target.value)}
+                      />
+                    </div>
+                  ))}
                 </div>
                 <div className="form-group">
                   <label>Connected LLM</label>
@@ -1767,6 +1955,13 @@ export function SettingsModal({
           )}
         </div>
       </div>
+      {mindmapField && (
+        <MindmapModal
+          markdown={mindmapField.markdown}
+          title={mindmapField.title}
+          onClose={() => setMindmapField(null)}
+        />
+      )}
     </div>
   );
 }

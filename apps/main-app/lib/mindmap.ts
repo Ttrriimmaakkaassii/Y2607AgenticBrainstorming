@@ -39,3 +39,27 @@ export function buildMessageMindmapMarkdown(agents: Agent[], message: Message): 
   });
   return lines.join('\n');
 }
+
+/**
+ * Builds a mind map from an arbitrary free-text field (an agent's Identity /
+ * Instructions / Skills / Loops). If the text already has line/bullet
+ * structure, each line becomes a node; otherwise each sentence does. Empty
+ * text yields a single root node so the view still opens cleanly.
+ */
+export function buildTextFieldMindmapMarkdown(title: string, text: string): string {
+  const root = title.trim() || 'Field';
+  const body = text.trim();
+  if (!body) return `# ${root}`;
+  let chunks: string[];
+  if (/\n/.test(body) || /^\s*[-*]\s/m.test(body)) {
+    chunks = body
+      .split(/\n+/)
+      .map((l) => l.replace(/^\s*[-*]\s+/, '').replace(/^\s*\d+[.)]\s+/, '').trim())
+      .filter(Boolean);
+  } else {
+    chunks = (body.match(/[^.!?]+[.!?]*/g) || [body]).map((s) => s.trim()).filter(Boolean);
+  }
+  const lines = [`# ${root}`];
+  chunks.forEach((c, i) => lines.push(`- ${picto(i)} ${c}`));
+  return lines.join('\n');
+}

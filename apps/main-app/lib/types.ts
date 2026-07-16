@@ -32,6 +32,14 @@ export interface Agent {
   name: string;
   role: string;
   instructions: string;
+  /** Persona/voice/background — the "who you are" block in the prompt. Free text. Empty = omitted from the prompt. */
+  identity: string;
+  /** Areas of expertise / capabilities — the "what you're good at" block. Empty = omitted from the prompt. */
+  skills: string;
+  /** How this agent participates in & paces the discussion loop, incl. how to avoid repeating itself. Empty = a sensible anti-repeat fallback is used. */
+  loopGuidance: string;
+  /** Free-text description used as input for the ✨ Auto-populate buttons. Never read by the prompt itself. */
+  description: string;
   color: string;
   llmProvider: LLMProvider;
   connectionId: string | null;
@@ -113,6 +121,8 @@ export interface ConversationSettings {
   maxExchanges: number | null;
   maxTokens: number | null;
   orchestratorEnabled: boolean;
+  /** When true, each agent's drafted reply is checked by the orchestrator repetition judge (lib/orchestrator.ts): if it restates recent points, the agent is re-prompted once to elaborate on the same subject differently. Independent of orchestratorEnabled (Auto Mode). */
+  repetitionGuardEnabled: boolean;
   /** All selected moods are blended simultaneously. */
   moods: Mood[];
   responseStyle: ResponseStyle;
