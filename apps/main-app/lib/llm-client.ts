@@ -425,7 +425,8 @@ function buildUserPrompt(
   history: Message[],
   agents: Agent[],
   extraInstruction?: string,
-  wikiDigest?: string
+  wikiDigest?: string,
+  advisorNote?: string
 ): string {
   const transcript = history
     // Full conversation context, bounded generously rather than unbounded —
@@ -443,9 +444,16 @@ function buildUserPrompt(
     ? `\n\nShared wiki (cross-thread knowledge established so far):\n${wikiDigest}`
     : '';
 
+  // Background advisor note — synthesized input from active-but-not-participant
+  // advisors (see lib/background-moderator.ts). Presented as context the visible
+  // speakers should weigh, not as a hard instruction.
+  const advisorSection = advisorNote
+    ? `\n\nBackground advisor note (consider this, from advisors not in the visible round):\n${advisorNote}`
+    : '';
+
   const base = transcript
-    ? `Topic: ${topic || '(unspecified)'}${wikiSection}\n\nConversation so far:\n${transcript}`
-    : `Start a discussion on: ${topic || 'a topic of your choosing'}${wikiSection}`;
+    ? `Topic: ${topic || '(unspecified)'}${wikiSection}${advisorSection}\n\nConversation so far:\n${transcript}`
+    : `Start a discussion on: ${topic || 'a topic of your choosing'}${wikiSection}${advisorSection}`;
 
   return extraInstruction ? `${base}\n\nInstruction: ${extraInstruction}` : `${base}\n\nContinue the discussion with your next message.`;
 }
@@ -821,7 +829,9 @@ export async function fetchAgentReply(
   /** Completion token cap for the reply (was hardcoded 500 — too small for reasoning models like GLM-5.2, which exhausted it thinking). Defaults to DEFAULT_MAX_TOKENS. */
   maxTokens?: number,
   /** Optional mutable sink; when the call fails, the real provider error is written here so callers can surface it instead of a silent null. */
-  errorSink?: ErrorSink
+  errorSink?: ErrorSink,
+  /** Synthesized note from background advisors (active but not participant) — injected into the user prompt as context. */
+  advisorNote?: string
 ): Promise<AgentReplyResult | null> {
   const connection = agent.connectionId
     ? connections.find((c) => c.id === agent.connectionId)
@@ -838,7 +848,7 @@ export async function fetchAgentReply(
     guidelines,
     traits
   );
-  const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction, wikiDigest);
+  const userPrompt = buildUserPrompt(topic, history, agents, extraInstruction, wikiDigest, advisorNote);
   const result = await callDirect(
     connection,
     systemPrompt,

@@ -21,6 +21,7 @@ import { generateId } from '@/lib/id';
 import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, reactionInstruction, DEFAULT_MAX_TOKENS } from '@/lib/llm-client';
 import { judgeRepetition } from '@/lib/orchestrator';
 import { loadGlobalWikiKeeper, saveGlobalWikiKeeper } from '@/lib/wiki-keeper';
+import { gatherAdvisorNote } from '@/lib/background-moderator';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
@@ -781,7 +782,8 @@ export function ChatApp() {
   async function getReply(
     agent: Agent,
     precedingMessages: Message[],
-    extraInstruction?: string
+    extraInstruction?: string,
+    advisorNote?: string
   ): Promise<AgentReplyResult | null> {
     if (!agentIsConnected(agent)) return null;
     // Reads live settings via the ref (not the closured `state`) so changes
@@ -815,7 +817,8 @@ export function ChatApp() {
       live.wikiEnabled ? live.wikiDigest : undefined,
       auth?.session.access_token ?? null,
       live.maxTokens ?? DEFAULT_MAX_TOKENS,
-      errorSink
+      errorSink,
+      advisorNote
     );
     if (!reply && errorSink.message) lastReplyErrorRef.current = errorSink.message;
     if (reply) {
@@ -935,6 +938,23 @@ export function ChatApp() {
     let turn = 0;
     let consecutiveFailures = 0;
 
+    // Background moderator: poll active-but-not-participant advisors once for
+    // this round and synthesize their input into a note injected into every
+    // participant's prompt. Synthesizer = the global Wiki Keeper connection
+    // (the app's designated "background" LLM); bounded + failure-tolerant
+    // inside gatherAdvisorNote so this can never kill the round.
+    let advisorNote: string | undefined;
+    const advisors = state.agents.filter((a) => a.active && !a.participant);
+    if (advisors.length > 0) {
+      const synthId = loadGlobalWikiKeeper();
+      const synthesizer = synthId ? connections.find((c) => c.id === synthId) ?? null : null;
+      try {
+        advisorNote = (await gatherAdvisorNote(advisors, connections, updatedThread.messages, state.agents, synthesizer)) ?? undefined;
+      } catch {
+        advisorNote = undefined;
+      }
+    }
+
     do {
       if (!withinLimits(updatedThread)) break;
       if (!isRunnable()) break;
@@ -952,7 +972,7 @@ export function ChatApp() {
       }
 
       startThinking(agent.id, updatedThread.id, conversationId);
-      const reply = await getReply(agent, updatedThread.messages);
+      const reply = await getReply(agent, updatedThread.messages, undefined, advisorNote);
       stopThinking(agent.id);
       if (!reply) {
         showToast(`⚠️ ${agent.refNumber} failed to respond${lastReplyErrorRef.current ? `: ${lastReplyErrorRef.current}` : ''} — check its LLM connection.`);
@@ -987,7 +1007,7 @@ export function ChatApp() {
             const recent = updatedThread.messages.slice(-6);
             const verdict = await judgeRepetition(finalReply.content, recent, liveAgent, judgeConn);
             if (verdict.isRepetitive && verdict.guidance) {
-              const redone = await getReply(liveAgent, updatedThread.messages, verdict.guidance);
+              const redone = await getReply(liveAgent, updatedThread.messages, verdict.guidance, advisorNote);
               if (redone && redone.content.trim()) {
                 finalReply = redone;
               }
