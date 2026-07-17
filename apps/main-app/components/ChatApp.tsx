@@ -754,6 +754,7 @@ export function ChatApp() {
     // an auto-loop is already running.
     const maxExchanges = settingsRef.current.maxExchanges;
     if (maxExchanges == null) return true;
+    if (!thread) return true; // no thread yet → not at any limit (defensive)
     return agentExchangeCount(thread) < maxExchanges;
   }
 
@@ -3772,10 +3773,18 @@ export function ChatApp() {
       {/* "+10 exchanges" floating button — appears beside Resume when the
           exchange limit has been reached (messages "used up"), so the user
           can extend AND resume in one click. Always extends then resumes. */}
-      {state.settings.maxExchanges != null
-        && !withinLimits(state.threads[state.threads.length - 1])
-        && state.status !== 'running'
-        && (
+      {(() => {
+          // Guard: only evaluate the limit when a thread actually exists —
+          // withinLimits(undefined) would read .messages on undefined and
+          // crash the render before any discussion has started.
+          const lastThread = state.threads[state.threads.length - 1];
+          return (
+            state.settings.maxExchanges != null
+            && !!lastThread
+            && !withinLimits(lastThread)
+            && state.status !== 'running'
+          );
+        })() && (
           <button
             className="floating-play-btn extend-btn"
             {...devRef('b95')}
