@@ -287,6 +287,10 @@ export interface ConversationSettings {
   a2aDisplayMode?: AgentCommunicationDisplay;
   /** Canonical shared conversation state (verified facts, claims, decisions). Authoritative; agents reference entries by stable id. */
   sharedState?: SharedAgentState;
+  /** The user's confirmed objective — persists across turns, prevents repeated questions. */
+  objective?: ObjectiveRecord;
+  /** First-class tasks with lifecycle + acceptance gates. */
+  tasks?: AgentTask[];
   ttsRate: number;
   ttsLang: string;
   /**
@@ -360,6 +364,146 @@ export interface ConversationState {
    * for the user. DEFAULT FALSE — autonomous continuation must be explicit. */
   autonomousMode?: boolean;
 }
+
+// =====================================================================
+// DETERMINISTIC ORCHESTRATION TYPES (Phases 1–4)
+// The application runtime — NOT the LLM — controls all of these.
+// =====================================================================
+
+// --- Phase 1: Objective record ---------------------------------------
+
+export interface ObjectiveRecord {
+  objectiveId: string;
+  summary: string;
+  /** Key → value (e.g. { minimumAreaM2: '20000', assetType: 'land' }). */
+  confirmedFacts: Record<string, string>;
+  constraints: Record<string, string>;
+  preferences: Record<string, string>;
+  /** Fields the system still needs from the user (may be empty). */
+  unresolvedFields: string[];
+  /** Older objective ids this one supersedes (on correction / objective change). */
+  supersededObjectiveIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Phase 2: Task system --------------------------------------------
+
+export type AgentTaskStatus =
+  | 'queued'
+  | 'assigned'
+  | 'running'
+  | 'waiting_for_tool'
+  | 'processing'
+  | 'deliverable_submitted'
+  | 'accepted'
+  | 'rejected'
+  | 'failed'
+  | 'cancelled';
+
+export type DeliverableType = 'research_evidence' | 'comparison' | 'recommendation' | 'general';
+
+export interface AgentTask {
+  taskId: string;
+  conversationId: string;
+  taskType: string;
+  objective: string;
+  exactQuestions: string[];
+  assignedAgentId?: string;
+  allowedAgentIds: string[];
+  prerequisites: string[];
+  requiredDeliverableType: DeliverableType;
+  acceptanceCriteria: string[];
+  status: AgentTaskStatus;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface DeliverableResult {
+  accepted: boolean;
+  reasons: string[];
+}
+
+// --- Phase 3: Claims / Evidence / Corrections ------------------------
+
+export type ClaimStatus =
+  | 'verified'
+  | 'unverified'
+  | 'seller_claim'
+  | 'inference'
+  | 'hypothesis'
+  | 'assumption'
+  | 'rejected'
+  | 'conflicting_evidence';
+
+export type ClaimMateriality = 'critical' | 'high' | 'medium' | 'low';
+
+export interface ClaimRecord {
+  claimId: string;
+  conversationId: string;
+  taskId?: string;
+  text: string;
+  status: ClaimStatus;
+  evidenceIds: string[];
+  createdByAgentId: string;
+  materiality: ClaimMateriality;
+  allowedInRecommendation: boolean;
+  allowedInFinalAnswer: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type EvidenceSourceType = 'official' | 'primary' | 'secondary' | 'commercial' | 'informal' | 'user_provided';
+
+export interface EvidenceRecord {
+  evidenceId: string;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  sourceType: EvidenceSourceType;
+  publicationDate?: string;
+  retrievedAt: string;
+  excerpt?: string;
+  supportsClaimIds: string[];
+  quality: 'high' | 'medium' | 'low';
+  limitations: string[];
+}
+
+export interface CorrectionRecord {
+  correctionId: string;
+  originalClaimId: string;
+  reason: string;
+  correctedClaimId?: string;
+  createdAt: string;
+}
+
+// --- Phase 3: Chart-data validation ----------------------------------
+
+export interface ChartDataPoint {
+  label: string;
+  value: number;
+  unit: string;
+  claimId?: string;
+  evidenceIds?: string[];
+  status: 'verified' | 'estimate';
+}
+
+// --- Phase 4: Formal state-transition events -------------------------
+
+export type EngineConversationEvent =
+  | { type: 'USER_MESSAGE_RECEIVED'; messageId: string }
+  | { type: 'OBJECTIVE_CONFIRMED'; objectiveId: string }
+  | { type: 'TASK_CREATED'; taskId: string }
+  | { type: 'AGENT_ASSIGNED'; taskId: string; agentId: string }
+  | { type: 'AGENT_STARTED'; executionId: string; agentId: string }
+  | { type: 'TOOL_REQUESTED'; executionId: string; toolCallId: string }
+  | { type: 'TOOL_RESULT_RECEIVED'; executionId: string; toolCallId: string }
+  | { type: 'DELIVERABLE_SUBMITTED'; taskId: string }
+  | { type: 'DELIVERABLE_ACCEPTED'; taskId: string }
+  | { type: 'DELIVERABLE_REJECTED'; taskId: string; reasons: string[] }
+  | { type: 'USER_INPUT_REQUIRED'; requestId: string }
+  | { type: 'AGENT_FAILED'; executionId: string; errorCode: string }
+  | { type: 'CONVERSATION_COMPLETED' };
 
 export interface ArchivedConversation {
   id: string;
