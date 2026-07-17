@@ -797,6 +797,30 @@ export function ChatApp() {
     return /\b(you|your|yours|yourself|u\b|we|us|our)\b/.test(lastSentence) || c.endsWith('?');
   }
 
+  /** "Nothing to say" — the agent returned an empty or explicit no-response.
+   * Rendered as a compact muted row (🤐), not a full bubble. */
+  const NO_RESPONSE_RE = /^\s*(no\s*response|nothing\s+to\s+(add|say|contribute)|n\/a|i\s+have\s+nothing|i'?ll\s+pass|pass|no\s+comment|\.\.\.|—|-)\s*$/i;
+  function isNoResponse(content: string): boolean {
+    const c = content.trim();
+    if (!c) return true;
+    return NO_RESPONSE_RE.test(c) || c.length <= 3;
+  }
+
+  /** Parse the verbose orchestration status block some agents emit
+   * (PHASE: … | ACTIVE_TASK: … | ASSIGNED_SPEAKER: … | … | COMPLETION_SIGNAL: …)
+   * into compact fields. Returns null if not such a block. */
+  const ORCH_BLOCK_RE = /PHASE:\s*(.+?)\s*\|\s*ACTIVE_TASK:\s*(.+?)\s*\|\s*ASSIGNED_SPEAKER:\s*(.+?)\s*\|\s*ALLOWED_RESPONDERS:\s*(.+?)\s*\|\s*BLOCKED_RESPONDERS:\s*(.+?)\s*\|\s*REQUIRED_DELIVERABLE:\s*(.+?)\s*\|\s*COMPLETION_SIGNAL:\s*([A-Z_]+)/is;
+  function parseOrchestrationBlock(content: string): { phase: string; task: string; assigned: string; deliverable: string } | null {
+    const m = content.match(ORCH_BLOCK_RE);
+    if (!m) return null;
+    return {
+      phase: m[1].trim().replace(/_/g, ' '),
+      task: m[2].trim().replace(/_/g, ' '),
+      assigned: m[3].trim().replace(/_/g, ' '),
+      deliverable: m[6].trim(),
+    };
+  }
+
   function focusComposerForReply() {
     const el = messageInputRef.current;
     if (el) {
@@ -3967,6 +3991,63 @@ export function ChatApp() {
                   const globalIndex = allMessages.findIndex((m) => m.id === msg.id);
                   const msgNumber = `Msg${String(globalIndex + 1).padStart(3, '0')}`;
                   const bubbleColor = isUser ? '#95ec69' : author?.color ?? '#999';
+                  const orchBlock = !isUser ? parseOrchestrationBlock(msg.content) : null;
+                  const noResponse = !isUser && !orchBlock && isNoResponse(msg.content);
+
+                  // Compact rows for orchestration-status dumps and "no response"
+                  // replies — a slim consistent line (ref + small name) instead
+                  // of a full bubble, so they don't eat vertical space.
+                  if (!isUser && orchBlock) {
+                    return (
+                      <div
+                        className="bubble-wrapper compact-row"
+                        data-message-id={msg.id}
+                        key={msg.id}
+                      >
+                        <input
+                          type="checkbox"
+                          className="bubble-select-checkbox"
+                          title="Select for bulk copy/share"
+                          checked={selectedMessageIds.includes(msg.id)}
+                          onChange={() => toggleMessageSelected(msg.id)}
+                        />
+                        <div className="avatar" style={{ background: bubbleColor }}>
+                          {(author?.name ?? '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="compact-line">
+                          <span className="compact-ref">{author?.refNumber} <small>{author?.name}</small></span>
+                          <span className="orch-chip" title="Phase">🧭 {orchBlock.phase}</span>
+                          <span className="orch-chip" title="Assigned speaker">→ {orchBlock.assigned}</span>
+                          <span className="orch-task">{orchBlock.task}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (!isUser && noResponse) {
+                    return (
+                      <div
+                        className="bubble-wrapper compact-row"
+                        data-message-id={msg.id}
+                        key={msg.id}
+                      >
+                        <input
+                          type="checkbox"
+                          className="bubble-select-checkbox"
+                          title="Select for bulk copy/share"
+                          checked={selectedMessageIds.includes(msg.id)}
+                          onChange={() => toggleMessageSelected(msg.id)}
+                        />
+                        <div className="avatar" style={{ background: bubbleColor }}>
+                          {(author?.name ?? '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="compact-line">
+                          <span className="compact-ref">{author?.refNumber} <small>{author?.name}</small></span>
+                          <span className="mute-emoji" title="Nothing to add">🤐</span>
+                          <small>nothing to add</small>
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                 <div
                   className={`bubble-wrapper ${isUser ? 'user' : ''} ${shiftToggle ? 'speaker-shift' : ''} ${selectedMessageIds.includes(msg.id) ? 'selected' : ''} ${speaking?.messageId === msg.id ? 'speaking' : ''}`}
