@@ -4431,22 +4431,9 @@ export function ChatApp() {
                                 AGENT_REACTIONS.map((r) => (
                                   <button
                                     key={r.type}
-                                    className={`feedback-btn ${r.type === 'mindmap' && mindmapMode ? 'active' : ''}`}
-                                    title={
-                                      r.type === 'mindmap'
-                                        ? `r${badge()}: ${r.tooltip} — double-click to toggle mindmap beside every message`
-                                        : `r${badge()}: ${r.tooltip}`
-                                    }
+                                    className="feedback-btn"
+                                    title={`r${badge()}: ${r.tooltip}`}
                                     onClick={() => handleReaction(thread.id, msg, r.type)}
-                                    onDoubleClick={
-                                      r.type === 'mindmap'
-                                        ? (e) => {
-                                            e.preventDefault();
-                                            setMindmapMode((v) => !v);
-                                            showToast(!mindmapMode ? '🧠 Mindmap mode on — generating beside each message' : '🧠 Mindmap mode off');
-                                          }
-                                        : undefined
-                                    }
                                   >
                                     {r.icon}
                                     <span className="reaction-badge">r{n}</span>
@@ -4455,11 +4442,24 @@ export function ChatApp() {
                               {UNIVERSAL_REACTIONS.map((r) => (
                                 <button
                                   key={r.type}
-                                  className="feedback-btn"
-                                  title={`r${badge()}: ${r.tooltip}`}
+                                  className={`feedback-btn ${r.type === 'mindmap' && mindmapMode ? 'active' : ''}`}
+                                  title={
+                                    r.type === 'mindmap'
+                                      ? `r${badge()}: ${r.tooltip} — double-click to toggle mindmap beside every message`
+                                      : `r${badge()}: ${r.tooltip}`
+                                  }
                                   onClick={() => handleReaction(thread.id, msg, r.type)}
+                                  onDoubleClick={
+                                    r.type === 'mindmap'
+                                      ? (e) => {
+                                          e.preventDefault();
+                                          setMindmapMode((v) => !v);
+                                          showToast(!mindmapMode ? '🧠 Mindmap mode on — generating beside each message' : '🧠 Mindmap mode off');
+                                        }
+                                      : undefined
+                                  }
                                 >
-                                  {r.icon}
+                                  {r.type === 'mindmap' ? '🧠' : r.icon}
                                   <span className="reaction-badge">r{n}</span>
                                 </button>
                               ))}
