@@ -2811,6 +2811,11 @@ body.dev-mode [data-devref]::after {
   min-height: 0;
   overflow: hidden;
 }
+/* Freeze: stop the browser from silently re-anchoring scroll when new content
+   arrives — the user controls the view manually. */
+.conversation-body.frozen {
+  overflow-anchor: none;
+}
 
 .audio-rail {
   width: 170px;

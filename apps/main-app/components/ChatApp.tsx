@@ -667,6 +667,19 @@ export function ChatApp() {
     saveConversation(state);
   }, [state, hydrated]);
 
+  // When freeze turns ON, cancel any in-progress smooth scroll so the view
+  // truly stops where the user left it (the prior smooth animation would
+  // otherwise continue to its target). Also stops the browser's native scroll
+  // anchoring from quietly re-centering when new DOM arrives.
+  useEffect(() => {
+    if (freezeScroll && conversationAreaRef.current) {
+      conversationAreaRef.current.scrollTo({
+        top: conversationAreaRef.current.scrollTop,
+        behavior: 'auto',
+      });
+    }
+  }, [freezeScroll]);
+
   useEffect(() => {
     if (freezeScroll) return;
     conversationAreaRef.current?.scrollTo({
@@ -4005,7 +4018,7 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className="conversation-body" {...devRef('s7')}>
+      <div className={`conversation-body ${freezeScroll ? 'frozen' : ''}`} {...devRef('s7')}>
         {showAudioRail && (
           <>
             <div className="audio-rail-backdrop" onClick={() => setShowAudioRail(false)} />
