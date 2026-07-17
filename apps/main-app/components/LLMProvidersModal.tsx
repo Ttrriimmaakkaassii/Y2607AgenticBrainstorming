@@ -249,6 +249,23 @@ export function LLMProvidersModal({
     setCustomCategories(loadCustomCategories());
   }, []);
 
+  // AUTOSAVE the Txt2Audio / podcast endpoints on every change — previously
+  // these only persisted when the user clicked "Save" (or generated a podcast),
+  // so the base URLs were lost on a new conversation/session while the API key
+  // (saved elsewhere) survived. Now typing persists immediately.
+  useEffect(() => {
+    saveCustomTtsBaseUrl(customTtsBaseUrl);
+  }, [customTtsBaseUrl]);
+  useEffect(() => {
+    saveCustomTtsApiKey(customTtsApiKey);
+  }, [customTtsApiKey]);
+  useEffect(() => {
+    saveCustomTtsVoice(customTtsVoice);
+  }, [customTtsVoice]);
+  useEffect(() => {
+    saveCustomPodcastBaseUrl(customPodcastBaseUrl);
+  }, [customPodcastBaseUrl]);
+
   const allCategoryNames = [...AGENT_LIBRARY.map((c) => c.name), ...customCategories.map((c) => c.name)];
 
   function categoriesForAgent(name: string): string[] {

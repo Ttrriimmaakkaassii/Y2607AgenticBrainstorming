@@ -108,6 +108,12 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
     };
   }, []);
 
+  // Autosave the podcast base URL as it's typed — otherwise it's lost on a new
+  // conversation/session (only the shared API key survived before).
+  useEffect(() => {
+    saveCustomPodcastBaseUrl(podcastBaseUrl);
+  }, [podcastBaseUrl]);
+
   async function createPodcastEpisode() {
     const effectiveBaseUrl = podcastBaseUrl.trim() || loadCustomTtsBaseUrl();
     saveCustomPodcastBaseUrl(podcastBaseUrl);
