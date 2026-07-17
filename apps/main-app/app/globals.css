@@ -2017,6 +2017,32 @@ body.dev-mode [data-devref]::after {
   max-height: 240px;
   overflow-y: auto;
 }
+
+/* Mindmap mode (#38) — a mini mindmap rendered beside/under each agent message. */
+.inline-mindmap-wrap {
+  margin-top: 10px;
+  max-width: 360px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 6px 8px;
+}
+.inline-mindmap-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.inline-mindmap {
+  color: var(--text-primary);
+}
+.inline-mindmap-loading {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 12px 0;
+  text-align: center;
+}
 .a2a-raw {
   margin: 6px 0;
   font-size: 11px;

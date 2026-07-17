@@ -74,6 +74,7 @@ import { MessageContent } from './MessageContent';
 import { ChartRenderer } from '@/lib/chart-render';
 import { ElapsedTimer } from './ElapsedTimer';
 import { A2AReadableCard } from './A2AReadableCard';
+import { InlineMindmap } from './InlineMindmap';
 import { startAgentTiming, completeAgentTiming, failAgentTiming, formatDuration } from '@/lib/agent-timing';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
@@ -562,6 +563,11 @@ export function ChatApp() {
   /** In Dev Mode, every tagged element shows this code as a small badge (CSS ::after). */
   const conversationAreaRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  /** Mindmap mode (#38): every agent message shows a mini mindmap beside it.
+   * Toggled by double-clicking a message's 🧠 mindmap reaction. */
+  const [mindmapMode, setMindmapMode] = useState(false);
+  const [messageMindmaps, setMessageMindmaps] = useState<Record<string, string>>({});
+  const mindmapGeneratingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const el = messageInputRef.current;
     if (!el) return;
@@ -846,6 +852,40 @@ export function ChatApp() {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
+
+  /** Generate + cache a conclusive mindmap for one agent message (via the Wiki
+   *  Keeper connection, falling back to the naive builder). Used by mindmap
+   *  mode to put a mini mindmap beside every message. */
+  async function ensureMessageMindmap(message: Message) {
+    const keeperId = state.settings.wikiKeeperConnectionId ?? loadGlobalWikiKeeper();
+    const keeper = keeperId ? connections.find((c) => c.id === keeperId) : undefined;
+    let md = '';
+    try {
+      if (keeper) {
+        const gen = await fetchMindmap(keeper, (agentById(message.agentId)?.name ?? 'Message'), message.content);
+        md = gen ?? buildMessageMindmapMarkdown(state.agents, message);
+      } else {
+        md = buildMessageMindmapMarkdown(state.agents, message);
+      }
+    } catch {
+      md = buildMessageMindmapMarkdown(state.agents, message);
+    }
+    setMessageMindmaps((prev) => ({ ...prev, [message.id]: md }));
+  }
+
+  // Mindmap mode: generate one missing mindmap at a time (sequential, so we
+  // don't burst the keeper LLM). Re-runs as each completes → walks the thread.
+  // Also covers NEW messages (they're in allMessages and lack a cached map).
+  useEffect(() => {
+    if (!mindmapMode) return;
+    const target = allMessages.find(
+      (m) => m.agentId !== 'user' && m.content.trim() && !messageMindmaps[m.id] && !mindmapGeneratingRef.current.has(m.id)
+    );
+    if (!target) return;
+    mindmapGeneratingRef.current.add(target.id);
+    void ensureMessageMindmap(target).finally(() => mindmapGeneratingRef.current.delete(target.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mindmapMode, allMessages, messageMindmaps]);
 
   function createThread(agentId: string, seedReply?: AgentReplyResult): Thread {
     const thread: Thread = {
@@ -4333,6 +4373,15 @@ export function ChatApp() {
                             ↩ Reply
                           </button>
                         )}
+                        {/* Mindmap mode (#38): a mini conclusive mindmap beside
+                            every agent message. Markdown is generated + cached
+                            via the Wiki Keeper; shows a placeholder while pending. */}
+                        {mindmapMode && msg.agentId !== 'user' && msg.content.trim() && (
+                          <div className="inline-mindmap-wrap">
+                            <div className="inline-mindmap-label">🧠 mindmap</div>
+                            <InlineMindmap markdown={messageMindmaps[msg.id] ?? ''} />
+                          </div>
+                        )}
                       </div>
                       <div className="feedback-controls">
                         {(() => {
@@ -4382,9 +4431,22 @@ export function ChatApp() {
                                 AGENT_REACTIONS.map((r) => (
                                   <button
                                     key={r.type}
-                                    className="feedback-btn"
-                                    title={`r${badge()}: ${r.tooltip}`}
+                                    className={`feedback-btn ${r.type === 'mindmap' && mindmapMode ? 'active' : ''}`}
+                                    title={
+                                      r.type === 'mindmap'
+                                        ? `r${badge()}: ${r.tooltip} — double-click to toggle mindmap beside every message`
+                                        : `r${badge()}: ${r.tooltip}`
+                                    }
                                     onClick={() => handleReaction(thread.id, msg, r.type)}
+                                    onDoubleClick={
+                                      r.type === 'mindmap'
+                                        ? (e) => {
+                                            e.preventDefault();
+                                            setMindmapMode((v) => !v);
+                                            showToast(!mindmapMode ? '🧠 Mindmap mode on — generating beside each message' : '🧠 Mindmap mode off');
+                                          }
+                                        : undefined
+                                    }
                                   >
                                     {r.icon}
                                     <span className="reaction-badge">r{n}</span>
