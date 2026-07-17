@@ -1987,6 +1987,37 @@ body.dev-mode [data-devref]::after {
   color: #e5484d;
   margin: 6px 0;
 }
+
+/* Compact "Internet research finished" affordance for messages where a model
+   dumped raw tool-call markup (e.g. DeepSeek DSML) instead of using the native
+   tool API. Collapsed by default; click to expand the raw markup. */
+.tool-markup-chip-wrap {
+  margin-top: 6px;
+}
+.tool-markup-chip {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 153, 252, 0.4);
+  background: rgba(59, 153, 252, 0.12);
+  color: #cfe3ff;
+  cursor: pointer;
+}
+.tool-markup-chip:hover {
+  background: rgba(59, 153, 252, 0.22);
+}
+.tool-markup-raw {
+  margin: 6px 0 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #9fb4d0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow-y: auto;
+}
 .a2a-raw {
   margin: 6px 0;
   font-size: 11px;

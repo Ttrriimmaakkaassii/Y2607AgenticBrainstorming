@@ -331,6 +331,7 @@ function useInfinityField(value: number | null, onCommit: (v: number | null) => 
 
 export function ChatApp() {
   const [expandedSearchMessageId, setExpandedSearchMessageId] = useState<string | null>(null);
+  const [expandedToolMarkupMessageId, setExpandedToolMarkupMessageId] = useState<string | null>(null);
   // Null when this deployment has no Supabase auth configured — agents with
   // webSearchEnabled degrade to TOOL_UNAVAILABLE in that case (see
   // functions/api/research/browse.ts's auth check) rather than erroring.
@@ -668,17 +669,16 @@ export function ChatApp() {
     });
   }, [state.threads, freezeScroll]);
 
-  // Reading mode should always keep the message currently being spoken in
-  // view and visually prominent, regardless of the freeze-scroll toggle —
-  // that toggle is about not being yanked around by new incoming messages,
-  // not about the explicit read-aloud the user started.
+  // Reading mode keeps the spoken message in view — but HONORS the freeze
+  // toggle: if the user froze scroll, never auto-scroll, even during
+  // read-aloud (freeze means "stop moving the view").
   useEffect(() => {
-    if (!speaking) return;
+    if (!speaking || freezeScroll) return;
     const el = conversationAreaRef.current?.querySelector(
       `[data-message-id="${speaking.messageId}"]`
     );
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [speaking?.messageId]);
+  }, [speaking?.messageId, freezeScroll]);
 
   function showToast(message: string) {
     setToast(message);
@@ -821,6 +821,22 @@ export function ChatApp() {
       assigned: m[3].trim().replace(/_/g, ' '),
       deliverable: m[6].trim(),
     };
+  }
+
+  /** Some models that don't honor the native tool-calling API emit the tool
+   * call as raw markup text (e.g. DeepSeek's <｜｜DSML｜｜tool_calls>…). Detect
+   * it so we can collapse the dump into a compact "Internet research finished"
+   * affordance instead of showing pages of syntax. */
+  const RAW_TOOL_RE = /<｜｜[^>]*tool_call|<｜｜DSML｜｜|<tool_call>|<function_call>|<\|tool_calls\|>|<\|tool_call\|>/i;
+  function extractRawToolMarkup(content: string): { clean: string; markup: string } {
+    // Pull out the DSML/inline tool-call blocks; keep any surrounding prose.
+    const blockRe = /<｜｜[\s\S]*?<\/｜｜DSML｜｜tool_calls>|<｜｜DSML｜｜[\s\S]*?(<\/｜｜DSML｜｜tool_calls>|$)|<tool_call>[\s\S]*?<\/tool_call>|<function_call>[\s\S]*?<\/function_call>/gi;
+    const markup = (content.match(blockRe) ?? []).join('\n').trim();
+    const clean = content.replace(blockRe, '').trim();
+    return { clean, markup };
+  }
+  function hasRawToolMarkup(content: string): boolean {
+    return RAW_TOOL_RE.test(content);
   }
 
   function focusComposerForReply() {
@@ -4233,17 +4249,54 @@ export function ChatApp() {
                         {/* When the A2A readable/raw card is shown it already
                             carries the natural-language summary (= content), so
                             skip MessageContent to avoid printing the text twice. */}
-                        {(!msg.a2aEnvelope || effectiveA2ADisplayMode(state.settings.a2aDisplayMode) === 'natural_language') && (
-                          <MessageContent
-                            content={msg.content}
-                            spokenRange={
-                              speaking?.messageId === msg.id
-                                ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
-                                : null
-                            }
-                            searchQuery={searchQuery}
-                          />
-                        )}
+                        {hasRawToolMarkup(msg.content)
+                          ? (() => {
+                              // A model that ignored the native tool-calling API
+                              // and emitted raw tool-call markup as text. Show
+                              // any surrounding prose, then a compact "Internet
+                              // research finished" chip (click → raw markup).
+                              const { clean, markup } = extractRawToolMarkup(msg.content);
+                              return (
+                                <>
+                                  {clean && (
+                                    <MessageContent
+                                      content={clean}
+                                      spokenRange={
+                                        speaking?.messageId === msg.id
+                                          ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
+                                          : null
+                                      }
+                                      searchQuery={searchQuery}
+                                    />
+                                  )}
+                                  <div className="tool-markup-chip-wrap">
+                                    <button
+                                      type="button"
+                                      className="tool-markup-chip"
+                                      onClick={() =>
+                                        setExpandedToolMarkupMessageId((prev) => (prev === msg.id ? null : msg.id))
+                                      }
+                                    >
+                                      🌐 Internet research finished {expandedToolMarkupMessageId === msg.id ? '▲' : '· click to expand'}
+                                    </button>
+                                    {expandedToolMarkupMessageId === msg.id && markup && (
+                                      <pre className="tool-markup-raw">{markup}</pre>
+                                    )}
+                                  </div>
+                                </>
+                              );
+                            })()
+                          : (!msg.a2aEnvelope || effectiveA2ADisplayMode(state.settings.a2aDisplayMode) === 'natural_language') && (
+                            <MessageContent
+                              content={msg.content}
+                              spokenRange={
+                                speaking?.messageId === msg.id
+                                  ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
+                                  : null
+                              }
+                              searchQuery={searchQuery}
+                            />
+                          )}
                         {/* Structured A2A rendering — driven by the user-facing
                             display mode and whether an envelope exists. NL-only
                             or old messages always render normally above. */}
