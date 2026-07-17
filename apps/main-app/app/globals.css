@@ -344,6 +344,21 @@ span.icon-badge {
   background: #e74c3c;
 }
 
+/* "+10 exchanges" floating button — stacked directly ABOVE the play button so
+   the two read as one paired control (extend → resume) in the same corner. */
+.floating-play-btn.extend-btn {
+  bottom: 150px;
+  width: auto;
+  min-width: 52px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 20px;
+  background: #2ecc71;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
 .floating-play-btn:hover {
   filter: brightness(1.1);
 }
@@ -1467,6 +1482,40 @@ body.dev-mode [data-devref]::after {
   font-size: 24px;
   cursor: pointer;
   line-height: 1;
+  /* Always-tappable, high-contrast close target so it's easy to hit on mobile
+     (was hard to see/press in Settings on small screens). */
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  padding: 6px 10px;
+  color: var(--text, #eee);
+  opacity: 0.85;
+}
+.modal-close:hover,
+.modal-close:focus-visible {
+  background: rgba(127, 127, 127, 0.25);
+  opacity: 1;
+  outline: none;
+}
+@media (max-width: 600px) {
+  /* On mobile, give the close button a visible filled chip so it stands out
+     against the header and is a reliable tap target. */
+  .modal-close {
+    background: rgba(229, 72, 77, 0.85);
+    color: #fff;
+    font-weight: 700;
+    font-size: 20px;
+    opacity: 1;
+  }
+  .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    gap: 8px;
+  }
 }
 
 .modal-body {
@@ -1664,6 +1713,17 @@ body.dev-mode [data-devref]::after {
   opacity: 0.65;
   margin: 0;
   line-height: 1.35;
+}
+
+/* Read-only "saved endpoint" note shown in the podcast export (the base URL is
+   edited once in LLM settings, not re-entered here). */
+.saved-endpoint-note {
+  font-size: 12px;
+  opacity: 0.8;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.12);
+  word-break: break-all;
 }
 
 /* Per-agent elapsed-time labels. Deliberately quiet — never louder than the

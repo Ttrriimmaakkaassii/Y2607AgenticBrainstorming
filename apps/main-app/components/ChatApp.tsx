@@ -2187,12 +2187,15 @@ export function ChatApp() {
     }
     statusRef.current = 'running';
     setState((prev) => ({ ...prev, status: 'running' }));
+    // Resume ALWAYS resumes — if the exchange limit was reached, auto-extend
+    // by 10 rather than leaving the user stuck (previously this returned early
+    // after flipping status to running, so "resume" silently did nothing).
     if (!withinLimits(lastThread)) {
-      showToast('Already at the exchange limit — use +10 to extend it first.');
-      return;
+      const current = settingsRef.current.maxExchanges ?? 0;
+      updateSettings({ maxExchanges: current + 10 });
+      showToast(`➕ Extended +10 and resuming…`);
     }
     runAgentRound(lastThread, connectedActive);
-    showToast('▶️ Resumed');
   }
 
   function extendExchanges(amount: number) {
@@ -3766,6 +3769,26 @@ export function ChatApp() {
       >
         {state.status === 'running' ? '⏸️' : state.status === 'paused' ? '⏹️' : '▶️'}
       </button>
+      {/* "+10 exchanges" floating button — appears beside Resume when the
+          exchange limit has been reached (messages "used up"), so the user
+          can extend AND resume in one click. Always extends then resumes. */}
+      {state.settings.maxExchanges != null
+        && !withinLimits(state.threads[state.threads.length - 1])
+        && state.status !== 'running'
+        && (
+          <button
+            className="floating-play-btn extend-btn"
+            {...devRef('b95')}
+            title="Extend the exchange limit by 10 and resume"
+            onClick={() => {
+              const current = settingsRef.current.maxExchanges ?? 0;
+              updateSettings({ maxExchanges: current + 10 });
+              playConversation();
+            }}
+          >
+            ➕10
+          </button>
+        )}
 
       {allMessages.length > 0 && !sceneViewOpen && (
         <div className="selection-action-bar" {...devRef('r1')}>

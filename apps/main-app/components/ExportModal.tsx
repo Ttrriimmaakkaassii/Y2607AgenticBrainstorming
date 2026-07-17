@@ -89,7 +89,7 @@ function buildReport(state: ConversationState): string {
 
 export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportModalProps) {
   const overlayClose = useOverlayClose(onClose);
-  const [podcastBaseUrl, setPodcastBaseUrl] = useState(() => loadCustomPodcastBaseUrl() || loadCustomTtsBaseUrl());
+  const [podcastBaseUrl] = useState(() => loadCustomPodcastBaseUrl());
   const [podcastFeedSlug, setPodcastFeedSlug] = useState('');
   const [podcastTitle, setPodcastTitle] = useState(state.settings.topic || 'Untitled Episode');
   const [podcastDescription, setPodcastDescription] = useState('');
@@ -108,15 +108,13 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
     };
   }, []);
 
-  // Autosave the podcast base URL as it's typed — otherwise it's lost on a new
-  // conversation/session (only the shared API key survived before).
-  useEffect(() => {
-    saveCustomPodcastBaseUrl(podcastBaseUrl);
-  }, [podcastBaseUrl]);
-
+  // NOTE: the podcast base URL is edited once in 🔌 LLM → Txt2Audio and read
+  // from storage here. We do NOT autosave it in this modal — previously the
+  // field initialized from the Txt2Audio fallback and an autosave effect then
+  // wrote that fallback into the podcast key, silently overwriting the real
+  // podcast endpoint ("it changed to something else").
   async function createPodcastEpisode() {
     const effectiveBaseUrl = podcastBaseUrl.trim() || loadCustomTtsBaseUrl();
-    saveCustomPodcastBaseUrl(podcastBaseUrl);
     const apiKey = loadCustomTtsApiKey();
     if (!apiKey.trim()) {
       onToast('Add your Txt2Audio API key in 🔌 LLM → Txt2Audio first.');
@@ -250,13 +248,14 @@ export function ExportModal({ state, onClose, onToast, onOpenMindmap }: ExportMo
           <div className="modal-section">
             <div className="modal-section-title">🎙️ Turn into Podcast Episode (Txt2Audio)</div>
             <div className="form-group compact-field">
-              <label>Podcast Base URL (leave blank to use the Txt2Audio Base URL)</label>
-              <input
-                type="text"
-                value={podcastBaseUrl}
-                onChange={(e) => setPodcastBaseUrl(e.target.value)}
-                placeholder="https://your-service.workers.dev"
-              />
+              <label>Endpoint</label>
+              <div className="saved-endpoint-note">
+                {podcastBaseUrl.trim()
+                  ? `Using saved podcast endpoint: ${podcastBaseUrl.trim()}`
+                  : loadCustomTtsBaseUrl()
+                    ? `Using saved Txt2Audio endpoint: ${loadCustomTtsBaseUrl()}`
+                    : '⚠️ No endpoint saved — set the base URL in 🔌 LLM → Txt2Audio first.'}
+              </div>
             </div>
             <div className="form-group compact-field">
               <label>Feed Slug (must already exist on the service)</label>
