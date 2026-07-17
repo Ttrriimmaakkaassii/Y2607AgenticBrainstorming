@@ -1085,7 +1085,7 @@ export async function fetchMindmap(
     'You synthesize a CONCLUSIVE mind map from source text. Do NOT restate the source line by line — ' +
     'organize it into a clean, logical hierarchy and draw the conclusions/decisions/open-questions it ' +
     'implies. Output ONLY markmap-flavored markdown: a single "# <title>" root line, then "## " branch ' +
-    'headings (3-6), each with 2-5 "- " leaf items, and optionally one level of "  - " sub-items under a ' +
+    'headings (AT LEAST 3 — never fewer), each with 2-5 "- " leaf items, and optionally one level of "  - " sub-items under a ' +
     'leaf that needs detail. Keep each node short (<= 9 words). Where the source reaches a conclusion or ' +
     'decision, state it as a leaf node. No prose outside the outline, no code fences.';
   const userPrompt = `Title: ${title}\n\nSource:\n${sourceText}`;

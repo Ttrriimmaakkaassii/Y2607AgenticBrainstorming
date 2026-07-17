@@ -158,8 +158,8 @@ function defaultState(): ConversationState {
     threads: [],
     settings: {
       topic: '',
-      maxSentences: 5,
-      bulletCount: 5,
+      maxSentences: 1,
+      bulletCount: 3,
       maxExchanges: 10,
       maxTokens: null,
       orchestratorEnabled: true,
@@ -239,7 +239,7 @@ function migrateState(state: ConversationState): ConversationState {
         state.settings.moods ??
         ((state.settings as any).mood ? [(state.settings as any).mood as string] : ['debate']),
       responseStyle: state.settings.responseStyle ?? 'sentences',
-      bulletCount: state.settings.bulletCount ?? 5,
+      bulletCount: state.settings.bulletCount ?? 3,
       interactionStyle: state.settings.interactionStyle ?? 'dialogue',
       ttsRate: state.settings.ttsRate ?? 1,
       ttsLang: state.settings.ttsLang ?? 'en-US',
