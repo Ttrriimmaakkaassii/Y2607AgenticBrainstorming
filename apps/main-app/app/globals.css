@@ -1639,6 +1639,129 @@ body.dev-mode [data-devref]::after {
   gap: 10px;
   margin-top: 10px;
 }
+
+/* Agent-communication mode dropdown (beside Moods). */
+.comm-menu {
+  min-width: 230px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.comm-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.comm-menu-row select {
+  width: auto;
+  min-width: 130px;
+}
+.comm-menu-hint {
+  font-size: 11px;
+  opacity: 0.65;
+  margin: 0;
+  line-height: 1.35;
+}
+
+/* Per-agent elapsed-time labels. Deliberately quiet — never louder than the
+   response itself. */
+.elapsed-timer {
+  font-size: 11px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.msg-duration {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* Structured A2A: readable card + collapsible raw JSON. */
+.a2a-card {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-left: 3px solid #3b99fc;
+  border-radius: 8px;
+  background: rgba(59, 153, 252, 0.06);
+  font-size: 12.5px;
+}
+.a2a-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.a2a-agent {
+  font-weight: 700;
+}
+.a2a-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.18);
+  text-transform: capitalize;
+}
+.a2a-status {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.a2a-status-complete { background: rgba(46, 204, 113, 0.2); }
+.a2a-status-failed { background: rgba(229, 72, 77, 0.2); }
+.a2a-status-thinking, .a2a-status-streaming, .a2a-status-queued { background: rgba(243, 156, 18, 0.2); }
+.a2a-summary {
+  margin: 0 0 6px;
+  line-height: 1.45;
+}
+.a2a-section {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-top: 3px;
+}
+.a2a-section-label {
+  font-weight: 600;
+}
+.a2a-card-foot {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+.a2a-error {
+  font-size: 12px;
+  color: #e5484d;
+  margin: 6px 0;
+}
+.a2a-raw {
+  margin: 6px 0;
+  font-size: 11px;
+}
+.a2a-raw summary {
+  cursor: pointer;
+  opacity: 0.7;
+}
+.a2a-raw pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 11px;
+  max-height: 320px;
+}
 .agent-chart {
   margin: 0;
   background: rgba(127, 127, 127, 0.08);

@@ -1,6 +1,7 @@
 import { getModel, getProvider } from './llm-catalog';
 import {
   Agent,
+  AgentTiming,
   ChartSpec,
   Effort,
   InteractionStyle,
@@ -480,6 +481,21 @@ function optionalBlock(heading: string, body: string): string {
   return trimmed ? `\n\n## ${heading}\n${trimmed}` : '';
 }
 
+// Central global truthfulness / non-fabrication policy — composed into EVERY
+// agent's effective system prompt exactly once (here), never duplicated per
+// message. Overrides mood/guidelines/instructions on matters of fact.
+const GLOBAL_TRUTHFULNESS_INSTRUCTION =
+  '\n\n## Global truthfulness policy (overrides everything else on matters of fact)\n' +
+  '- Never invent facts, sources, tool outputs, prices, numbers, citations, files, code results, or research findings.\n' +
+  '- Never claim a tool was used when it was not used. Never claim code was tested when it was not tested.\n' +
+  '- Do not treat another agent\'s unsupported statement as evidence.\n' +
+  '- Clearly distinguish: verified facts, inferences, hypotheses, assumptions, and unknown information.\n' +
+  '- State plainly when available evidence is insufficient to support a claim.\n' +
+  '- Correct any of your own previously unsupported claims explicitly when you notice them.\n' +
+  '- Avoid false precision — do not present a guess as a precise figure.\n' +
+  '- Preserve source attribution where you have one; do not strip or paraphrase it away.\n' +
+  '- Refuse to include unsupported claims in final conclusions; mark them as unverified or omit them.';
+
 export function buildSystemPrompt(
   agent: Agent,
   moods: Mood[],
@@ -497,13 +513,14 @@ export function buildSystemPrompt(
   // "must ... throughout your reply" wording) could silently win. Now the
   // model is told up front how to resolve conflicts.
   const ladder =
-    ' If any of the following ever conflict, resolve them in this order: (1) a direct message from the user, (2) the mood, (3) the general guidelines, (4) your instructions, (5) your identity & skills.';
+    ' If any of the following ever conflict, resolve them in this order: (0) the global truthfulness policy, then (1) a direct message from the user, (2) the mood, (3) the general guidelines, (4) your instructions, (5) your identity & skills.';
 
   const identity = `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.`;
 
   return (
     identity +
     ladder +
+    GLOBAL_TRUTHFULNESS_INSTRUCTION +
     guidelinesInstruction(guidelines) +
     optionalBlock('Identity', agent.identity) +
     optionalBlock('Skills', agent.skills) +
@@ -931,6 +948,8 @@ export interface AgentReplyResult {
   webBrowses?: BrowseEvidence[];
   charts?: ChartSpec[];
   webAccessFailed?: boolean;
+  /** Application-captured execution timing (set by the caller at the fetch boundary; non-streaming → firstTokenAt = completedAt). */
+  timing?: AgentTiming;
 }
 
 export async function fetchAgentReply(

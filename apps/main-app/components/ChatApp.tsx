@@ -22,6 +22,17 @@ import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, fetchMindmap, react
 import { judgeRepetition } from '@/lib/orchestrator';
 import { loadGlobalWikiKeeper, saveGlobalWikiKeeper } from '@/lib/wiki-keeper';
 import { gatherAdvisorNote } from '@/lib/background-moderator';
+import {
+  loadGlobalCommunicationMode,
+  saveGlobalCommunicationMode,
+  loadGlobalA2ADisplayMode,
+  saveGlobalA2ADisplayMode,
+  effectiveCommunicationMode,
+  effectiveA2ADisplayMode,
+} from '@/lib/communication-mode';
+import { summarizeForPrompt } from '@/lib/shared-state';
+import { evaluateSpeakerPermission } from '@/lib/speaker-gating';
+import { coerceA2AFromReply } from '@/lib/a2a';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
@@ -60,6 +71,9 @@ import { AudioModal } from './AudioModal';
 import { AudioRail } from './AudioRail';
 import { MessageContent } from './MessageContent';
 import { ChartRenderer } from '@/lib/chart-render';
+import { ElapsedTimer } from './ElapsedTimer';
+import { A2AReadableCard } from './A2AReadableCard';
+import { startAgentTiming, completeAgentTiming, failAgentTiming, formatDuration } from '@/lib/agent-timing';
 import { AnalyticsModal } from './AnalyticsModal';
 import { ExportModal } from './ExportModal';
 import { LLMProvidersModal } from './LLMProvidersModal';
@@ -344,6 +358,8 @@ export function ChatApp() {
   >(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
+  const [commMenuOpen, setCommMenuOpen] = useState(false);
+  const commMenuRef = useClickOutside<HTMLDivElement>(() => setCommMenuOpen(false), commMenuOpen);
   // When opening the Library from inside Settings, remember to return there
   // on close instead of dropping the user out with no modal open at all.
   const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
@@ -491,21 +507,21 @@ export function ChatApp() {
    * would show an agent as "speaking" in a tab it has nothing to do with,
    * the instant it happened to be mid-round in a DIFFERENT tab.
    */
-  const [thinking, setThinking] = useState<Map<string, { threadId: string; conversationId: string }>>(
-    new Map()
-  );
+  const [thinking, setThinking] = useState<
+    Map<string, { threadId: string; conversationId: string; startedMs: number }>
+  >(new Map());
   const visibleThinking = useMemo(
     () =>
       new Map(
         Array.from(thinking.entries())
           .filter(([, v]) => v.conversationId === state.id)
-          .map(([agentId, v]) => [agentId, v.threadId])
+          .map(([agentId, v]) => [agentId, { threadId: v.threadId, startedMs: v.startedMs }])
       ),
     [thinking, state.id]
   );
 
   function startThinking(agentId: string, threadId: string, conversationId: string) {
-    setThinking((prev) => new Map(prev).set(agentId, { threadId, conversationId }));
+    setThinking((prev) => new Map(prev).set(agentId, { threadId, conversationId, startedMs: Date.now() }));
   }
 
   function stopThinking(agentId: string) {
@@ -775,6 +791,8 @@ export function ChatApp() {
         webSearches: seedReply.webSearches,
         webBrowses: seedReply.webBrowses,
         webAccessFailed: seedReply.webAccessFailed,
+        executionId: seedReply.timing?.executionId,
+        timing: seedReply.timing,
       });
     }
     return thread;
@@ -802,6 +820,17 @@ export function ChatApp() {
     // "failed to respond". Reset per call.
     const errorSink: { message?: string } = {};
     lastReplyErrorRef.current = null;
+    // Per-execution timing — application-authoritative, captured at the fetch
+    // boundary (no server; non-streaming so firstTokenAt = completedAt).
+    const timing = startAgentTiming();
+    // In A2A mode, fold the compact shared-state summary into the instruction
+    // (the "smaller relevant state package" — agents reference claims by id).
+    const sharedSummary = summarizeForPrompt(live.sharedState);
+    const a2a = effectiveCommunicationMode(live.communicationMode) === 'a2a';
+    const mergedExtraInstruction =
+      a2a && sharedSummary
+        ? [extraInstruction, `Shared conversation state (reference claims by id):\n${sharedSummary}`].filter(Boolean).join('\n\n')
+        : extraInstruction;
     const reply = await fetchAgentReply(
       agent,
       connections,
@@ -815,12 +844,37 @@ export function ChatApp() {
       live.interactionStyle,
       enabledGuidelines,
       resolvedTraits,
-      extraInstruction,
+      mergedExtraInstruction,
       live.wikiEnabled ? live.wikiDigest : undefined,
       auth?.session.access_token ?? null,
       live.maxTokens ?? DEFAULT_MAX_TOKENS,
       errorSink,
       advisorNote
+    );
+    if (reply) {
+      reply.timing = completeAgentTiming(timing);
+    } else {
+      failAgentTiming(timing);
+    }
+    // Structured observability log — never the prompt, body, or key.
+    console.log(
+      JSON.stringify({
+        type: 'agent_execution',
+        conversationId: state.id,
+        executionId: timing.executionId,
+        agentId: agent.id,
+        communicationMode: effectiveCommunicationMode(live.communicationMode),
+        phase: live.sharedState?.activePhase,
+        startedAt: timing.startedAt,
+        completedAt: reply?.timing?.completedAt,
+        failedAt: reply ? undefined : timing.failedAt,
+        durationMs: reply?.timing?.totalDurationMs ?? timing.totalDurationMs,
+        provider: reply?.provider,
+        model: reply?.model,
+        inputTokens: reply?.usage.inputTokens,
+        outputTokens: reply?.usage.outputTokens,
+        error: reply ? undefined : (errorSink.message ?? 'no reply'),
+      })
     );
     if (!reply && errorSink.message) lastReplyErrorRef.current = errorSink.message;
     if (reply) {
@@ -973,6 +1027,21 @@ export function ChatApp() {
         continue;
       }
 
+      const liveSettings = settingsRef.current;
+      // Speaker gating (A2A): if an assigned speaker / addressees are set and
+      // this agent isn't permitted, skip WITHOUT invoking the model or storing
+      // an empty message. A no-op in normal round-robin (no assignment).
+      const gate = evaluateSpeakerPermission(liveAgent, {
+        assignedSpeaker: liveSettings.sharedState?.assignedSpeaker,
+        phase: liveSettings.sharedState?.activePhase,
+        sharedState: liveSettings.sharedState,
+      });
+      if (!gate.allowed) {
+        // Record a skip event for debugging only — never shown in the conversation.
+        console.log(JSON.stringify({ type: 'agent_skipped', conversationId: state.id, agentId: agent.id, reason: gate.reason }));
+        continue;
+      }
+
       startThinking(agent.id, updatedThread.id, conversationId);
       const reply = await getReply(agent, updatedThread.messages, undefined, advisorNote);
       stopThinking(agent.id);
@@ -1037,7 +1106,27 @@ export function ChatApp() {
         webBrowses: finalReply.webBrowses,
         webAccessFailed: finalReply.webAccessFailed,
         charts: finalReply.charts,
+        executionId: finalReply.timing?.executionId,
+        timing: finalReply.timing,
       };
+      // Structured A2A: build + validate an envelope and attach it. The NL
+      // content is always preserved as message.content; the envelope is the
+      // machine-readable twin. On validation failure, set a2aError (envelope
+      // rejected, never silently promoted to a valid NL message).
+      if (effectiveCommunicationMode(liveSettings.communicationMode) === 'a2a') {
+        const nextAgent = connected[turn % connected.length];
+        const toAgent = message.replyToId ? liveAgent.id : (nextAgent?.id ?? 'all');
+        const env = coerceA2AFromReply(
+          liveAgent,
+          message,
+          conversationId,
+          toAgent,
+          liveSettings.sharedState?.activePhase ?? 'execution',
+          finalReply.timing
+        );
+        if (env) message.a2aEnvelope = env;
+        else message.a2aError = 'envelope failed validation';
+      }
       updatedThread = { ...updatedThread, messages: [...updatedThread.messages, message] };
       const finishedThread = updatedThread;
       setState((prev) => {
@@ -1400,6 +1489,8 @@ export function ChatApp() {
       model: reply.model,
       webBrowses: reply.webBrowses,
         webAccessFailed: reply.webAccessFailed,
+        executionId: reply.timing?.executionId,
+        timing: reply.timing,
     });
   }
 
@@ -2909,6 +3000,74 @@ export function ChatApp() {
               {topicExpanded ? '🗕' : '🗖'}
             </button>
           </div>
+          {/* Agent communication mode — Natural language vs Structured A2A,
+              with a secondary Display control (Readable/Raw) when A2A is on.
+              Persists globally + per-conversation. Accessible (labelled,
+              keyboard-operable <select>s are used inside). */}
+          <div className="moods-menu-wrap" ref={commMenuRef}>
+            <button
+              className="control-btn"
+              aria-haspopup="true"
+              aria-expanded={commMenuOpen}
+              onClick={() => setCommMenuOpen((v) => !v)}
+              title="How agents communicate and how it's displayed"
+            >
+              {effectiveCommunicationMode(state.settings.communicationMode) === 'a2a' ? '🧬 A2A' : '💬 NL'} ▾
+            </button>
+            {commMenuOpen && (
+              <div
+                className="moods-menu comm-menu"
+                role="group"
+                aria-label="Agent communication"
+                style={(() => {
+                  const rect = commMenuRef.current?.getBoundingClientRect();
+                  if (!rect) return undefined;
+                  return {
+                    position: 'fixed' as const,
+                    top: rect.bottom + 4,
+                    left: rect.left,
+                  };
+                })()}
+              >
+                <label className="comm-menu-row">
+                  <span>Agent communication</span>
+                  <select
+                    aria-label="Agent communication mode"
+                    value={effectiveCommunicationMode(state.settings.communicationMode)}
+                    onChange={(e) => {
+                      const mode = e.target.value as 'natural_language' | 'a2a';
+                      saveGlobalCommunicationMode(mode);
+                      updateSettings({ communicationMode: mode });
+                    }}
+                  >
+                    <option value="natural_language">💬 Natural language</option>
+                    <option value="a2a">🧬 Structured A2A</option>
+                  </select>
+                </label>
+                {effectiveCommunicationMode(state.settings.communicationMode) === 'a2a' && (
+                  <label className="comm-menu-row">
+                    <span>Display</span>
+                    <select
+                      aria-label="A2A display mode"
+                      value={effectiveA2ADisplayMode(state.settings.a2aDisplayMode)}
+                      onChange={(e) => {
+                        const d = e.target.value as 'natural_language' | 'a2a_readable' | 'a2a_raw';
+                        saveGlobalA2ADisplayMode(d);
+                        updateSettings({ a2aDisplayMode: d });
+                      }}
+                    >
+                      <option value="a2a_readable">Readable</option>
+                      <option value="a2a_raw">Raw protocol</option>
+                      <option value="natural_language">Natural language only</option>
+                    </select>
+                  </label>
+                )}
+                <p className="comm-menu-hint">
+                  Internal mode controls how agents exchange messages. Display controls what you see.
+                </p>
+              </div>
+            )}
+          </div>
           <div className="moods-menu-wrap" ref={moodsMenuRef}>
             <button
               className="control-btn"
@@ -3619,7 +3778,7 @@ export function ChatApp() {
           agents={state.agents}
           traitDefs={traitDefs}
           messages={allMessages}
-          thinking={visibleThinking}
+          thinking={new Map(Array.from(visibleThinking.entries()).map(([id, v]) => [id, v.threadId]))}
           postSpeechDelayMs={postSpeechDelayMs}
           onChangePostSpeechDelay={setPostSpeechDelayMs}
           onFeedback={(message, type) => handleFeedback(message.threadId, message.id, type)}
@@ -3651,8 +3810,8 @@ export function ChatApp() {
         )}
 
         {Array.from(visibleThinking.entries())
-          .filter(([, threadId]) => threadId === 'pending')
-          .map(([agentId]) => {
+          .filter(([, v]) => v.threadId === 'pending')
+          .map(([agentId, v]) => {
             const agent = agentById(agentId);
             return (
               <div className="thinking-indicator" key={agentId}>
@@ -3666,6 +3825,7 @@ export function ChatApp() {
                     <span>.</span>
                     <span>.</span>
                   </span>
+                  <ElapsedTimer startedMs={v.startedMs} prefix=" · " />
                 </span>
               </div>
             );
@@ -3760,6 +3920,19 @@ export function ChatApp() {
                             minute: '2-digit',
                           })}
                         </span>
+                        {msg.timing?.totalDurationMs != null && (
+                          <span
+                            className="msg-duration"
+                            title={
+                              msg.timing.firstTokenAt
+                                ? `Time to first token: ${formatDuration(msg.timing.timeToFirstTokenMs)}\nGeneration: ${formatDuration(msg.timing.generationDurationMs)}\nTotal: ${formatDuration(msg.timing.totalDurationMs)}`
+                                : `Total: ${formatDuration(msg.timing.totalDurationMs)}`
+                            }
+                          >
+                            {msg.timing.failedAt ? 'failed in ' : '⏱ '}
+                            {formatDuration(msg.timing.totalDurationMs)}
+                          </span>
+                        )}
                       </div>
                       {quoted && (
                         <div className="quoted-reply">
@@ -3820,6 +3993,23 @@ export function ChatApp() {
                           }
                           searchQuery={searchQuery}
                         />
+                        {/* Structured A2A rendering — driven by the user-facing
+                            display mode and whether an envelope exists. NL-only
+                            or old messages always render normally above. */}
+                        {msg.a2aError && (
+                          <div className="a2a-error" title="The structured envelope failed validation; the natural-language text is preserved.">
+                            ⚠️ A2A envelope rejected: {msg.a2aError}
+                          </div>
+                        )}
+                        {msg.a2aEnvelope && effectiveA2ADisplayMode(state.settings.a2aDisplayMode) !== 'natural_language' && (
+                          <A2AReadableCard envelope={msg.a2aEnvelope} agentName={agentById(msg.agentId)?.name} />
+                        )}
+                        {msg.a2aEnvelope && effectiveA2ADisplayMode(state.settings.a2aDisplayMode) === 'a2a_raw' && (
+                          <details className="a2a-raw">
+                            <summary>Raw protocol envelope</summary>
+                            <pre>{JSON.stringify(msg.a2aEnvelope, null, 2)}</pre>
+                          </details>
+                        )}
                         {msg.charts && msg.charts.length > 0 && (
                           <div className="bubble-charts">
                             {msg.charts.map((spec, ci) => (
@@ -3929,8 +4119,8 @@ export function ChatApp() {
                 });
               })()}
               {Array.from(visibleThinking.entries())
-                .filter(([, threadId]) => threadId === thread.id)
-                .map(([agentId]) => {
+                .filter(([, v]) => v.threadId === thread.id)
+                .map(([agentId, v]) => {
                   const agent = agentById(agentId);
                   return (
                     <div className="thinking-indicator" key={agentId}>
@@ -3944,6 +4134,7 @@ export function ChatApp() {
                           <span>.</span>
                           <span>.</span>
                         </span>
+                        <ElapsedTimer startedMs={v.startedMs} prefix=" · " />
                       </span>
                     </div>
                   );
