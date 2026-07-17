@@ -1874,6 +1874,37 @@ body.dev-mode [data-devref]::after {
   font-size: 14px;
 }
 
+/* Manage (B16) category chips — single-select drill-down: click a category to
+   show only its agents, "All" to show everyone. */
+.participants-category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 8px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.participants-category-chips .chip {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  background: rgba(127, 127, 127, 0.12);
+  color: var(--text, #eee);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+.participants-category-chips .chip:hover {
+  background: rgba(127, 127, 127, 0.24);
+}
+.participants-category-chips .chip.active {
+  background: #3b99fc;
+  border-color: #3b99fc;
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Per-agent elapsed-time labels. Deliberately quiet — never louder than the
    response itself. */
 .elapsed-timer {

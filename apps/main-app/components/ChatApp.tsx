@@ -3516,23 +3516,30 @@ export function ChatApp() {
                 return (
                   <>
                     {allCategoryNames.length > 0 && (
-                      <div className="participants-menu-list" style={{ maxHeight: 100 }}>
-                        {allCategoryNames.map((name, ci) => (
-                          <label key={name} className="participants-menu-row" {...devRef('30b', ci)}>
-                            <input
-                              type="checkbox"
-                              checked={participantCategoryFilters.has(name)}
-                              onChange={() =>
-                                setParticipantCategoryFilters((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(name)) next.delete(name);
-                                  else next.add(name);
-                                  return next;
-                                })
-                              }
-                            />
-                            <span>🏷️ {name}</span>
-                          </label>
+                      <div className="participants-category-chips">
+                        <button
+                          type="button"
+                          className={`chip ${participantCategoryFilters.size === 0 ? 'active' : ''}`}
+                          onClick={() => setParticipantCategoryFilters(new Set())}
+                        >
+                          All
+                        </button>
+                        {allCategoryNames.map((name) => (
+                          <button
+                            type="button"
+                            key={name}
+                            className={`chip ${participantCategoryFilters.has(name) ? 'active' : ''}`}
+                            onClick={() =>
+                              // Single-select drill-down: clicking a category
+                              // shows only its agents; click All (or the same
+                              // chip again) to clear.
+                              setParticipantCategoryFilters((prev) =>
+                                prev.size === 1 && prev.has(name) ? new Set() : new Set([name])
+                              )
+                            }
+                          >
+                            🏷️ {name}
+                          </button>
                         ))}
                       </div>
                     )}
@@ -3544,7 +3551,7 @@ export function ChatApp() {
                           setState((prev) => ({
                             ...prev,
                             agents: prev.agents.map((a) =>
-                              filtered.some((f) => f.id === a.id) ? { ...a, active: true } : a
+                              filtered.some((f) => f.id === a.id) ? { ...a, active: true, participant: true } : a
                             ),
                           }))
                         }
@@ -3558,7 +3565,7 @@ export function ChatApp() {
                           setState((prev) => ({
                             ...prev,
                             agents: prev.agents.map((a) =>
-                              filtered.some((f) => f.id === a.id) ? { ...a, active: false } : a
+                              filtered.some((f) => f.id === a.id) ? { ...a, participant: false } : a
                             ),
                           }))
                         }
