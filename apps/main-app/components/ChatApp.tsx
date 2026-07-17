@@ -787,6 +787,24 @@ export function ChatApp() {
     return state.agents.filter((a) => refs.includes(a.refNumber)).map((a) => a.id);
   }
 
+  /** Heuristic: does this agent message ask a question of the user? Drives the
+   * prominent "Reply" affordance on the bubble. Conservative — only fires on a
+   * question that references the user, so statements ending in "?" don't. */
+  function isQuestionToUser(content: string): boolean {
+    const c = content.trim();
+    if (!c.includes('?')) return false;
+    const lastSentence = c.split(/(?<=[.?!])\s+/).filter(Boolean).slice(-2).join(' ').toLowerCase();
+    return /\b(you|your|yours|yourself|u\b|we|us|our)\b/.test(lastSentence) || c.endsWith('?');
+  }
+
+  function focusComposerForReply() {
+    const el = messageInputRef.current;
+    if (el) {
+      el.focus();
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
   function createThread(agentId: string, seedReply?: AgentReplyResult): Thread {
     const thread: Thread = {
       id: generateId(),
@@ -1195,10 +1213,16 @@ export function ChatApp() {
     // own; only a new user message resumes. Auto Mode (default on) preserves
     // the existing auto-continue behavior.
     const auto = state.autonomousMode || settingsRef.current.orchestratorEnabled;
-    if (statusRef.current !== 'stopped' && statusRef.current !== 'paused' && !auto) {
+    // If the exchange limit was hit, the conversation is hard-stopped — always
+    // suspend (so the play button resets to ▶️ and the +10 extend button can
+    // appear), even in Auto Mode. Only the "round done with budget remaining"
+    // case respects the auto flag (manual mode awaits the user; auto leaves it
+    // running for the next trigger).
+    const hardStopped = !withinLimits(updatedThread);
+    if (statusRef.current !== 'stopped' && statusRef.current !== 'paused' && (hardStopped || !auto)) {
       statusRef.current = 'awaiting_user';
       setState((prev) => (prev.id === conversationId ? { ...prev, status: 'awaiting_user', updatedAt: Date.now() } : prev));
-      recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'awaiting_user', message: 'Round complete — awaiting user.' });
+      recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'awaiting_user', message: hardStopped ? 'Exchange limit reached — awaiting user.' : 'Round complete — awaiting user.' });
     }
   }
 
@@ -2669,7 +2693,12 @@ export function ChatApp() {
   };
   const notifications: AppNotification[] = useMemo(() => {
     const list: AppNotification[] = [];
-    if (state.settings.wikiEnabled && !state.settings.wikiKeeperConnectionId) {
+    // Effective keeper = the conversation's choice OR the persisted global
+    // default (lib/wiki-keeper.ts). The notification must respect the global
+    // pick, otherwise it re-fires on every new conversation whose per-conversation
+    // setting is null even though a keeper was assigned globally.
+    const effectiveKeeper = state.settings.wikiKeeperConnectionId ?? loadGlobalWikiKeeper();
+    if (state.settings.wikiEnabled && !effectiveKeeper) {
       list.push({
         id: 'wiki-no-keeper',
         icon: '📚',
@@ -4086,6 +4115,18 @@ export function ChatApp() {
                               <ChartRenderer key={ci} spec={spec} />
                             ))}
                           </div>
+                        )}
+                        {/* Prominent Reply affordance when this agent message
+                            asks the user a question — focuses the composer. */}
+                        {msg.agentId !== 'user' && isQuestionToUser(msg.content) && (
+                          <button
+                            type="button"
+                            className="reply-cta"
+                            onClick={focusComposerForReply}
+                            title="Reply to this question"
+                          >
+                            ↩ Reply
+                          </button>
                         )}
                       </div>
                       <div className="feedback-controls">

@@ -1726,6 +1726,31 @@ body.dev-mode [data-devref]::after {
   word-break: break-all;
 }
 
+/* Prominent "Reply" button shown on agent messages that ask the user a
+   question — big enough to be an obvious next action, not louder than the
+   answer itself. */
+.reply-cta {
+  margin-top: 10px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  background: #3b99fc;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 153, 252, 0.35);
+  transition: transform 0.08s ease, filter 0.12s ease;
+}
+.reply-cta:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.reply-cta:focus-visible {
+  outline: 3px solid rgba(59, 153, 252, 0.5);
+  outline-offset: 2px;
+}
+
 /* Per-agent elapsed-time labels. Deliberately quiet — never louder than the
    response itself. */
 .elapsed-timer {
