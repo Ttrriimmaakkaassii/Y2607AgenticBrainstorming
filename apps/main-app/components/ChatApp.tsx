@@ -361,6 +361,8 @@ export function ChatApp() {
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const [commMenuOpen, setCommMenuOpen] = useState(false);
   const commMenuRef = useClickOutside<HTMLDivElement>(() => setCommMenuOpen(false), commMenuOpen);
+  /** Split-screen NR-vs-A2A comparison: left = natural language, right = A2A. */
+  const [compareMode, setCompareMode] = useState(false);
   // When opening the Library from inside Settings, remember to return there
   // on close instead of dropping the user out with no modal open at all.
   const [modalReturnTo, setModalReturnTo] = useState<typeof activeModal>(null);
@@ -2755,7 +2757,7 @@ export function ChatApp() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${compareMode ? 'compare-open' : ''}`}>
       <div className="conversation-tabs-bar" {...devRef('s24')}>
         <button
           className={`icon-btn params-toggle ${topPanelOpen ? 'active' : ''}`}
@@ -3095,6 +3097,16 @@ export function ChatApp() {
               {topicExpanded ? '🗕' : '🗖'}
             </button>
           </div>
+          {/* 🆚 Compare NR vs A2A — splits the screen: left = natural language,
+              right = A2A rendering of the same conversation. */}
+          <button
+            className={`control-btn ${compareMode ? 'active' : ''}`}
+            aria-pressed={compareMode}
+            title="Split-screen: Natural language (left) vs Structured A2A (right)"
+            onClick={() => setCompareMode((v) => !v)}
+          >
+            🆚 Compare
+          </button>
           {/* Agent communication mode — Natural language vs Structured A2A,
               with a secondary Display control (Readable/Raw) when A2A is on.
               Persists globally + per-conversation. Accessible (labelled,
@@ -3802,6 +3814,21 @@ export function ChatApp() {
       </div>
       </div>
 
+      {/* General conversation timer — total time agents have spent speaking
+          (sum of every agent message's totalDurationMs), shown as a quiet pill
+          next to the play button. Empty/old messages contribute nothing. */}
+      {(() => {
+        const totalSpeakMs = allMessages.reduce(
+          (sum, m) => (m.agentId !== 'user' && m.timing?.totalDurationMs ? sum + m.timing.totalDurationMs : sum),
+          0
+        );
+        return totalSpeakMs > 0 ? (
+          <span className="floating-timer-pill" title="Total agent speaking time">
+            ⏱ {formatDuration(totalSpeakMs)}
+          </span>
+        ) : null;
+      })()}
+
       {/* One button, three states: idle/stopped -> Play (green), running -> Pause (amber), paused -> Stop (red). Each click advances to the next state. */}
       <button
         className={`floating-play-btn ${state.status === 'paused' ? 'stop-state' : state.status === 'running' ? 'pause-state' : ''}`}
@@ -3880,6 +3907,38 @@ export function ChatApp() {
           <button className="control-btn" onClick={downloadConversation} title="Download the whole conversation as a text file">
             📥 Download Conversation
           </button>
+        </div>
+      )}
+
+      {/* Compare right pane — the SAME conversation rendered as Structured A2A.
+          Shown only in compare mode; the left half is the normal NL view. To
+          populate real envelopes, run the conversation in A2A mode. */}
+      {compareMode && (
+        <div className="compare-pane" aria-label="Structured A2A view">
+          <div className="compare-pane-header">
+            <strong>🧬 Structured A2A</strong>
+            <button className="btn-icon" title="Close compare" onClick={() => setCompareMode(false)}>×</button>
+          </div>
+          <div className="compare-pane-body">
+            {allMessages.length === 0 && (
+              <p className="field-hint">No messages yet — the A2A envelopes appear here as agents reply in A2A mode.</p>
+            )}
+            {allMessages.map((m) => {
+              const a = m.agentId === 'user' ? null : agentById(m.agentId);
+              return (
+                <div key={m.id} className="compare-msg">
+                  <div className="compact-ref">{m.agentId === 'user' ? 'You' : `${a?.refNumber ?? ''} · ${a?.name ?? 'Agent'}`}</div>
+                  {m.a2aEnvelope ? (
+                    <A2AReadableCard envelope={m.a2aEnvelope} agentName={a?.name} />
+                  ) : m.agentId === 'user' ? (
+                    <p className="compare-nl">{m.content}</p>
+                  ) : (
+                    <p className="compare-nl muted">{m.content}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
