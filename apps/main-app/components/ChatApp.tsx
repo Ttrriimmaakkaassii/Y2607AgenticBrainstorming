@@ -34,6 +34,9 @@ import {
 import { summarizeForPrompt } from '@/lib/shared-state';
 import { evaluateSpeakerPermission, shouldInvokeAgent } from '@/lib/speaker-gating';
 import { coerceA2AFromReply } from '@/lib/a2a';
+import { processUserMessage } from '@/lib/objective';
+import { LoopGuard } from '@/lib/loop-guard';
+import { applyEvent as applyEngineEvent } from '@/lib/state-engine';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
 import { devRef } from '@/lib/devref';
@@ -961,10 +964,16 @@ export function ChatApp() {
     // (the "smaller relevant state package" — agents reference claims by id).
     const sharedSummary = summarizeForPrompt(live.sharedState);
     const a2a = effectiveCommunicationMode(live.communicationMode) === 'a2a';
+    // Fold the user's confirmed objective facts into the instruction so agents
+    // KNOW what the user already said and don't re-ask answered questions.
+    const objFacts = live.objective?.confirmedFacts;
+    const objSummary = objFacts && Object.keys(objFacts).length > 0
+      ? `User's confirmed objective (DO NOT re-ask for any of these): ${Object.entries(objFacts).map(([k, v]) => `${k}=${v}`).join(', ')}`
+      : null;
     const mergedExtraInstruction =
-      a2a && sharedSummary
-        ? [extraInstruction, `Shared conversation state (reference claims by id):\n${sharedSummary}`].filter(Boolean).join('\n\n')
-        : extraInstruction;
+      [extraInstruction, objSummary, a2a && sharedSummary ? `Shared conversation state (reference claims by id):\n${sharedSummary}` : null]
+        .filter(Boolean)
+        .join('\n\n') || undefined;
     const reply = await fetchAgentReply(
       agent,
       connections,
@@ -1024,6 +1033,8 @@ export function ChatApp() {
   // slice). Read by runAgentRound to show WHY a reply failed instead of the
   // old opaque "failed to respond".
   const lastReplyErrorRef = useRef<string | null>(null);
+  /** Loop guard — detects repeated questions/actions within a conversation. */
+  const loopGuardRef = useRef(new LoopGuard(2));
 
   /**
    * Regenerates the shared cross-thread wiki digest from just the newest
@@ -1201,6 +1212,29 @@ export function ChatApp() {
         continue;
       }
       consecutiveFailures = 0;
+
+      // --- DETERMINISTIC ORCHESTRATION: NO_RESPONSE hardening ---
+      // If the agent returned a no-response, do NOT store it as a message.
+      // Log it as an orchestration defect (the agent shouldn't have been
+      // invoked if it had nothing to say) and skip to the next agent.
+      // The compact 🤷 rendering remains only for pre-existing stored messages.
+      if (isNoResponse(reply.content)) {
+        recordEvent({ kind: 'agent_skipped', at: new Date().toISOString(), agentId: agent.id, reason: 'no_response_orchestration_defect' });
+        console.log(JSON.stringify({ type: 'no_response_defect', conversationId, agentId: agent.id, permission: { status: statusRef.current, phase: liveSettings.sharedState?.activePhase } }));
+        continue;
+      }
+
+      // --- DETERMINISTIC ORCHESTRATION: loop guard ---
+      // If this agent's reply asks a question already asked before (detected
+      // by the loop guard), stop the loop — don't let agents cycle through
+      // the same clarification repeatedly.
+      if (reply.content.includes('?')) {
+        if (loopGuardRef.current.record(reply.content)) {
+          recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'skipped', message: 'Loop detected — repeated question suppressed.' });
+          showToast(`🔄 Loop detected: ${agent.refNumber} already asked this. Stopping.`);
+          break;
+        }
+      }
 
       // Orchestrator repetition judge (#4). When repetitionGuardEnabled is on
       // and the speaking agent has a usable connection, check whether this
@@ -1498,6 +1532,21 @@ export function ChatApp() {
     appendMessage(targetThread.id, userMessage);
     setInputMessage('');
     setReplyingTo(null);
+
+    // --- DETERMINISTIC ORCHESTRATION: objective processing ---
+    // Process the user's message against the current objective (rule-based
+    // extraction — NOT an LLM call). Persists confirmed facts so agents don't
+    // re-ask answered questions. Dispatches a state-engine event for
+    // observability. Resets the loop guard (new user input forgives old loops).
+    const prevObjective = settingsRef.current.objective;
+    const updatedObjective = processUserMessage(content, prevObjective);
+    if (updatedObjective !== prevObjective) {
+      updateSettings({ objective: updatedObjective });
+      console.log(JSON.stringify({ type: 'objective_updated', conversationId: state.id, facts: updatedObjective.confirmedFacts, superseded: updatedObjective.supersededObjectiveIds.length }));
+    }
+    loopGuardRef.current.reset();
+    applyEngineEvent(state, { type: 'USER_MESSAGE_RECEIVED', messageId: userMessage.id });
+    // --- END objective processing ---
 
     // Sending a message always resumes/continues the conversation — no
     // separate trip to Play is needed after a pause or a stop.
