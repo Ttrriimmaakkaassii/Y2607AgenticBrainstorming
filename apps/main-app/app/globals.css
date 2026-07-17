@@ -375,7 +375,7 @@ span.icon-badge {
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--text, #eee);
+  color: var(--text-primary);
   background: rgba(127, 127, 127, 0.28);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 999px;
@@ -397,10 +397,9 @@ span.icon-badge {
   z-index: 30;
   display: flex;
   flex-direction: column;
-  /* Explicit readable colors — the pane is fixed-position and was inheriting a
-     dark foreground, producing black-on-black text. */
-  background: #1c1c1c;
-  color: #eee;
+  /* Theme-aware (was hardcoded dark + #eee → invisible in light mode). */
+  background: var(--bg-panel);
+  color: var(--text-primary);
 }
 .compare-pane-header {
   display: flex;
@@ -1567,7 +1566,7 @@ body.dev-mode [data-devref]::after {
   justify-content: center;
   border-radius: 10px;
   padding: 6px 10px;
-  color: var(--text, #eee);
+  color: var(--text-primary);
   opacity: 0.85;
 }
 .modal-close:hover,
@@ -1641,9 +1640,9 @@ body.dev-mode [data-devref]::after {
   z-index: 50;
   width: 320px;
   max-width: 90vw;
-  background: var(--bg-elevated, #1c1c1c);
-  color: var(--text, #eee);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   overflow: hidden;
@@ -1892,7 +1891,7 @@ body.dev-mode [data-devref]::after {
   border-radius: 999px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
   background: rgba(127, 127, 127, 0.12);
-  color: var(--text, #eee);
+  color: var(--text-primary);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.12s ease, transform 0.08s ease;
@@ -1932,7 +1931,7 @@ body.dev-mode [data-devref]::after {
   border-left: 3px solid #3b99fc;
   border-radius: 8px;
   background: rgba(59, 153, 252, 0.06);
-  color: #eee;
+  color: var(--text-primary);
   font-size: 12.5px;
 }
 .a2a-card-meta {
@@ -2000,7 +1999,7 @@ body.dev-mode [data-devref]::after {
   border-radius: 999px;
   border: 1px solid rgba(59, 153, 252, 0.4);
   background: rgba(59, 153, 252, 0.12);
-  color: #cfe3ff;
+  color: var(--text-primary);
   cursor: pointer;
 }
 .tool-markup-chip:hover {
@@ -2012,7 +2011,7 @@ body.dev-mode [data-devref]::after {
   background: rgba(0, 0, 0, 0.3);
   border-radius: 6px;
   font-size: 11px;
-  color: #9fb4d0;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 240px;
@@ -2041,7 +2040,7 @@ body.dev-mode [data-devref]::after {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
   border-radius: 8px;
   padding: 8px;
-  color: var(--text, #eee);
+  color: var(--text-primary);
 }
 .agent-chart-title {
   font-size: 12px;
