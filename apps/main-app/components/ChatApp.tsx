@@ -879,7 +879,7 @@ export function ChatApp() {
   useEffect(() => {
     if (!mindmapMode) return;
     const target = allMessages.find(
-      (m) => m.agentId !== 'user' && m.content.trim() && !messageMindmaps[m.id] && !mindmapGeneratingRef.current.has(m.id)
+      (m) => m.agentId !== 'user' && m.content.trim() && !isNoResponse(m.content) && !messageMindmaps[m.id] && !mindmapGeneratingRef.current.has(m.id)
     );
     if (!target) return;
     mindmapGeneratingRef.current.add(target.id);
@@ -4064,7 +4064,7 @@ export function ChatApp() {
                   {(agent?.name ?? '?').charAt(0).toUpperCase()}
                 </span>
                 <span>
-                  {agent ? `${agent.refNumber} ${agent.name}` : 'Agent'} is thinking
+                  🤔 {agent ? `${agent.refNumber} ${agent.name}` : 'Agent'} is thinking
                   <span className="thinking-dots">
                     <span>.</span>
                     <span>.</span>
@@ -4164,8 +4164,7 @@ export function ChatApp() {
                         </div>
                         <div className="compact-line">
                           <span className="compact-ref">{author?.refNumber} <small>{author?.name}</small></span>
-                          <span className="mute-emoji" title="Nothing to add">🤐</span>
-                          <small>nothing to add</small>
+                          <span className="mute-emoji" title="Nothing to add">🤷</span>
                         </div>
                       </div>
                     );
@@ -4376,7 +4375,7 @@ export function ChatApp() {
                         {/* Mindmap mode (#38): a mini conclusive mindmap beside
                             every agent message. Markdown is generated + cached
                             via the Wiki Keeper; shows a placeholder while pending. */}
-                        {mindmapMode && msg.agentId !== 'user' && msg.content.trim() && (
+                        {mindmapMode && msg.agentId !== 'user' && msg.content.trim() && !isNoResponse(msg.content) && (
                           <div className="inline-mindmap-wrap">
                             <div className="inline-mindmap-label">🧠 mindmap</div>
                             <InlineMindmap markdown={messageMindmaps[msg.id] ?? ''} />
