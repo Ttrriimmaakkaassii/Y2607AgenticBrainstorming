@@ -4230,15 +4230,20 @@ export function ChatApp() {
                             )}
                           </div>
                         )}
-                        <MessageContent
-                          content={msg.content}
-                          spokenRange={
-                            speaking?.messageId === msg.id
-                              ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
-                              : null
-                          }
-                          searchQuery={searchQuery}
-                        />
+                        {/* When the A2A readable/raw card is shown it already
+                            carries the natural-language summary (= content), so
+                            skip MessageContent to avoid printing the text twice. */}
+                        {(!msg.a2aEnvelope || effectiveA2ADisplayMode(state.settings.a2aDisplayMode) === 'natural_language') && (
+                          <MessageContent
+                            content={msg.content}
+                            spokenRange={
+                              speaking?.messageId === msg.id
+                                ? { charIndex: speaking.charIndex, charLength: speaking.charLength }
+                                : null
+                            }
+                            searchQuery={searchQuery}
+                          />
+                        )}
                         {/* Structured A2A rendering — driven by the user-facing
                             display mode and whether an envelope exists. NL-only
                             or old messages always render normally above. */}

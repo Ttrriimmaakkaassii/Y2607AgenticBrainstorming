@@ -397,8 +397,10 @@ span.icon-badge {
   z-index: 30;
   display: flex;
   flex-direction: column;
-  background: var(--bg, #141414);
-  border-left: 2px solid var(--border, rgba(255, 255, 255, 0.12));
+  /* Explicit readable colors — the pane is fixed-position and was inheriting a
+     dark foreground, producing black-on-black text. */
+  background: #1c1c1c;
+  color: #eee;
 }
 .compare-pane-header {
   display: flex;
@@ -1930,6 +1932,7 @@ body.dev-mode [data-devref]::after {
   border-left: 3px solid #3b99fc;
   border-radius: 8px;
   background: rgba(59, 153, 252, 0.06);
+  color: #eee;
   font-size: 12.5px;
 }
 .a2a-card-meta {
