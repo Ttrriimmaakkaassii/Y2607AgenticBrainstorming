@@ -400,17 +400,14 @@ function interactionInstruction(style: InteractionStyle): string {
 
 function moodInstruction(moods: Mood[]): string {
   if (moods.length === 0) return '';
-  // DELIBERATELY DEMOTED to "tone only". Previously this clause sat glued onto
-  // the personal Instructions with "must clearly reflect that mood throughout
-  // your reply" wording, which let the per-conversation mood silently override
-  // an agent's personal instructions (the reported #1 priority problem). Mood
-  // now colours delivery (energy, word choice) but must never change WHAT the
-  // agent argues or override its instructions — and the ranked ladder at the
-  // top of the system prompt states this explicitly.
+  // Forceful on purpose — the user explicitly wants the per-conversation mood
+  // to be able to override an agent's personal instructions (the bleed they
+  // originally reported as a bug, then decided they actually want). "must
+  // clearly reflect ... throughout your reply" is what causes that bleed.
   if (moods.length === 1) {
-    return ` The discussion mood is "${moods[0]}" — let it colour your tone only (energy, word choice). It must not change what you actually argue, and it must never override your instructions.`;
+    return ` The discussion mood is "${moods[0]}" — your tone, word choice, and energy must clearly reflect that mood throughout your reply.`;
   }
-  return ` The discussion moods are ${moods.map((m) => `"${m}"`).join(' and ')} — blend them into your tone only (energy, word choice). They must not change what you actually argue, and must never override your instructions.`;
+  return ` The discussion moods are ${moods.map((m) => `"${m}"`).join(' and ')} — blend all of them in tone throughout your reply.`;
 }
 
 function guidelinesInstruction(guidelines: string[]): string {
@@ -500,7 +497,7 @@ export function buildSystemPrompt(
   // "must ... throughout your reply" wording) could silently win. Now the
   // model is told up front how to resolve conflicts.
   const ladder =
-    ' If any of the following ever conflict, resolve them in this order: (1) a direct message from the user, (2) the general guidelines, (3) your instructions, (4) your identity & skills, (5) the mood — the mood only colours your tone and must never override substance or instructions.';
+    ' If any of the following ever conflict, resolve them in this order: (1) a direct message from the user, (2) the mood, (3) the general guidelines, (4) your instructions, (5) your identity & skills.';
 
   const identity = `You are ${agent.name}, acting as a ${agent.role} in a multi-agent discussion.`;
 

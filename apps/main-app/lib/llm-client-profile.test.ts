@@ -36,8 +36,8 @@ describe('buildSystemPrompt ranked blocks', () => {
   it('renders the explicit resolution ladder', () => {
     const p = buildSystemPrompt(baseAgent, ['debate'], 'sentences', 3, 5, 'dialogue', [], []);
     expect(p).toMatch(/resolve them in this order/i);
-    // Mood must be demoted to tone-only in the ladder.
-    expect(p).toMatch(/mood only colours your tone/i);
+    // Mood is ranked ABOVE instructions (the user wants mood to be able to win).
+    expect(p).toMatch(/\(2\) the mood, \(3\) the general guidelines, \(4\) your instructions/i);
   });
 
   it('renders labeled Identity / Skills / Instructions / Loop blocks when filled', () => {
@@ -62,10 +62,9 @@ describe('buildSystemPrompt ranked blocks', () => {
     expect(p).toContain('Challenge assumptions with data.');
   });
 
-  it('rewords mood to tone-only (no "must reflect throughout")', () => {
+  it('uses forceful mood wording so mood can override instructions', () => {
     const p = buildSystemPrompt(baseAgent, ['debate'], 'sentences', 3, 5, 'dialogue', [], []);
-    expect(p).toMatch(/tone only/i);
-    expect(p).not.toMatch(/must clearly reflect that mood throughout your reply/);
+    expect(p).toMatch(/must clearly reflect that mood throughout your reply/);
   });
 });
 
