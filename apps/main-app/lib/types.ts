@@ -318,15 +318,47 @@ export interface ConversationSettings {
   textSize: 'xs' | 'sm' | 'md' | 'lg';
 }
 
+/** Lifecycle of one agent execution. COMPLETE means the required deliverable
+ * was produced and persisted; a tool call yields waiting_for_tool, not
+ * completed. SKIPPED/CANCELLED are non-terminal-for-the-round outcomes that
+ * must NOT produce a message or consume tokens. */
+export type ExecutionStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting_for_tool'
+  | 'processing_tool_result'
+  | 'submitting'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped';
+
+/** Internal conversation events — DISTINCT from Message. Tool executions,
+ * scheduling decisions (skipped agents), state transitions, and system
+ * status are recorded here, NEVER as assistant messages. Bounded ring buffer. */
+export type ConversationEvent =
+  | { kind: 'tool_execution'; at: string; executionId?: string; agentId: string; tool: string; ok: boolean }
+  | { kind: 'state_transition'; at: string; from?: string; to: string; reason?: string }
+  | { kind: 'agent_skipped'; at: string; agentId: string; reason: string }
+  | { kind: 'system_status'; at: string; status: ExecutionStatus | ConversationState['status']; message: string };
+
 export interface ConversationState {
   id: string;
   agents: Agent[];
   threads: Thread[];
   settings: ConversationSettings;
-  status: 'idle' | 'running' | 'paused' | 'stopped';
+  /** 'awaiting_user' suspends the scheduler until a new user message arrives —
+   * prevents a Moderator timeout or phase drift from continuing autonomously. */
+  status: 'idle' | 'running' | 'paused' | 'stopped' | 'awaiting_user';
   updatedAt: number;
   /** Counter for the next Agt<N> reference number — never decreases, so numbers aren't reused. */
   nextAgentNumber: number;
+  /** Bounded internal event log (newest last). Tool calls / skips / transitions
+   * live here, separate from Message — they never appear as assistant messages. */
+  events?: ConversationEvent[];
+  /** When true, the scheduler may continue across phases/tasks without waiting
+   * for the user. DEFAULT FALSE — autonomous continuation must be explicit. */
+  autonomousMode?: boolean;
 }
 
 export interface ArchivedConversation {

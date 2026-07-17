@@ -1,54 +1,98 @@
-import { Agent, A2APhase, SharedAgentState, SpeakerPermission } from './types';
+import { Agent, A2APhase, SharedAgentState } from './types';
 
 /**
- * Speaker gating — only agents permitted by the current phase, task
- * assignment, or direct mention run. Prevents a tool result or a message
- * addressed to another agent from triggering every agent.
+ * Deterministic speaker gating — the SCHEDULER decides whether to call an
+ * agent, never the agent itself (no NO_RESPONSE). A blocked agent produces no
+ * provider request, no timer, no message, and no token use. This is the
+ * single most load-bearing control in the runtime; it lives in code, not in
+ * prompts.
  *
- * NOTE on defaults: this app's round loop is round-robin over the active
- * participants. Gating here adds an opt-in layer used in A2A mode (or when an
- * assigned speaker / addressed recipients are set): when there is NO assigned
- * speaker and NO addressed recipients, the phase/task checks are relaxed so
- * normal round-robin participation still works (otherwise we'd silence every
- * agent by default). When an assignment OR explicit addressing exists, only
- * the assigned/addressed agents (phase-permitting) run.
+ * Contract (shouldInvokeAgent):
+ *   - awaiting_user → never invoke (the user owns the next turn).
+ *   - agent not in allowedAgentIds → never invoke.
+ *   - an assignedAgentId that isn't this agent (and this agent isn't directly
+ *     mentioned) → never invoke.
+ *   - otherwise → invoke iff prerequisites are complete.
+ *
+ * Backward compatible: when there is no assignment and no explicit allowed
+ * list, normal round-robin participation is allowed (otherwise we'd silence
+ * every agent by default). The phase/prereq checks still apply.
  */
-export function evaluateSpeakerPermission(
+export interface InvokeDecision {
+  invoke: boolean;
+  reason?: string;
+  /** Legacy field mapping for callers that still read SpeakerPermission. */
+  isAssignedSpeaker: boolean;
+  isDirectlyAddressed: boolean;
+  isAllowedInCurrentPhase: boolean;
+  upstreamRequirementsComplete: boolean;
+  allowed: boolean;
+}
+
+export function shouldInvokeAgent(
   agent: Agent,
   opts: {
-    assignedSpeaker?: string;
-    addressedIds?: string[];
+    status?: string;
+    allowedAgentIds?: string[];
+    assignedAgentId?: string;
+    directMentions?: string[];
     phase?: A2APhase;
     sharedState?: SharedAgentState;
+    prerequisitesComplete?: boolean;
   }
-): SpeakerPermission {
-  const { assignedSpeaker, addressedIds, phase, sharedState } = opts;
+): InvokeDecision {
+  const { status, allowedAgentIds, assignedAgentId, directMentions, phase, sharedState } = opts;
 
-  const isAssignedSpeaker = !!assignedSpeaker && agent.id === assignedSpeaker;
-  const isDirectlyAddressed = !!addressedIds && addressedIds.includes(agent.id);
+  // (0) The user owns the next turn.
+  if (status === 'awaiting_user') {
+    return { invoke: false, reason: 'awaiting_user', isAssignedSpeaker: false, isDirectlyAddressed: false, isAllowedInCurrentPhase: false, upstreamRequirementsComplete: false, allowed: false };
+  }
 
-  // error phase: nobody runs (the round reports the error instead).
+  // Allowed-list (when one is provided, it's authoritative).
+  const inAllowedList = !allowedAgentIds || allowedAgentIds.includes(agent.id);
+
+  const isAssignedSpeaker = !!assignedAgentId && agent.id === assignedAgentId;
+  const isDirectlyAddressed = !!directMentions && directMentions.includes(agent.id);
+
+  // (1) not allowed at all.
+  if (!inAllowedList) {
+    return { invoke: false, reason: 'not_in_allowed_agents', isAssignedSpeaker, isDirectlyAddressed, isAllowedInCurrentPhase: true, upstreamRequirementsComplete: true, allowed: false };
+  }
+
+  // (2) an assignment exists that isn't this agent, and this agent isn't mentioned.
+  if (assignedAgentId && assignedAgentId !== agent.id && !isDirectlyAddressed) {
+    return { invoke: false, reason: 'not_assigned_or_addressed', isAssignedSpeaker, isDirectlyAddressed, isAllowedInCurrentPhase: true, upstreamRequirementsComplete: true, allowed: false };
+  }
+
+  // (3) phase + prerequisites.
   const isAllowedInCurrentPhase = phase !== 'error';
-
-  // Upstream "complete" gate: if the shared state is in a review/complete
-  // phase with a settled assigned speaker that isn't this agent, defer.
   const upstreamRequirementsComplete = (() => {
     if (!sharedState) return true;
     if (sharedState.activePhase === 'complete') return false;
     return true;
   })();
+  const prerequisitesComplete = opts.prerequisitesComplete ?? true;
 
-  const hasAssignment = !!assignedSpeaker || (!!addressedIds && addressedIds.length > 0);
-  const allowed = isAllowedInCurrentPhase
-    && upstreamRequirementsComplete
-    && (!hasAssignment || isAssignedSpeaker || isDirectlyAddressed);
-
+  const allowed = isAllowedInCurrentPhase && upstreamRequirementsComplete && prerequisitesComplete;
   let reason: string | undefined;
   if (!allowed) {
-    if (!isAllowedInCurrentPhase) reason = `phase ${phase ?? '?'} does not permit speakers`;
-    else if (!upstreamRequirementsComplete) reason = 'shared state is complete';
-    else if (hasAssignment) reason = 'not the assigned/addressee agent';
+    if (!isAllowedInCurrentPhase) reason = `blocked_by_phase:${phase ?? '?'}`;
+    else if (!upstreamRequirementsComplete) reason = 'prerequisites_incomplete';
+    else reason = 'prerequisites_incomplete';
   }
 
-  return { isAssignedSpeaker, isDirectlyAddressed, isAllowedInCurrentPhase, upstreamRequirementsComplete, allowed, reason };
+  return { invoke: allowed, reason, isAssignedSpeaker, isDirectlyAddressed, isAllowedInCurrentPhase, upstreamRequirementsComplete, allowed };
+}
+
+/** Legacy alias retained for existing call sites/tests. */
+export function evaluateSpeakerPermission(
+  agent: Agent,
+  opts: { assignedSpeaker?: string; addressedIds?: string[]; phase?: A2APhase; sharedState?: SharedAgentState }
+): InvokeDecision {
+  return shouldInvokeAgent(agent, {
+    assignedAgentId: opts.assignedSpeaker,
+    directMentions: opts.addressedIds,
+    phase: opts.phase,
+    sharedState: opts.sharedState,
+  });
 }

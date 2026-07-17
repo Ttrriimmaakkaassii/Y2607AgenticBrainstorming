@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Agent,
   ArchivedConversation,
+  ConversationEvent,
   ConversationState,
   Feedback,
   InteractionStyle,
@@ -31,7 +32,7 @@ import {
   effectiveA2ADisplayMode,
 } from '@/lib/communication-mode';
 import { summarizeForPrompt } from '@/lib/shared-state';
-import { evaluateSpeakerPermission } from '@/lib/speaker-gating';
+import { evaluateSpeakerPermission, shouldInvokeAgent } from '@/lib/speaker-gating';
 import { coerceA2AFromReply } from '@/lib/a2a';
 import { pickVoiceForAgent } from '@/lib/voice-picker';
 import { useAuthContext } from '@/lib/auth-context';
@@ -766,6 +767,25 @@ export function ChatApp() {
     }));
   }
 
+  /** Append an INTERNAL event (tool exec / skip / state transition / status) —
+   * kept separate from Message so scheduling decisions and tool calls NEVER
+   * appear as assistant messages. Bounded ring buffer (newest last). */
+  function recordEvent(event: ConversationEvent) {
+    setState((prev) => ({ ...prev, events: [...(prev.events ?? []), event].slice(-200), updatedAt: Date.now() }));
+    // Also log structured (no secrets) for observability.
+    console.log(JSON.stringify({ type: 'conversation_event', conversationId: state.id, ...event }));
+  }
+
+  /** Resolve @Agt<N> mentions in the last user message to agent ids — the
+   * deterministic "directly addressed" set for speaker gating. */
+  function directMentionsFromThread(messages: Message[]): string[] {
+    const lastUser = [...messages].reverse().find((m) => m.agentId === 'user');
+    if (!lastUser) return [];
+    const refs = [...lastUser.content.matchAll(/@(Agt\d+)/gi)].map((m) => m[1]);
+    if (refs.length === 0) return [];
+    return state.agents.filter((a) => refs.includes(a.refNumber)).map((a) => a.id);
+  }
+
   function createThread(agentId: string, seedReply?: AgentReplyResult): Thread {
     const thread: Thread = {
       id: generateId(),
@@ -988,7 +1008,9 @@ export function ChatApp() {
     const hasLimit = () => settingsRef.current.maxExchanges != null;
     const isRunnable = () => {
       const s: string = statusRef.current;
-      return s !== 'paused' && s !== 'stopped';
+      // 'awaiting_user' suspends the scheduler until a new user message arrives
+      // — a Moderator timeout or phase drift can't continue autonomously.
+      return s !== 'paused' && s !== 'stopped' && s !== 'awaiting_user';
     };
     let updatedThread = thread;
     let turn = 0;
@@ -1028,17 +1050,20 @@ export function ChatApp() {
       }
 
       const liveSettings = settingsRef.current;
-      // Speaker gating (A2A): if an assigned speaker / addressees are set and
-      // this agent isn't permitted, skip WITHOUT invoking the model or storing
-      // an empty message. A no-op in normal round-robin (no assignment).
-      const gate = evaluateSpeakerPermission(liveAgent, {
-        assignedSpeaker: liveSettings.sharedState?.assignedSpeaker,
+      // Speaker gating — the SCHEDULER decides whether to call this agent
+      // (never the agent via NO_RESPONSE). A blocked agent → no provider
+      // request, no timer, no message, no tokens. Only the assigned/addressee
+      // agent runs when an assignment exists; otherwise normal round-robin.
+      const gate = shouldInvokeAgent(liveAgent, {
+        status: statusRef.current,
+        allowedAgentIds: connected.map((a) => a.id),
+        assignedAgentId: liveSettings.sharedState?.assignedSpeaker,
+        directMentions: directMentionsFromThread(updatedThread.messages),
         phase: liveSettings.sharedState?.activePhase,
         sharedState: liveSettings.sharedState,
       });
-      if (!gate.allowed) {
-        // Record a skip event for debugging only — never shown in the conversation.
-        console.log(JSON.stringify({ type: 'agent_skipped', conversationId: state.id, agentId: agent.id, reason: gate.reason }));
+      if (!gate.invoke) {
+        recordEvent({ kind: 'agent_skipped', at: new Date().toISOString(), agentId: agent.id, reason: gate.reason ?? 'blocked' });
         continue;
       }
 
@@ -1161,6 +1186,19 @@ export function ChatApp() {
       // message, not just the first one in rotation) — only an explicit
       // limit extends this into an indefinite auto-discussion loop.
     } while ((hasLimit() ? withinLimits(updatedThread) : turn < connected.length) && isRunnable());
+
+    // The round is over — the user now owns the next turn. Suspend the
+    // scheduler as 'awaiting_user' UNLESS the user explicitly consented to
+    // autonomous continuation (Auto Mode / autonomousMode). In manual mode
+    // this prevents a Moderator timeout or phase drift from continuing on its
+    // own; only a new user message resumes. Auto Mode (default on) preserves
+    // the existing auto-continue behavior.
+    const auto = state.autonomousMode || settingsRef.current.orchestratorEnabled;
+    if (statusRef.current !== 'stopped' && statusRef.current !== 'paused' && !auto) {
+      statusRef.current = 'awaiting_user';
+      setState((prev) => (prev.id === conversationId ? { ...prev, status: 'awaiting_user', updatedAt: Date.now() } : prev));
+      recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'awaiting_user', message: 'Round complete — awaiting user.' });
+    }
   }
 
   async function startDiscussion() {
