@@ -1896,6 +1896,33 @@ body.dev-mode [data-devref]::after {
   opacity: 0.6;
   padding: 4px 8px;
 }
+
+/* Agent importance sliders (Settings → Agent table). */
+.importance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.importance-name {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 160px;
+  white-space: nowrap;
+}
+.importance-slider {
+  flex: 1;
+  max-width: 200px;
+  accent-color: #3b99fc;
+}
+.importance-pct {
+  font-size: 14px;
+  font-weight: 700;
+  color: #3b99fc;
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .quick-answer-btn.selected {
   background: rgba(46, 204, 113, 0.25);
   border-color: rgba(46, 204, 113, 0.5);

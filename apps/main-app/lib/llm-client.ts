@@ -509,7 +509,7 @@ const STAY_ON_TASK_INSTRUCTION =
 // it away from restating earlier points — complemented at runtime by the
 // orchestrator repetition judge in lib/orchestrator.ts.
 const LOOP_GUIDANCE_FALLBACK =
-  'Do not repeat points already made in this discussion by you or others. If your next thought would restate something already covered, elaborate on that same subject from a new angle, depth, or concrete example instead of repeating it.';
+  'Do not repeat points already made in this discussion by you or others. If you agree with a point another agent made, say "I agree with Agt## [agent name]" and reference their point briefly — do NOT restate it in full. Then add ONLY what is new from your own perspective (a different angle, a deeper consequence, a practical example, a risk they missed). Never restate content that is already in the conversation.';
 
 // Render only non-empty labeled blocks so an agent with just `instructions`
 // (the legacy shape) renders almost identically to before — no ghost headings

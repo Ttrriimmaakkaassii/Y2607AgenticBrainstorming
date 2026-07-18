@@ -83,6 +83,9 @@ export interface Agent {
   googleVoiceName: string | null;
   /** TraitDef.id -> 0-100. Missing key = unset, treated as 50 (neutral midpoint) at read time. */
   traits: Record<string, number>;
+  /** User-assigned importance weight (0-100). Null = equal/unset. Used by the
+   * moderator to decide who to hear most. Excludes moderator agents. */
+  importance?: number | null;
 }
 
 /**

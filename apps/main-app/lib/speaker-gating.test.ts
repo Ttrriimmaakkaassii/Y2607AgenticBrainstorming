@@ -6,7 +6,7 @@ const baseAgent: Agent = {
   id: 'a1', refNumber: 'Agt1', name: 'A', role: '', instructions: '', identity: '', skills: '',
   loopGuidance: '', description: '', color: '#000', llmProvider: 'openai', connectionId: 'c',
   active: true, participant: true, pinnedToAllConversations: false, webSearchEnabled: false,
-  chartEnabled: false, voiceURI: null, googleVoiceName: null, traits: {},
+  chartEnabled: false, voiceURI: null, googleVoiceName: null, traits: {}, importance: null,
 };
 
 function state(phase?: SharedAgentState['activePhase']): SharedAgentState | undefined {

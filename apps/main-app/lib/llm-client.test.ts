@@ -36,7 +36,7 @@ function baseAgent(overrides: Partial<Agent> = {}): Agent {
     connectionId: connection.id,
     active: true, participant: true,
     pinnedToAllConversations: false,
-    webSearchEnabled: true, chartEnabled: false,
+    webSearchEnabled: true, chartEnabled: false, importance: null,
     voiceURI: null,
     googleVoiceName: null,
     traits: {},
