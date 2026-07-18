@@ -670,19 +670,6 @@ export function ChatApp() {
     saveConversation(state);
   }, [state, hydrated]);
 
-  // When freeze turns ON, cancel any in-progress smooth scroll so the view
-  // truly stops where the user left it (the prior smooth animation would
-  // otherwise continue to its target). Also stops the browser's native scroll
-  // anchoring from quietly re-centering when new DOM arrives.
-  useEffect(() => {
-    if (freezeScroll && conversationAreaRef.current) {
-      conversationAreaRef.current.scrollTo({
-        top: conversationAreaRef.current.scrollTop,
-        behavior: 'auto',
-      });
-    }
-  }, [freezeScroll]);
-
   useEffect(() => {
     if (freezeScroll) return;
     conversationAreaRef.current?.scrollTo({
@@ -823,11 +810,14 @@ export function ChatApp() {
 
   /** "Nothing to say" — the agent returned an empty or explicit no-response.
    * Rendered as a compact muted row (🤐), not a full bubble. */
-  const NO_RESPONSE_RE = /^\s*(no\s*response|nothing\s+to\s+(add|say|contribute)|n\/a|i\s+have\s+nothing|i'?ll\s+pass|pass|no\s+comment|\.\.\.|—|-)\s*$/i;
+  // Only match EXPLICIT no-response phrases as a COMPLETE standalone message.
+  // Previously had c.length <= 3 which swallowed valid short replies ("Yes",
+  // "No", "OK", "$5", "150") — those must be stored and shown.
+  const NO_RESPONSE_RE = /^\s*(no\s*response|nothing\s+to\s+(add|say|contribute)|n\/a|i\s+have\s+nothing\s+(?:to\s+)?(?:add|say|contribute)|i'?ll\s+pass|no\s+comment)\s*$/i;
   function isNoResponse(content: string): boolean {
     const c = content.trim();
     if (!c) return true;
-    return NO_RESPONSE_RE.test(c) || c.length <= 3;
+    return NO_RESPONSE_RE.test(c);
   }
 
   /** Parse the verbose orchestration status block some agents emit
@@ -1212,29 +1202,6 @@ export function ChatApp() {
         continue;
       }
       consecutiveFailures = 0;
-
-      // --- DETERMINISTIC ORCHESTRATION: NO_RESPONSE hardening ---
-      // If the agent returned a no-response, do NOT store it as a message.
-      // Log it as an orchestration defect (the agent shouldn't have been
-      // invoked if it had nothing to say) and skip to the next agent.
-      // The compact 🤷 rendering remains only for pre-existing stored messages.
-      if (isNoResponse(reply.content)) {
-        recordEvent({ kind: 'agent_skipped', at: new Date().toISOString(), agentId: agent.id, reason: 'no_response_orchestration_defect' });
-        console.log(JSON.stringify({ type: 'no_response_defect', conversationId, agentId: agent.id, permission: { status: statusRef.current, phase: liveSettings.sharedState?.activePhase } }));
-        continue;
-      }
-
-      // --- DETERMINISTIC ORCHESTRATION: loop guard ---
-      // If this agent's reply asks a question already asked before (detected
-      // by the loop guard), stop the loop — don't let agents cycle through
-      // the same clarification repeatedly.
-      if (reply.content.includes('?')) {
-        if (loopGuardRef.current.record(reply.content)) {
-          recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'skipped', message: 'Loop detected — repeated question suppressed.' });
-          showToast(`🔄 Loop detected: ${agent.refNumber} already asked this. Stopping.`);
-          break;
-        }
-      }
 
       // Orchestrator repetition judge (#4). When repetitionGuardEnabled is on
       // and the speaking agent has a usable connection, check whether this
@@ -4067,7 +4034,7 @@ export function ChatApp() {
         </div>
       )}
 
-      <div className={`conversation-body ${freezeScroll ? 'frozen' : ''}`} {...devRef('s7')}>
+      <div className="conversation-body" {...devRef('s7')}>
         {showAudioRail && (
           <>
             <div className="audio-rail-backdrop" onClick={() => setShowAudioRail(false)} />
