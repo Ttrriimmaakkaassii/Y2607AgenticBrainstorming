@@ -96,8 +96,9 @@ export async function judgeRepetition(
     'building on them with new depth, examples, or a contrasting angle? Building on a topic is GOOD ' +
     'and is NOT repetition — only flag clear restatement. Respond with ONLY a JSON object, no prose, ' +
     'no code fences: {"isRepetitive": true|false, "guidance": "..."}. When true, guidance is ONE short ' +
-    'imperative sentence telling the speaker how to elaborate on the SAME subject differently (a new ' +
-    'angle, deeper reasoning, a concrete example, a counterpoint) — never switch topics. When false, ' +
+    'imperative sentence telling the speaker to ELABORATE ON A DIFFERENT BRANCH OR ASPECT of the ' +
+    'subject that has NOT been covered yet (a new sub-topic, a related angle, an unexplored implication, ' +
+    'a practical consequence, a risk, a cost factor) — NOT just rephrasing the same point. When false, ' +
     'guidance is the empty string.';
 
   const userPrompt =

@@ -1403,16 +1403,16 @@ export function ChatApp() {
     // own; only a new user message resumes. Auto Mode (default on) preserves
     // the existing auto-continue behavior.
     const auto = state.autonomousMode || settingsRef.current.orchestratorEnabled;
-    // If the exchange limit was hit, the conversation is hard-stopped — always
-    // suspend (so the play button resets to ▶️ and the +10 extend button can
-    // appear), even in Auto Mode. Only the "round done with budget remaining"
-    // case respects the auto flag (manual mode awaits the user; auto leaves it
-    // running for the next trigger).
+    // In Auto Mode, NEVER enter awaiting_user — the conversation keeps going
+    // without stopping for user input. Agents make labeled assumptions and
+    // continue. Only manual mode (!auto) suspends after a round, and even
+    // then only when the exchange limit is hit. The user can always manually
+    // pause/stop if they want to intervene.
     const hardStopped = !withinLimits(updatedThread);
-    if (statusRef.current !== 'stopped' && statusRef.current !== 'paused' && (hardStopped || !auto)) {
+    if (statusRef.current !== 'stopped' && statusRef.current !== 'paused' && !auto && hardStopped) {
       statusRef.current = 'awaiting_user';
       setState((prev) => (prev.id === conversationId ? { ...prev, status: 'awaiting_user', updatedAt: Date.now() } : prev));
-      recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'awaiting_user', message: hardStopped ? 'Exchange limit reached — awaiting user.' : 'Round complete — awaiting user.' });
+      recordEvent({ kind: 'system_status', at: new Date().toISOString(), status: 'awaiting_user', message: 'Exchange limit reached — awaiting user.' });
     }
   }
 
@@ -4491,6 +4491,8 @@ export function ChatApp() {
                           const isLoading = replySuggestionsLoadingRef.current.has(msg.id);
                           const options = llmOptions ?? instantOptions;
                           const expanded = expandedReplyMessageId === msg.id;
+                          const askingAgent = agentsRef.current.find((a) => a.id === msg.agentId);
+                          const prefix = askingAgent ? `@${askingAgent.refNumber} ` : '';
                           return (
                             <div className="reply-affordance-row">
                               <button
@@ -4534,9 +4536,10 @@ export function ChatApp() {
                                     type="button"
                                     className="quick-answer-btn custom-answer"
                                     onClick={() => {
-                                      focusComposerForReply();
+                                      setInputMessage(prefix);
                                       setExpandedReplyMessageId(null);
                                       setSelectedSuggestions(new Set());
+                                      focusComposerForReply();
                                     }}
                                     title="Type your own answer"
                                   >
@@ -4548,10 +4551,10 @@ export function ChatApp() {
                                       className="quick-answer-btn confirm-btn"
                                       onClick={() => {
                                         const combined = Array.from(selectedSuggestions).join('. ');
-                                        setInputMessage(combined);
-                                        messageInputRef.current?.focus();
+                                        setInputMessage(`${prefix}${combined}`);
                                         setSelectedSuggestions(new Set());
                                         setExpandedReplyMessageId(null);
+                                        focusComposerForReply();
                                       }}
                                       title="Confirm selected answers (you can still edit before sending)"
                                     >
