@@ -336,6 +336,7 @@ function useInfinityField(value: number | null, onCommit: (v: number | null) => 
 export function ChatApp() {
   const [expandedSearchMessageId, setExpandedSearchMessageId] = useState<string | null>(null);
   const [expandedToolMarkupMessageId, setExpandedToolMarkupMessageId] = useState<string | null>(null);
+  const [expandedReplyMessageId, setExpandedReplyMessageId] = useState<string | null>(null);
   // Null when this deployment has no Supabase auth configured — agents with
   // webSearchEnabled degrade to TOOL_UNAVAILABLE in that case (see
   // functions/api/research/browse.ts's auth check) rather than erroring.
@@ -4438,17 +4439,18 @@ export function ChatApp() {
                             asks the user a question — focuses the composer. */}
                         {msg.agentId !== 'user' && isQuestionToUser(msg.content) && (() => {
                           const qOptions = extractQuestionOptions(msg.content);
+                          const expanded = expandedReplyMessageId === msg.id;
                           return (
                             <div className="reply-affordance-row">
                               <button
                                 type="button"
-                                className="reply-cta"
-                                onClick={focusComposerForReply}
-                                title="Reply to this question"
+                                className="question-mark-btn"
+                                onClick={() => setExpandedReplyMessageId((prev) => (prev === msg.id ? null : msg.id))}
+                                title="Click to see answer options"
                               >
-                                ↩ Reply
+                                ❓
                               </button>
-                              {qOptions.length > 0 && (
+                              {expanded && (
                                 <div className="quick-answers">
                                   {qOptions.map((opt, oi) => (
                                     <button
@@ -4458,12 +4460,24 @@ export function ChatApp() {
                                       onClick={() => {
                                         setInputMessage(opt);
                                         messageInputRef.current?.focus();
+                                        setExpandedReplyMessageId(null);
                                       }}
-                                      title={`Answer: ${opt}`}
+                                      title={`Answer: ${opt} (click to fill, then edit or send)`}
                                     >
                                       {opt}
                                     </button>
                                   ))}
+                                  <button
+                                    type="button"
+                                    className="quick-answer-btn custom-answer"
+                                    onClick={() => {
+                                      focusComposerForReply();
+                                      setExpandedReplyMessageId(null);
+                                    }}
+                                    title="Type your own answer"
+                                  >
+                                    ✍️ Custom
+                                  </button>
                                 </div>
                               )}
                             </div>
