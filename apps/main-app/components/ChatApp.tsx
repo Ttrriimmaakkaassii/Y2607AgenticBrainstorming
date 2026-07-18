@@ -808,6 +808,51 @@ export function ChatApp() {
     return /\b(you|your|yours|yourself|u\b|we|us|our)\b/.test(lastSentence) || c.endsWith('?');
   }
 
+  /** Extract clickable answer options from an agent's question. Detects:
+   *  - "A or B?" → ["A", "B"]
+   *  - yes/no questions → ["Yes", "No"]
+   *  - questions listing quoted options
+   *  Caps at 4 to avoid clutter. Returns [] when no options detected. */
+  function extractQuestionOptions(content: string): string[] {
+    const c = content.trim();
+    if (!c.includes('?')) return [];
+    // Get the last question sentence (most likely the actionable one).
+    const sentences = c.split(/(?<=[.?!])\s+/).filter(Boolean);
+    const lastQ = (sentences[sentences.length - 1] || c).trim();
+    const options: string[] = [];
+
+    // Pattern 1: "X or Y" / "X, Y, or Z" — the most common clarification form.
+    const orMatch = lastQ.match(/(?:whether|do you (?:need|want)|would you (?:like|prefer))?\s*(?:you\s+(?:need|want))?\s*(.+?)\s+or\s+(.+?)[?.]/i);
+    if (orMatch) {
+      const left = orMatch[1].trim().replace(/^(?:whether|to|you|the)\s+/i, '').trim();
+      const right = orMatch[2].trim().replace(/^(?:the\s+)?/i, '').trim();
+      if (left.length > 1 && left.length <= 40) options.push(left.charAt(0).toUpperCase() + left.slice(1));
+      if (right.length > 1 && right.length <= 40) options.push(right.charAt(0).toUpperCase() + right.slice(1));
+    }
+
+    // Pattern 2: explicit "option A / option B" with slashes.
+    if (options.length === 0) {
+      const slashMatch = lastQ.match(/\b([A-Za-z][\w\s-]{2,30})\s*\/\s*([A-Za-z][\w\s-]{2,30})[?.]/);
+      if (slashMatch) {
+        options.push(slashMatch[1].trim().charAt(0).toUpperCase() + slashMatch[1].trim().slice(1));
+        options.push(slashMatch[2].trim().charAt(0).toUpperCase() + slashMatch[2].trim().slice(1));
+      }
+    }
+
+    // Pattern 3: yes/no question — no explicit options detected but it's a
+    // clear binary (starts with "do you", "can you", "are you", "would you",
+    // "should", "is", "will", "have you").
+    if (options.length === 0) {
+      const lowerQ = lastQ.toLowerCase();
+      if (/^(do|can|are|would|should|is|will|have|could|did)\s+(you|we|i|they|the|this|it)\b/.test(lowerQ)) {
+        options.push('Yes', 'No');
+      }
+    }
+
+    // Deduplicate + cap at 4.
+    return [...new Set(options)].slice(0, 4);
+  }
+
   /** "Nothing to say" — the agent returned an empty or explicit no-response.
    * Rendered as a compact muted row (🤐), not a full bubble. */
   // Only match EXPLICIT no-response phrases as a COMPLETE standalone message.
@@ -4391,16 +4436,39 @@ export function ChatApp() {
                         )}
                         {/* Prominent Reply affordance when this agent message
                             asks the user a question — focuses the composer. */}
-                        {msg.agentId !== 'user' && isQuestionToUser(msg.content) && (
-                          <button
-                            type="button"
-                            className="reply-cta"
-                            onClick={focusComposerForReply}
-                            title="Reply to this question"
-                          >
-                            ↩ Reply
-                          </button>
-                        )}
+                        {msg.agentId !== 'user' && isQuestionToUser(msg.content) && (() => {
+                          const qOptions = extractQuestionOptions(msg.content);
+                          return (
+                            <div className="reply-affordance-row">
+                              <button
+                                type="button"
+                                className="reply-cta"
+                                onClick={focusComposerForReply}
+                                title="Reply to this question"
+                              >
+                                ↩ Reply
+                              </button>
+                              {qOptions.length > 0 && (
+                                <div className="quick-answers">
+                                  {qOptions.map((opt, oi) => (
+                                    <button
+                                      key={oi}
+                                      type="button"
+                                      className="quick-answer-btn"
+                                      onClick={() => {
+                                        setInputMessage(opt);
+                                        messageInputRef.current?.focus();
+                                      }}
+                                      title={`Answer: ${opt}`}
+                                    >
+                                      {opt}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {/* Mindmap mode (#38): a mini conclusive mindmap beside
                             every agent message. Markdown is generated + cached
                             via the Wiki Keeper; shows a placeholder while pending. */}

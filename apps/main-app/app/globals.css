@@ -1826,6 +1826,41 @@ body.dev-mode [data-devref]::after {
   outline-offset: 2px;
 }
 
+/* Quick-answer buttons for agent questions — clickable options that pre-fill
+   the input (user can edit before sending). */
+.reply-affordance-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.quick-answers {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.quick-answer-btn {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(127, 127, 127, 0.15);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+.quick-answer-btn:hover {
+  background: rgba(59, 153, 252, 0.18);
+  border-color: rgba(59, 153, 252, 0.4);
+  transform: translateY(-1px);
+}
+.quick-answer-btn:focus-visible {
+  outline: 3px solid rgba(59, 153, 252, 0.4);
+  outline-offset: 2px;
+}
+
 /* Compact one-line rows for orchestration-status dumps and "no response"
    replies — a slim consistent line (ref + small name) instead of a full bubble,
    so they take minimal vertical space. Same shape everywhere. */
