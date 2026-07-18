@@ -1896,6 +1896,20 @@ body.dev-mode [data-devref]::after {
   opacity: 0.6;
   padding: 4px 8px;
 }
+.quick-answer-btn.selected {
+  background: rgba(46, 204, 113, 0.25);
+  border-color: rgba(46, 204, 113, 0.5);
+  color: var(--text-primary);
+}
+.quick-answer-btn.confirm-btn {
+  background: #2ecc71;
+  color: #fff;
+  border-color: #2ecc71;
+  font-weight: 700;
+}
+.quick-answer-btn.confirm-btn:hover {
+  background: #27ae60;
+}
 
 /* Compact one-line rows for orchestration-status dumps and "no response"
    replies — a slim consistent line (ref + small name) instead of a full bubble,

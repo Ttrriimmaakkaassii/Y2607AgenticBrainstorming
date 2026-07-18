@@ -337,6 +337,8 @@ export function ChatApp() {
   const [expandedSearchMessageId, setExpandedSearchMessageId] = useState<string | null>(null);
   const [expandedToolMarkupMessageId, setExpandedToolMarkupMessageId] = useState<string | null>(null);
   const [expandedReplyMessageId, setExpandedReplyMessageId] = useState<string | null>(null);
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set());
+
   /** LLM-generated answer suggestions per message id (from the Wiki Keeper). */
   const [replySuggestions, setReplySuggestions] = useState<Record<string, string[]>>({});
   const replySuggestionsLoadingRef = useRef<Set<string>>(new Set());
@@ -4504,21 +4506,27 @@ export function ChatApp() {
                               </button>
                               {expanded && (
                                 <div className="quick-answers">
-                                  {options.map((opt, oi) => (
-                                    <button
-                                      key={oi}
-                                      type="button"
-                                      className="quick-answer-btn"
-                                      onClick={() => {
-                                        setInputMessage(opt);
-                                        messageInputRef.current?.focus();
-                                        setExpandedReplyMessageId(null);
-                                      }}
-                                      title={`Answer: ${opt} (click to fill, then edit or send)`}
-                                    >
-                                      {opt}
-                                    </button>
-                                  ))}
+                                  {options.map((opt, oi) => {
+                                    const selected = selectedSuggestions.has(opt);
+                                    return (
+                                      <button
+                                        key={oi}
+                                        type="button"
+                                        className={`quick-answer-btn ${selected ? 'selected' : ''}`}
+                                        onClick={() => {
+                                          setSelectedSuggestions((prev) => {
+                                            const next = new Set(prev);
+                                            if (next.has(opt)) next.delete(opt);
+                                            else next.add(opt);
+                                            return next;
+                                          });
+                                        }}
+                                        title={selected ? `Selected: ${opt} — click to deselect` : `Select: ${opt}`}
+                                      >
+                                        {selected ? '✓ ' : ''}{opt}
+                                      </button>
+                                    );
+                                  })}
                                   {isLoading && !llmOptions && (
                                     <span className="suggestions-loading">🧠 generating…</span>
                                   )}
@@ -4528,11 +4536,28 @@ export function ChatApp() {
                                     onClick={() => {
                                       focusComposerForReply();
                                       setExpandedReplyMessageId(null);
+                                      setSelectedSuggestions(new Set());
                                     }}
                                     title="Type your own answer"
                                   >
                                     ✍️ Custom
                                   </button>
+                                  {selectedSuggestions.size > 0 && (
+                                    <button
+                                      type="button"
+                                      className="quick-answer-btn confirm-btn"
+                                      onClick={() => {
+                                        const combined = Array.from(selectedSuggestions).join('. ');
+                                        setInputMessage(combined);
+                                        messageInputRef.current?.focus();
+                                        setSelectedSuggestions(new Set());
+                                        setExpandedReplyMessageId(null);
+                                      }}
+                                      title="Confirm selected answers (you can still edit before sending)"
+                                    >
+                                      ✔ Confirm ({selectedSuggestions.size})
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
