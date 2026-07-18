@@ -312,6 +312,44 @@ function coerceChartSpec(args: Record<string, unknown> | undefined): ChartSpec |
   return { type, title: str(args.title) || undefined, xLabel: str(args.xLabel) || undefined, yLabel: str(args.yLabel) || undefined, categories, series };
 }
 
+/**
+ * Parse DeepSeek-style DSML tool-call markup from model output text. When a
+ * model ignores the native tool_calls API and emits tool calls as TEXT using
+ * the <｜｜DSML｜｜invoke name="..."> format, this extracts the calls so they
+ * can be executed through the same executeToolCall path. Returns parsed calls
+ * + the clean text (DSML stripped).
+ */
+function parseDsmToolCalls(content: string): { calls: { name: string; args: Record<string, unknown> }[]; clean: string } {
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
+  // Match each <｜｜DSML｜｜invoke name="...">...</｜｜DSML｜｜invoke> block.
+  const invokeRe = /<｜｜DSML｜｜invoke\s+name="([^"]+)">([\s\S]*?)<\/｜｜DSML｜｜invoke>/g;
+  let m: RegExpExecArray | null;
+  while ((m = invokeRe.exec(content)) !== null) {
+    const name = m[1];
+    const body = m[2];
+    const args: Record<string, unknown> = {};
+    // Extract each parameter.
+    const paramRe = /<｜｜DSML｜｜parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/｜｜DSML｜｜parameter>/g;
+    let p: RegExpExecArray | null;
+    while ((p = paramRe.exec(body)) !== null) {
+      const val = p[2].trim();
+      // Try parsing as number, else keep as string.
+      const num = Number(val);
+      args[p[1]] = !isNaN(num) && val !== '' ? num : val;
+    }
+    calls.push({ name, args });
+  }
+  if (calls.length === 0) return { calls: [], clean: content };
+  // Strip the entire DSML block(s) from the content.
+  const clean = content
+    .replace(/<｜｜DSML｜｜tool_calls>[\s\S]*?<\/｜｜DSML｜｜tool_calls>/g, '')
+    .replace(/<｜｜DSML｜｜tool_calls>[\s\S]*$/g, '') // unclosed block at end
+    .replace(/<｜｜DSML｜｜invoke[\s\S]*?<\/｜｜DSML｜｜invoke>/g, '')
+    .replace(/<｜｜DSML｜｜invoke[\s\S]*$/g, '')
+    .trim();
+  return { calls, clean };
+}
+
 async function executeToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -535,7 +573,8 @@ export function buildSystemPrompt(
     STAY_ON_TASK_INSTRUCTION +
     ' ' +
     styleInstruction(style, maxSentences, bulletCount) +
-    ' Stay in character, without restating your name.'
+    ' When the question involves calculations, comparisons, pricing, or feasibility: show your formulas, produce summary tables, state assumptions clearly, and give a specific actionable number — do not just discuss, CALCULATE. ' +
+    'Stay in character, without restating your name.'
   );
 }
 
@@ -714,7 +753,25 @@ async function callOpenAICompatibleDirect(
       continue;
     }
 
-    const content = message?.content?.trim();
+    // DSML fallback: some models (notably DeepSeek) ignore the native
+    // tool_calls API and emit tool calls as TEXT using <｜｜DSML｜｜invoke>.
+    // Parse those, execute through the same executeToolCall, feed results
+    // back, and continue the loop — so the web searches actually RUN instead
+    // of being shown as raw markup to the user.
+    const rawContent = message?.content ?? '';
+    if (withTools && rawContent.includes('DSML')) {
+      const { calls, clean } = parseDsmToolCalls(rawContent);
+      if (calls.length > 0) {
+        messages.push({ role: 'assistant', content: clean || null });
+        for (const call of calls) {
+          const evidenceJson = await executeToolCall(call.name, call.args, accessToken, evidence);
+          messages.push({ role: 'tool', tool_call_id: `dsml_${calls.indexOf(call)}`, content: evidenceJson });
+        }
+        continue;
+      }
+    }
+
+    const content = rawContent.trim();
     if (!content) {
       // No text and no tool call this round — if rounds remain, try again
       // rather than giving up; on the final round this genuinely means the

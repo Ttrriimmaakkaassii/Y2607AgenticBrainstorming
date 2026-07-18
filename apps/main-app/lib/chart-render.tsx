@@ -41,14 +41,15 @@ function CategoryChart({ spec }: { spec: ChartSpec }) {
   const right = niceBounds(rightMax);
 
   const W = 520;
-  const H = 300;
-  const m = { top: 16, right: multi ? 48 : 16, bottom: 40, left: 48 };
+  const H = 320;
+  const m = { top: 24, right: multi ? 56 : 16, bottom: 48, left: 60 };
   const pw = W - m.left - m.right;
   const ph = H - m.top - m.bottom;
   const n = Math.max(1, categories.length || series[0]?.data.length || 1);
   const x = (i: number) => m.left + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
   const yLeft = (v: number) => m.top + ph - (v / left.max) * ph;
   const yRight = (v: number) => m.top + ph - (v / right.max) * ph;
+  const unit = spec.yLabel ? ` (${spec.yLabel})` : '';
 
   const gridLines = [0, 0.2, 0.4, 0.6, 0.8, 1];
 
@@ -61,11 +62,11 @@ function CategoryChart({ spec }: { spec: ChartSpec }) {
         return (
           <g key={`gl-${i}`}>
             <line x1={m.left} y1={yy} x2={W - m.right} y2={yy} stroke="rgba(127,127,127,0.25)" strokeWidth={1} />
-            <text x={m.left - 6} y={yy + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.7}>
+            <text x={m.left - 6} y={yy + 3} textAnchor="end" fontSize={11} fill="currentColor" opacity={0.8} fontWeight="500">
               {val}
             </text>
             {multi && (
-              <text x={W - m.right + 6} y={yy + 3} textAnchor="start" fontSize={9} fill="currentColor" opacity={0.7}>
+              <text x={W - m.right + 6} y={yy + 3} textAnchor="start" fontSize={11} fill="currentColor" opacity={0.8} fontWeight="500">
                 {Math.round(right.max * g)}
               </text>
             )}
@@ -74,17 +75,17 @@ function CategoryChart({ spec }: { spec: ChartSpec }) {
       })}
       {/* x-axis category labels (rotated if long) */}
       {categories.map((c, i) => (
-        <text key={`cat-${i}`} x={x(i)} y={m.top + ph + 14} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.8}>
-          {String(c).length > 8 ? `${String(c).slice(0, 7)}…` : c}
+        <text key={`cat-${i}`} x={x(i)} y={m.top + ph + 16} textAnchor="middle" fontSize={11} fill="currentColor" opacity={0.85} fontWeight="500">
+          {String(c).length > 10 ? `${String(c).slice(0, 9)}…` : c}
         </text>
       ))}
       {spec.xLabel && (
-        <text x={m.left + pw / 2} y={H - 4} textAnchor="middle" fontSize={10} fill="currentColor" opacity={0.7}>
+        <text x={m.left + pw / 2} y={H - 6} textAnchor="middle" fontSize={11} fill="currentColor" opacity={0.8} fontWeight="500">
           {spec.xLabel}
         </text>
       )}
       {spec.yLabel && (
-        <text x={10} y={m.top + ph / 2} textAnchor="middle" fontSize={10} fill="currentColor" opacity={0.7} transform={`rotate(-90 10 ${m.top + ph / 2})`}>
+        <text x={14} y={m.top + ph / 2} textAnchor="middle" fontSize={11} fill="currentColor" opacity={0.8} fontWeight="500" transform={`rotate(-90 14 ${m.top + ph / 2})`}>
           {spec.yLabel}
         </text>
       )}
@@ -94,15 +95,27 @@ function CategoryChart({ spec }: { spec: ChartSpec }) {
         ? series.map((s, si) => {
             const bw = (pw / n) * 0.6;
             return s.data.map((v, i) => (
-              <rect
-                key={`bar-${si}-${i}`}
-                x={x(i) - bw / 2 + (si - (series.length - 1) / 2) * (bw / series.length)}
-                y={yLeft(Math.max(0, v))}
-                width={bw / series.length}
-                height={Math.abs(yLeft(v) - yLeft(0))}
-                fill={colorFor(si, s.color)}
-                opacity={0.9}
-              />
+              <g key={`bar-${si}-${i}`}>
+                <rect
+                  x={x(i) - bw / 2 + (si - (series.length - 1) / 2) * (bw / series.length)}
+                  y={yLeft(Math.max(0, v))}
+                  width={bw / series.length}
+                  height={Math.abs(yLeft(v) - yLeft(0))}
+                  fill={colorFor(si, s.color)}
+                  opacity={0.9}
+                />
+                {/* Value label on top of each bar */}
+                <text
+                  x={x(i) - bw / 2 + (si - (series.length - 1) / 2) * (bw / series.length) + bw / series.length / 2}
+                  y={yLeft(Math.max(0, v)) - 4}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fill={colorFor(si, s.color)}
+                  fontWeight="600"
+                >
+                  {v}
+                </text>
+              </g>
             ));
           })
         : series.map((s, si) => {
@@ -124,7 +137,7 @@ function CategoryChart({ spec }: { spec: ChartSpec }) {
           {series.map((s, si) => (
             <g key={`leg-${si}`} transform={`translate(${m.left + si * 110}, 4)`}>
               <rect width={10} height={10} fill={colorFor(si, s.color)} />
-              <text x={14} y={9} fontSize={9} fill="currentColor">{String(s.name).slice(0, 16)}</text>
+              <text x={14} y={9} fontSize={11} fill="currentColor" fontWeight="500">{String(s.name).slice(0, 16)}</text>
             </g>
           ))}
         </g>
@@ -181,6 +194,7 @@ export function ChartRenderer({ spec }: { spec: ChartSpec }) {
   return (
     <figure className="agent-chart">
       {spec.title && <figcaption className="agent-chart-title">{spec.title}</figcaption>}
+      {!spec.title && spec.yLabel && <figcaption className="agent-chart-title">{spec.yLabel}</figcaption>}
       {spec.type === 'heatmap' ? <Heatmap spec={spec} /> : <CategoryChart spec={spec} />}
     </figure>
   );

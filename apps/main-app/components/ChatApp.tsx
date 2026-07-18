@@ -813,7 +813,7 @@ export function ChatApp() {
   // Only match EXPLICIT no-response phrases as a COMPLETE standalone message.
   // Previously had c.length <= 3 which swallowed valid short replies ("Yes",
   // "No", "OK", "$5", "150") — those must be stored and shown.
-  const NO_RESPONSE_RE = /^\s*(no\s*response|nothing\s+to\s+(add|say|contribute)|n\/a|i\s+have\s+nothing\s+(?:to\s+)?(?:add|say|contribute)|i'?ll\s+pass|no\s+comment)\s*$/i;
+  const NO_RESPONSE_RE = /^\s*(no[\s_]*response|nothing\s+to\s+(add|say|contribute)|n\/a|i\s+have\s+nothing\s+(?:to\s+)?(?:add|say|contribute)|i'?ll\s+pass|no\s+comment)\s*$/i;
   function isNoResponse(content: string): boolean {
     const c = content.trim();
     if (!c) return true;
@@ -823,7 +823,7 @@ export function ChatApp() {
   /** Parse the verbose orchestration status block some agents emit
    * (PHASE: … | ACTIVE_TASK: … | ASSIGNED_SPEAKER: … | … | COMPLETION_SIGNAL: …)
    * into compact fields. Returns null if not such a block. */
-  const ORCH_BLOCK_RE = /PHASE:\s*(.+?)\s*\|\s*ACTIVE_TASK:\s*(.+?)\s*\|\s*ASSIGNED_SPEAKER:\s*(.+?)\s*\|\s*ALLOWED_RESPONDERS:\s*(.+?)\s*\|\s*BLOCKED_RESPONDERS:\s*(.+?)\s*\|\s*REQUIRED_DELIVERABLE:\s*(.+?)\s*\|\s*COMPLETION_SIGNAL:\s*([A-Z_]+)/is;
+  const ORCH_BLOCK_RE = /PHASE:\s*(.+?)[\s|]+ACTIVE_TASK:\s*(.+?)[\s|]+ASSIGNED_SPEAKER:\s*(.+?)[\s|]+ALLOWED_RESPONDERS:\s*(.+?)[\s|]+BLOCKED_RESPONDERS:\s*(.+?)[\s|]+REQUIRED_DELIVERABLE:\s*(.+?)[\s|]+COMPLETION_SIGNAL:\s*([A-Z_]+)/is;
   function parseOrchestrationBlock(content: string): { phase: string; task: string; assigned: string; deliverable: string } | null {
     const m = content.match(ORCH_BLOCK_RE);
     if (!m) return null;
