@@ -19,7 +19,7 @@ import { AGENT_LIBRARY, AgentPreset } from '@/lib/agent-library';
 import { CustomCategory, loadCustomCategories } from '@/lib/categories';
 import { loadCustomAgents, renameCustomAgent, upsertCustomAgent } from '@/lib/custom-agents';
 import { generateId } from '@/lib/id';
-import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, fetchMindmap, reactionInstruction, DEFAULT_MAX_TOKENS } from '@/lib/llm-client';
+import { AgentReplyResult, fetchAgentReply, fetchWikiDigest, fetchMindmap, reactionInstruction, callDirectText, DEFAULT_MAX_TOKENS } from '@/lib/llm-client';
 import { judgeRepetition } from '@/lib/orchestrator';
 import { loadGlobalWikiKeeper, saveGlobalWikiKeeper } from '@/lib/wiki-keeper';
 import { gatherAdvisorNote } from '@/lib/background-moderator';
@@ -337,6 +337,52 @@ export function ChatApp() {
   const [expandedSearchMessageId, setExpandedSearchMessageId] = useState<string | null>(null);
   const [expandedToolMarkupMessageId, setExpandedToolMarkupMessageId] = useState<string | null>(null);
   const [expandedReplyMessageId, setExpandedReplyMessageId] = useState<string | null>(null);
+  /** LLM-generated answer suggestions per message id (from the Wiki Keeper). */
+  const [replySuggestions, setReplySuggestions] = useState<Record<string, string[]>>({});
+  const replySuggestionsLoadingRef = useRef<Set<string>>(new Set());
+
+  /** Generate intelligent answer suggestions for an agent's question using the
+   *  Wiki Keeper connection. Returns a JSON array of concise answer strings
+   *  the user might want to give, informed by the conversation context. Falls
+   *  back to the deterministic extractQuestionOptions while loading. */
+  async function generateReplySuggestions(message: Message) {
+    if (replySuggestions[message.id] || replySuggestionsLoadingRef.current.has(message.id)) return;
+    replySuggestionsLoadingRef.current.add(message.id);
+    const keeperId = state.settings.wikiKeeperConnectionId ?? loadGlobalWikiKeeper();
+    const keeper = keeperId ? connections.find((c) => c.id === keeperId) : undefined;
+    // While the LLM generates, the deterministic options are already shown.
+    if (!keeper) {
+      replySuggestionsLoadingRef.current.delete(message.id);
+      return;
+    }
+    try {
+      const recent = allMessages.slice(-10).map((m) => {
+        const author = m.agentId === 'user' ? 'User' : state.agents.find((a) => a.id === m.agentId)?.name ?? 'Agent';
+        return `${author}: ${m.content}`;
+      }).join('\n');
+      const system = 'You suggest 3-5 concise answers a user might give to the question below. Base them on the conversation context. Each answer should be a short phrase (2-8 words). Return ONLY a JSON array of strings, no prose.';
+      const user = `Question from the agent:\n${message.content}\n\nConversation context:\n${recent}`;
+      const out = await callDirectText(keeper, system, user);
+      if (out) {
+        const cleaned = out.replace(/^```(?:json)?/i, '').replace(/```$/g, '').trim();
+        const start = cleaned.indexOf('[');
+        const end = cleaned.lastIndexOf(']');
+        if (start !== -1 && end !== -1) {
+          const parsed = JSON.parse(cleaned.slice(start, end + 1));
+          if (Array.isArray(parsed)) {
+            const suggestions = parsed.filter((s) => typeof s === 'string' && s.trim().length > 0).map((s) => (s as string).trim()).slice(0, 5);
+            if (suggestions.length > 0) {
+              setReplySuggestions((prev) => ({ ...prev, [message.id]: suggestions }));
+            }
+          }
+        }
+      }
+    } catch {
+      /* keep the deterministic fallback */
+    } finally {
+      replySuggestionsLoadingRef.current.delete(message.id);
+    }
+  }
   // Null when this deployment has no Supabase auth configured — agents with
   // webSearchEnabled degrade to TOOL_UNAVAILABLE in that case (see
   // functions/api/research/browse.ts's auth check) rather than erroring.
@@ -4438,21 +4484,27 @@ export function ChatApp() {
                         {/* Prominent Reply affordance when this agent message
                             asks the user a question — focuses the composer. */}
                         {msg.agentId !== 'user' && isQuestionToUser(msg.content) && (() => {
-                          const qOptions = extractQuestionOptions(msg.content);
+                          const instantOptions = extractQuestionOptions(msg.content);
+                          const llmOptions = replySuggestions[msg.id];
+                          const isLoading = replySuggestionsLoadingRef.current.has(msg.id);
+                          const options = llmOptions ?? instantOptions;
                           const expanded = expandedReplyMessageId === msg.id;
                           return (
                             <div className="reply-affordance-row">
                               <button
                                 type="button"
                                 className="question-mark-btn"
-                                onClick={() => setExpandedReplyMessageId((prev) => (prev === msg.id ? null : msg.id))}
-                                title="Click to see answer options"
+                                onClick={() => {
+                                  if (!expanded && !llmOptions) void generateReplySuggestions(msg);
+                                  setExpandedReplyMessageId((prev) => (prev === msg.id ? null : msg.id));
+                                }}
+                                title="Click to see intelligent answer options"
                               >
                                 ❓
                               </button>
                               {expanded && (
                                 <div className="quick-answers">
-                                  {qOptions.map((opt, oi) => (
+                                  {options.map((opt, oi) => (
                                     <button
                                       key={oi}
                                       type="button"
@@ -4467,6 +4519,9 @@ export function ChatApp() {
                                       {opt}
                                     </button>
                                   ))}
+                                  {isLoading && !llmOptions && (
+                                    <span className="suggestions-loading">🧠 generating…</span>
+                                  )}
                                   <button
                                     type="button"
                                     className="quick-answer-btn custom-answer"

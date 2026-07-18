@@ -1891,6 +1891,11 @@ body.dev-mode [data-devref]::after {
   outline: 3px solid rgba(59, 153, 252, 0.4);
   outline-offset: 2px;
 }
+.suggestions-loading {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 4px 8px;
+}
 
 /* Compact one-line rows for orchestration-status dumps and "no response"
    replies — a slim consistent line (ref + small name) instead of a full bubble,
