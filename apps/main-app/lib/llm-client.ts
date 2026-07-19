@@ -586,6 +586,26 @@ function buildUserPrompt(
   wikiDigest?: string,
   advisorNote?: string
 ): string {
+  // Detect the user's language from their messages and tell agents to reply
+  // in the same language — so if the user writes in French, Arabic, Darija,
+  // or Spanish, agents maintain that language instead of switching to English.
+  const userMessages = history.filter((m) => m.agentId === 'user');
+  const lastUserMessages = userMessages.slice(-3).map((m) => m.content).join(' ');
+  let languageInstruction = '';
+  if (userMessages.length > 0) {
+    // Heuristic: detect non-English scripts + common non-English words.
+    const hasArabic = /[؀-ۿ]/.test(lastUserMessages);
+    const hasFrench = /\b(je|nous|vous|le|la|les|une|un|des|est|sont|avec|pour|dans|sur|que|qui|ne|pas|ce|cette|mon|ma|mes|ton|ta|tes|bonjour|merci|salut|oui|non|combien|prix|coût|terrain|immobilier|construction|urbanisme)\b/i.test(lastUserMessages);
+    const hasSpanish = /\b(hola|gracias|por|para|con|sin|una|uno|los|las|el|la|es|son|que|no|si|bueno|precio|casa|tierra)\b/i.test(lastUserMessages);
+    if (hasArabic) {
+      languageInstruction = '\n\nIMPORTANT: Respond in the same language the user is writing in (Arabic/Darija). If the user writes in Darija (Moroccan Arabic), reply in Darija. Do not switch to English unless the user switches.';
+    } else if (hasFrench) {
+      languageInstruction = '\n\nIMPORTANT: Respond in French. The user is writing in French — do not switch to English unless the user switches.';
+    } else if (hasSpanish) {
+      languageInstruction = '\n\nIMPORTANT: Respond in Spanish. The user is writing in Spanish — do not switch to English unless the user switches.';
+    }
+  }
+
   const transcript = history
     // Full conversation context, bounded generously rather than unbounded —
     // truly unlimited history risks blowing past provider context windows
@@ -610,8 +630,8 @@ function buildUserPrompt(
     : '';
 
   const base = transcript
-    ? `Topic: ${topic || '(unspecified)'}${wikiSection}${advisorSection}\n\nConversation so far:\n${transcript}`
-    : `Start a discussion on: ${topic || 'a topic of your choosing'}${wikiSection}${advisorSection}`;
+    ? `Topic: ${topic || '(unspecified)'}${wikiSection}${advisorSection}${languageInstruction}\n\nConversation so far:\n${transcript}`
+    : `Start a discussion on: ${topic || 'a topic of your choosing'}${wikiSection}${advisorSection}${languageInstruction}`;
 
   return extraInstruction ? `${base}\n\nInstruction: ${extraInstruction}` : `${base}\n\nContinue the discussion with your next message.`;
 }

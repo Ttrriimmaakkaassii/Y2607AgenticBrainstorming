@@ -1733,7 +1733,25 @@ export function ChatApp() {
     }
 
     if (type === 'youtube' || type === 'tiktok') {
-      const query = `${state.settings.topic} ${message.content}`.trim().slice(0, 150);
+      // Use the Wiki Keeper to extract precise search keywords from the
+      // message + conversation context, then open YouTube/TikTok with those
+      // refined keywords instead of the raw message text.
+      const keeperId = state.settings.wikiKeeperConnectionId ?? loadGlobalWikiKeeper();
+      const keeper = keeperId ? connections.find((c) => c.id === keeperId) : undefined;
+      let query: string;
+      if (keeper) {
+        showToast('🔍 Analyzing message for precise keywords…');
+        try {
+          const system = 'Extract 3-7 precise YouTube search keywords from the message + topic below. Return ONLY the keywords separated by spaces, no prose, no punctuation. Prefer specific terms a searcher would actually type.';
+          const user = `Topic: ${state.settings.topic || '(unspecified)'}\n\nMessage: ${message.content}`;
+          const keywords = await callDirectText(keeper, system, user);
+          query = (keywords ?? '').trim().slice(0, 150) || `${state.settings.topic} ${message.content}`.trim().slice(0, 150);
+        } catch {
+          query = `${state.settings.topic} ${message.content}`.trim().slice(0, 150);
+        }
+      } else {
+        query = `${state.settings.topic} ${message.content}`.trim().slice(0, 150);
+      }
       const url =
         type === 'youtube'
           ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
