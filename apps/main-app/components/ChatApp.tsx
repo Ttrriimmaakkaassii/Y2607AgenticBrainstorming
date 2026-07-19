@@ -1243,11 +1243,46 @@ export function ChatApp() {
       }
     }
 
+    // Build a weighted speaking order based on agent importance. Agents with
+    // higher importance speak more often within the rotation. If all are 0
+    // (or unset), falls back to pure round-robin.
+    const weightedOrder: typeof connected = (() => {
+      const weights = connected.map((a) => Math.max(1, a.importance ?? 0));
+      const totalW = weights.reduce((s, w) => s + w, 0);
+      // If all weights are equal (all 0 or all same), pure round-robin.
+      const allEqual = weights.every((w) => w === weights[0]);
+      if (allEqual) return connected;
+      // Build a rotation where higher-weight agents appear proportionally
+      // more often. Repeat each agent `weight` times, then interleave.
+      const expanded: typeof connected = [];
+      for (let i = 0; i < connected.length; i++) {
+        const reps = Math.max(1, Math.round((weights[i] / totalW) * 10));
+        for (let r = 0; r < reps; r++) expanded.push(connected[i]);
+      }
+      // Interleave so no agent speaks twice in a row unless it's the only one
+      // with remaining slots — round-robin through the expanded list skipping
+      // immediate repeats.
+      const result: typeof connected = [];
+      const pool = [...expanded];
+      let lastId: string | null = null;
+      while (pool.length > 0) {
+        let picked = -1;
+        for (let i = 0; i < pool.length; i++) {
+          if (pool[i].id !== lastId) { picked = i; break; }
+        }
+        if (picked === -1) picked = 0; // only same-agent left
+        result.push(pool[picked]);
+        lastId = pool[picked].id;
+        pool.splice(picked, 1);
+      }
+      return result;
+    })();
+
     do {
       if (!withinLimits(updatedThread)) break;
       if (!isRunnable()) break;
 
-      const agent = connected[turn % connected.length];
+      const agent = weightedOrder[turn % weightedOrder.length];
       turn += 1;
 
       // Re-check against LIVE state, not the `connected` snapshot taken at
