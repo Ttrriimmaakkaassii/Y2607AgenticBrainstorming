@@ -408,7 +408,7 @@ export function SettingsModal({
     categoryMenuAgentId !== null
   );
   const [tableCategoryFilter, setTableCategoryFilter] = useState('');
-  const [agentTableView, setAgentTableView] = useState<'overview' | 'traits'>('overview');
+  const [agentTableView, setAgentTableView] = useState<'overview' | 'traits' | 'importance'>('overview');
   const [tableAgentsDraft, setTableAgentsDraft] = useState<Agent[]>(agents);
 
   useEffect(() => {
@@ -1404,6 +1404,14 @@ export function SettingsModal({
                   >
                     🎚️ Traits &amp; Character
                   </button>
+                  <button
+                    type="button"
+                    className={agentTableView === 'importance' ? 'btn-primary' : 'btn-secondary'}
+                    {...devRef('b51')}
+                    onClick={() => setAgentTableView('importance')}
+                  >
+                    ⭐ Importance
+                  </button>
                 </div>
                 {agentTableView === 'traits' ? (
                   <div className="table-scroll">
@@ -1954,51 +1962,53 @@ export function SettingsModal({
                 </div>
                 )}
 
-                {/* Agent importance — user picks who they want to hear most.
-                    Excludes moderator agents. Weights sum to 100%. */}
-                <div className="modal-section">
-                  <div className="modal-section-title">⭐ Agent Importance — who do you want to hear most?</div>
-                  <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
-                    Assign a % to each agent (excludes moderators). The moderator uses this to decide speaking priority. Leave all at 0 for equal weight.
+                {agentTableView === 'importance' && (
+                  <div className="table-scroll">
+                    <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
+                      Only active participants in this conversation. Excludes moderators. Drag the sliders to set who you want to hear most.
+                    </div>
+                    {(() => {
+                      const weightedAgents = agents.filter(
+                        (a) => a.participant && !/moderator/i.test(a.role) && !/moderator/i.test(a.name)
+                      );
+                      if (weightedAgents.length === 0) {
+                        return <p className="field-hint">No active non-moderator participants. Activate agents in the conversation first.</p>;
+                      }
+                      const total = weightedAgents.reduce((sum, a) => sum + (a.importance ?? 0), 0);
+                      const setImportance = (id: string, val: number) =>
+                        onUpdateAgentsBulk(agents.map((a) => (a.id === id ? { ...a, importance: val } : a)));
+                      const resetEqual = () =>
+                        onUpdateAgentsBulk(agents.map((a) => (weightedAgents.some((wa) => wa.id === a.id) ? { ...a, importance: 0 } : a)));
+                      return (
+                        <>
+                          {weightedAgents.map((agent) => {
+                            const pct = agent.importance ?? 0;
+                            const display = total > 0 ? Math.round((pct / total) * 100) : Math.round(100 / weightedAgents.length);
+                            return (
+                              <div key={agent.id} className="importance-row">
+                                <span className="participant-dot" style={{ background: agent.color }} />
+                                <span className="importance-name">{agent.refNumber} {agent.name}</span>
+                                <span className="importance-role">{agent.role}</span>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  value={pct}
+                                  onChange={(e) => setImportance(agent.id, Number(e.target.value))}
+                                  className="importance-slider"
+                                />
+                                <span className="importance-pct">{display}%</span>
+                              </div>
+                            );
+                          })}
+                          <button className="btn-secondary" style={{ width: 'auto', marginTop: 8 }} onClick={resetEqual}>
+                            ⚖️ Reset to equal
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
-                  {(() => {
-                    const nonModeratorAgents = agents.filter((a) => !/moderator/i.test(a.role) && !/moderator/i.test(a.name));
-                    if (nonModeratorAgents.length === 0) return <p className="field-hint">No non-moderator agents to weight.</p>;
-                    const total = nonModeratorAgents.reduce((sum, a) => sum + (a.importance ?? 0), 0);
-                    const setImportance = (id: string, val: number) => {
-                      onUpdateAgentsBulk(agents.map((a) => (a.id === id ? { ...a, importance: val } : a)));
-                    };
-                    const resetEqual = () => {
-                      onUpdateAgentsBulk(agents.map((a) => (!/moderator/i.test(a.role) && !/moderator/i.test(a.name) ? { ...a, importance: 0 } : a)));
-                    };
-                    return (
-                      <>
-                        {nonModeratorAgents.map((agent) => {
-                          const pct = agent.importance ?? 0;
-                          const display = total > 0 ? Math.round((pct / total) * 100) : Math.round(100 / nonModeratorAgents.length);
-                          return (
-                            <div key={agent.id} className="importance-row">
-                              <span className="participant-dot" style={{ background: agent.color }} />
-                              <span className="importance-name">{agent.refNumber} {agent.name}</span>
-                              <input
-                                type="range"
-                                min={0}
-                                max={100}
-                                value={pct}
-                                onChange={(e) => setImportance(agent.id, Number(e.target.value))}
-                                className="importance-slider"
-                              />
-                              <span className="importance-pct">{display}%</span>
-                            </div>
-                          );
-                        })}
-                        <button className="btn-secondary" style={{ width: 'auto', marginTop: 8 }} onClick={resetEqual}>
-                          ⚖️ Reset to equal
-                        </button>
-                      </>
-                    );
-                  })()}
-                </div>
+                )}
 
                 {agentTableView === 'overview' && (
                   <button className="btn-primary" {...devRef('b48')} onClick={saveTableDraft} style={{ marginTop: 8 }}>
